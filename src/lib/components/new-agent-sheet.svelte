@@ -1,0 +1,196 @@
+<script lang="ts">
+	import { goto } from '$app/navigation';
+	import { resolve } from '$app/paths';
+	import { harnessText } from '$lib/theme';
+
+	let { open, onclose }: { open: boolean; onclose: () => void } = $props();
+
+	/** Every kind the server's KINDS set accepts. */
+	const KINDS = [
+		'claude',
+		'codex',
+		'pi',
+		'omp',
+		'grok',
+		'agy',
+		'gemini',
+		'cursor',
+		'copilot',
+		'opencode'
+	];
+
+	let kind = $state('');
+	let cwd = $state('');
+	let label = $state('');
+	let spawning = $state(false);
+	/** Inline, not alert(): a system modal over a home-screen PWA is jarring. */
+	let error = $state('');
+	/** Held in script because the hint itself contains quote characters. */
+	const LABEL_HINT = 'Defaults to the kind, e.g. "claude"';
+	let dirs = $state<string[]>([]);
+	let parent = $state<string | null>(null);
+	let loadingDirs = $state(false);
+	/** Why the listing is empty when it is not simply an empty folder. */
+	let dirError = $state<string | null>(null);
+
+	async function browse(path?: string) {
+		loadingDirs = true;
+		dirError = null;
+		try {
+			const url = path ? `/api/dirs?path=${encodeURIComponent(path)}` : '/api/dirs';
+			const response = await fetch(url);
+			const body = (await response.json()) as {
+				path: string;
+				display?: string;
+				parent: string | null;
+				dirs: string[];
+				error?: string;
+				message?: string;
+			};
+			// The walker answers 200 with an `error` for a refused path ("outside
+			// home", "not readable"); a bare status is the fallback for anything else.
+			if (!response.ok) throw new Error(body.message ?? `dirs failed: ${response.status}`);
+			cwd = body.display ?? body.path;
+			dirs = body.dirs;
+			parent = body.parent;
+			if (body.error) dirError = `Could not list it: ${body.error}.`;
+		} catch (e) {
+			dirs = [];
+			dirError = `Could not list it: ${(e as Error).message}.`;
+		}
+		loadingDirs = false;
+	}
+
+	// Load the walker the first time the sheet opens, not on every render.
+	let loaded = false;
+	$effect(() => {
+		if (open && !loaded) {
+			loaded = true;
+			void browse();
+		}
+	});
+
+	async function start() {
+		if (!kind) return;
+		spawning = true;
+		error = '';
+		try {
+			const response = await fetch('/api/agents/new', {
+				method: 'POST',
+				headers: { 'content-type': 'application/json' },
+				body: JSON.stringify({ kind, cwd, label: label.trim() || undefined })
+			});
+			const result = (await response.json()) as { paneId?: string; message?: string };
+			if (!response.ok || !result.paneId) throw new Error(result.message ?? 'spawn failed');
+			await goto(resolve('/a/[pane]', { pane: result.paneId }));
+			onclose();
+		} catch (e) {
+			error = (e as Error).message;
+		}
+		spawning = false;
+	}
+</script>
+
+{#if open}
+	<div
+		class="fixed inset-0 z-40"
+		style="background: var(--scrim)"
+		onclick={onclose}
+		aria-hidden="true"
+	></div>
+	<div
+		class="fixed inset-x-0 bottom-0 z-50 mx-auto max-h-[88dvh] max-w-screen-sm overflow-y-auto rounded-t-[28px] bg-page shadow-[0_-10px_40px_rgba(0,0,0,.25)] motion-safe:animate-[bordr-rise_240ms_cubic-bezier(.2,.8,.2,1)]"
+		style="padding-bottom: max(1rem, env(safe-area-inset-bottom))"
+		role="dialog"
+		aria-modal="true"
+		aria-label="New agent"
+	>
+		<div class="flex justify-center pt-2.5 pb-1">
+			<span class="h-[5px] w-9 rounded-full bg-idle-rail"></span>
+		</div>
+		<div class="flex items-center px-4 py-2">
+			<button class="min-h-11 text-[15px] text-working" onclick={onclose}>Cancel</button>
+			<h2 class="flex-1 text-center text-[17px] font-semibold">New agent</h2>
+			<button
+				class="min-h-11 text-[15px] {kind ? 'text-working' : 'text-faint'}"
+				disabled={!kind || spawning}
+				onclick={start}
+			>
+				Start
+			</button>
+		</div>
+
+		<div class="space-y-4 px-4 pt-1">
+			<section>
+				<h3 class="mb-1.5 font-mono text-[10.5px] text-muted">kind</h3>
+				<div class="flex flex-wrap gap-1.5">
+					{#each KINDS as k (k)}
+						<button
+							class="rounded-full border px-3 py-2 text-[13px] {kind === k
+								? `bg-card ${harnessText(k)} border-current`
+								: 'border-transparent bg-chip text-muted'}"
+							onclick={() => (kind = k)}
+						>
+							{k}
+						</button>
+					{/each}
+				</div>
+			</section>
+
+			<section>
+				<h3 class="mb-1.5 font-mono text-[10.5px] text-muted">cwd · confined to ~</h3>
+				<div class="overflow-hidden rounded-xl border border-hairline bg-card">
+					<div class="flex items-center gap-2 border-b border-hairline px-3 py-2">
+						<span class="min-w-0 flex-1 truncate font-mono text-[12.5px]">{cwd || '~'}</span>
+						{#if parent}
+							<button
+								class="shrink-0 font-mono text-[12.5px] text-working"
+								onclick={() => browse(parent as string)}>⬑ up</button
+							>
+						{/if}
+					</div>
+					<div class="max-h-52 overflow-y-auto">
+						{#each dirs as dir (dir)}
+							<button
+								class="flex w-full items-center gap-2 border-b border-hairline px-3 py-2.5 text-left last:border-b-0"
+								onclick={() => browse(`${cwd}/${dir}`)}
+							>
+								<span class="h-[18px] w-[22px] shrink-0 rounded bg-folder-chip"></span>
+								<span class="min-w-0 flex-1 truncate font-mono text-[13px]">{dir}</span>
+							</button>
+						{:else}
+							<p class="px-3 py-3 text-center text-[12px] text-muted" role="status">
+								{loadingDirs ? 'Reading…' : (dirError ?? 'No sub-folders here.')}
+							</p>
+						{/each}
+					</div>
+				</div>
+			</section>
+
+			<section>
+				<h3 class="mb-1.5 font-mono text-[10.5px] text-muted">label · optional</h3>
+				<input
+					bind:value={label}
+					placeholder={LABEL_HINT}
+					class="w-full rounded-xl border border-edge bg-card px-3 py-2.5 text-[16px] placeholder:text-faint"
+				/>
+			</section>
+
+			<button
+				class="w-full rounded-[14px] bg-ink px-4 py-[15px] text-[16px] font-semibold text-card disabled:opacity-50"
+				disabled={!kind || spawning}
+				onclick={start}
+			>
+				{spawning ? 'Starting…' : `Start ${kind || 'agent'} in ${cwd || '~'}`}
+			</button>
+
+			{#if error}
+				<p class="rounded-[10px] bg-danger-bg px-3 py-2.5 text-[12.5px] text-danger-ink">{error}</p>
+			{/if}
+
+			<p class="pb-2 text-center text-[11px] text-faint">
+				workspace.create → agent.start · first-run prompts open as a picker
+			</p>
+		</div>
+	</div>
+{/if}

@@ -1,0 +1,25 @@
+{
+	"name": "bordr patrl",
+	"short_name": "bordr",
+	"description": "Mobile workspace for herdr",
+	"id": "/",
+	"start_url": "/",
+	"scope": "/",
+	"display": "standalone",
+	"background_color": "#0a0a0a",
+	"theme_color": "#0a0a0a",
+	"icons": [
+		{
+			"src": "/patrl-192.png",
+			"sizes": "192x192",
+			"type": "image/png",
+			"purpose": "any maskable"
+		},
+		{
+			"src": "/patrl-512.png",
+			"sizes": "512x512",
+			"type": "image/png",
+			"purpose": "any maskable"
+		}
+	]
+}

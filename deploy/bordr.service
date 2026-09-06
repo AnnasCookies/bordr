@@ -1,0 +1,38 @@
+[Unit]
+Description=bordr — mobile workspace for herdr
+# Ordering only: bordr degrades gracefully without herdr and must not pull a
+# unit in on every restart. herdr-session is WantedBy=default.target and
+# starts at boot on its own.
+After=network-online.target herdr-session.service
+
+[Service]
+Type=simple
+WorkingDirectory=%h/bordr
+# Loopback unless .env says otherwise: EnvironmentFile wins over Environment,
+# so .env can only ever tighten or deliberately override this, and a .env
+# with no HOST line cannot fall through to the adapter's 0.0.0.0.
+Environment=HOST=127.0.0.1
+EnvironmentFile=%h/bordr/.env
+# svelte-adapter-bun defaults to a 512KB request cap — camera photos need
+# more; the image endpoint allows six 15MB images per message above this.
+Environment=BODY_SIZE_LIMIT=100M
+# svelte-adapter-bun defaults Bun's idle timeout to 10s, which kills the SSE
+# stream between heartbeats. The heartbeat is now well under that on its own;
+# this is belt and braces so a slow tick cannot drop a phone's connection.
+Environment=IDLE_TIMEOUT=120
+# Live state outside the checkout: a git clean, worktree op or test run in
+# the working tree would otherwise delete push subscriptions and watches.
+Environment=BORDR_DATA_DIR=%h/.local/state/bordr
+# The official installer's path; `which bun` if yours lives elsewhere.
+ExecStart=%h/.bun/bin/bun ./build/index.js
+# always, not on-failure: a clean SIGTERM (stray stop, session churn,
+# OOM reaper) otherwise leaves bordr down silently until someone notices
+# the phone 500ing. The app holds no state that a restart harms.
+Restart=always
+RestartSec=5
+# The server can take a moment to release the herdr socket; without this
+# systemd SIGKILLs it after the default 90s and logs a spurious failure.
+TimeoutStopSec=20
+
+[Install]
+WantedBy=default.target
