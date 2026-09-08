@@ -24,7 +24,7 @@ This is the result, I love it and use it every day. I hope you'll like it too!
 ## Who this is for
 
 Anyone who runs multiple harnesses on their PC and wants to access them from anywhere. <br>
-All you need is Tailscale, Herdr and a PC to run it on. 
+All you need is Tailscale, Herdr and a PC to run it on.
 
 ## What it does
 
@@ -41,7 +41,7 @@ All you need is Tailscale, Herdr and a PC to run it on.
 - **Type, dictate, or send a photo.** Attach photos or record long-form messages!
 - **Drive a stubborn TUI.** A live screen peek plus an on-screen key strip
   (`esc tab ↑ ↓ ← → ␣ ⏎`) for anything the terminal insists on handling itself.
-- **Slash commands previews.** Type `/` and the harness's commands and your own
+- **Slash command previews.** Type `/` and the harness's commands and your own
   skills, commands and plugins are listed with their descriptions. Print-style
   ones show their output inline; selector menus become tappable cards.
 - **Search every session at once.** Quoted phrases, `-exclusions`, and filters
@@ -82,7 +82,7 @@ address unless you explicitly override it. Read [SECURITY.md](SECURITY.md)
 before installing; it is short. If I had to say one thing: Serve it with `tailscale serve`, never `tailscale funnel`. Serve keeps the
 address inside your tailnet; funnel publishes it to the whole internet, and
 because funnel proxies to loopback it walks straight past bordr's own bind
-guard. Bind ports per device in your Tailnet for extra security if you share your Tailnet with anyone. 
+guard. Bind ports per device in your Tailnet for extra security if you share your Tailnet with anyone.
 
 ## Prerequisites
 
