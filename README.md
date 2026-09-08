@@ -41,7 +41,7 @@ All you need is Tailscale, Herdr and a PC to run it on.
 - **Type, dictate, or send a photo.** Attach photos or record long-form messages!
 - **Drive a stubborn TUI.** A live screen peek plus an on-screen key strip
   (`esc tab ↑ ↓ ← → ␣ ⏎`) for anything the terminal insists on handling itself.
-- **Slash commands previews.** Type `/` and the harness's commands and your own
+- **Slash command previews.** Type `/` and the harness's commands and your own
   skills, commands and plugins are listed with their descriptions. Print-style
   ones show their output inline; selector menus become tappable cards.
 - **Search every session at once.** Quoted phrases, `-exclusions`, and filters
