@@ -15,6 +15,7 @@
 	import { rankCommands, type SlashCommand } from '$lib/commands';
 	import Icon from '$lib/components/icon.svelte';
 	import MessageBlocks from '$lib/components/message-blocks.svelte';
+	import type { Block } from '$lib/server/transcript/types';
 	let { data } = $props();
 
 	const TAIL = 80;
@@ -25,6 +26,23 @@
 	 * hidden on every open, which made the work look like it was not there.
 	 */
 	let showWork = $state(prefs.value.showWork);
+
+	/**
+	 * A bubble holds what was SAID; tool calls and thinking sit outside it.
+	 *
+	 * codex and pi routinely emit a turn with no prose at all — just a tool
+	 * call — and wrapping that in a coloured bubble drew an empty bubble with
+	 * a row inside it. The prefixed transcript has no such problem, so this
+	 * split only applies to bubbles.
+	 */
+	function prose(message: { blocks?: Block[] }): Block[] {
+		return (message.blocks ?? []).filter((b) => b.kind === 'text' || b.kind === 'image');
+	}
+
+	function work(message: { blocks?: Block[] }): Block[] {
+		return (message.blocks ?? []).filter((b) => b.kind === 'tool' || b.kind === 'thinking');
+	}
+
 	/**
 	 * The manual harness controls: the screen peek and the key strip together.
 	 * They belong together — you press a key and watch the screen react — and
@@ -948,16 +966,15 @@
 							{/if}
 							<div class="min-w-0 flex-1">
 								{#if prefs.value.bubbles}
-									<div
-										class="max-w-[92%] rounded-2xl rounded-bl-sm px-3 py-2 [overflow-wrap:anywhere]"
-										style="background:{agentBubbleColour}; color:{prefs.bubbleColours.agentText}"
-									>
-										<MessageBlocks
-											blocks={message.blocks ?? []}
-											mono={prefs.value.monoSize}
-											{showWork}
-										/>
-									</div>
+									{#if prose(message).length > 0}
+										<div
+											class="max-w-[92%] rounded-2xl rounded-bl-sm px-3 py-2 [overflow-wrap:anywhere]"
+											style="background:{agentBubbleColour}; color:{prefs.bubbleColours.agentText}"
+										>
+											<MessageBlocks blocks={prose(message)} mono={prefs.value.monoSize} />
+										</div>
+									{/if}
+									<MessageBlocks blocks={work(message)} mono={prefs.value.monoSize} {showWork} />
 								{:else}
 									<div
 										class="border-l-2 pl-2.5 [overflow-wrap:anywhere] text-body {harnessBorder(

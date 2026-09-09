@@ -1,6 +1,7 @@
 import { error, json } from '@sveltejs/kit';
 import { rawAgent, readPane, readVisible, toSummary } from '$lib/server/herdr';
 import { adapterFor } from '$lib/server/transcript';
+import { backfillBlocks } from '$lib/server/transcript/types';
 import { DEFAULT_TAIL_BYTES, readTranscriptTail } from '$lib/server/transcript/tail';
 import { menuFooter, parsePicker, pendingAsk, suggestionFrom } from '$lib/server/picker';
 import { extractStatusLines } from '$lib/server/status';
@@ -155,7 +156,11 @@ export const GET: RequestHandler = async ({ params, url }) => {
 	}
 
 	if (degraded !== 'none') {
-		messages = [{ role: 'assistant', text: cleanSnapshot(visible), tools: [] }];
+		// Through backfillBlocks like every other message: this path builds a
+		// Message by hand rather than through an adapter, and a message with no
+		// `blocks` renders as an empty bubble — the snapshot, which is the whole
+		// point of the degraded path, vanished.
+		messages = [backfillBlocks({ role: 'assistant', text: cleanSnapshot(visible), tools: [] })];
 		hasMore = false;
 	}
 
