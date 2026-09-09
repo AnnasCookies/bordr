@@ -14,6 +14,7 @@
 	import { throttleTrailing } from '$lib/throttle';
 	import { rankCommands, type SlashCommand } from '$lib/commands';
 	import Icon from '$lib/components/icon.svelte';
+	import MessageBlocks from '$lib/components/message-blocks.svelte';
 	let { data } = $props();
 
 	const TAIL = 80;
@@ -871,8 +872,10 @@
 								<span
 									class="max-w-[85%] rounded-2xl rounded-br-sm px-3 py-2 [overflow-wrap:anywhere] whitespace-pre-wrap"
 									style="background:{prefs.bubbleColours.userBubble}; color:{prefs.bubbleColours
-										.userText}">{message.text}</span
+										.userText}"
 								>
+									<MessageBlocks blocks={message.blocks ?? []} mono={prefs.value.monoSize} plain />
+								</span>
 							</div>
 						{:else}
 							<div class="flex gap-2">
@@ -880,13 +883,12 @@
 									class="shrink-0 font-mono text-[13px] leading-[1.7] text-working"
 									aria-hidden="true">›</span
 								>
-								<span
-									class="min-w-0 flex-1 font-medium [overflow-wrap:anywhere] whitespace-pre-wrap"
-									>{message.text}</span
-								>
+								<span class="min-w-0 flex-1 font-medium [overflow-wrap:anywhere]">
+									<MessageBlocks blocks={message.blocks ?? []} mono={prefs.value.monoSize} plain />
+								</span>
 							</div>
 						{/if}
-					{:else if message.text || (showWork && message.tools.length > 0)}
+					{:else if message.text || (showWork && (message.blocks?.length ?? 0) > 0)}
 						<!-- A turn that is only tool calls has nothing to show while the
 						     work is hidden; rendering the prefix anyway left a column of
 						     bare dots separated by empty space. -->
@@ -898,38 +900,29 @@
 								>
 							{/if}
 							<div class="min-w-0 flex-1">
-								{#if message.text}
-									{#if prefs.value.bubbles}
-										<p
-											class="max-w-[92%] rounded-2xl rounded-bl-sm px-3 py-2 [overflow-wrap:anywhere] whitespace-pre-wrap"
-											style="background:{prefs.bubbleColours.agentBubble}; color:{prefs
-												.bubbleColours.agentText}"
-										>
-											{message.text}
-										</p>
-									{:else}
-										<p
-											class="border-l-2 pl-2.5 [overflow-wrap:anywhere] whitespace-pre-wrap text-body {harnessBorder(
-												detail.agent
-											)}"
-										>
-											{message.text}
-										</p>
-									{/if}
-								{/if}
-								{#if showWork && message.tools.length > 0}
+								{#if prefs.value.bubbles}
 									<div
-										class="mt-2 ml-[22px] divide-y divide-black/[.08] overflow-hidden rounded-lg border border-black/[.08] bg-card dark:divide-white/[.08] dark:border-white/[.08]"
+										class="max-w-[92%] rounded-2xl rounded-bl-sm px-3 py-2 [overflow-wrap:anywhere]"
+										style="background:{prefs.bubbleColours.agentBubble}; color:{prefs.bubbleColours
+											.agentText}"
 									>
-										{#each message.tools as tool, n (n)}
-											<div
-												class="flex gap-2 px-2.5 py-2 font-mono"
-												style="font-size: {prefs.value.monoSize + 0.5}px"
-											>
-												<span class="shrink-0 text-muted">{tool.name}</span>
-												<span class="min-w-0 flex-1 truncate text-body">{tool.summary}</span>
-											</div>
-										{/each}
+										<MessageBlocks
+											blocks={message.blocks ?? []}
+											mono={prefs.value.monoSize}
+											{showWork}
+										/>
+									</div>
+								{:else}
+									<div
+										class="border-l-2 pl-2.5 [overflow-wrap:anywhere] text-body {harnessBorder(
+											detail.agent
+										)}"
+									>
+										<MessageBlocks
+											blocks={message.blocks ?? []}
+											mono={prefs.value.monoSize}
+											{showWork}
+										/>
 									</div>
 								{/if}
 							</div>

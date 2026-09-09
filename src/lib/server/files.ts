@@ -157,3 +157,81 @@ export function listDirectory(absolute: string): Entry[] {
 			.sort((a, b) => Number(b.dir) - Number(a.dir) || a.name.localeCompare(b.name))
 	);
 }
+
+/**
+ * The uploads directory, where a photo sent from the phone lands.
+ *
+ * Deliberately NOT a browsable root: it is service state, mode 0600, pruned
+ * by age. But a photo you just sent should appear in your own transcript as a
+ * photo, so `/api/uploads/<name>` serves this one directory and nothing else.
+ */
+export function uploadsDir(): string {
+	return join(env.BORDR_DATA_DIR || join(process.cwd(), '.data'), 'uploads');
+}
+
+/**
+ * Resolve one upload by BASENAME only.
+ *
+ * The name comes out of a transcript, which is agent-influenced text, so it is
+ * never joined as a path: anything with a separator or a dot-segment is
+ * refused outright rather than normalised, and the result must still sit
+ * directly inside the uploads directory after symlink resolution.
+ */
+export function resolveUpload(name: string): string | null {
+	if (!name || name.includes('/') || name.includes('\\') || name.startsWith('.')) return null;
+	const dir = uploadsDir();
+	const candidate = join(dir, name);
+	try {
+		const real = realpathSync(candidate);
+		const realDir = realpathSync(dir);
+		if (real !== join(realDir, name)) return null;
+		if (!statSync(real).isFile()) return null;
+		return real;
+	} catch {
+		return null;
+	}
+}
+
+/**
+ * A URL the phone can actually fetch for an absolute path an agent mentioned,
+ * or null when the file is outside everything bordr is willing to serve.
+ *
+ * Two sources, deliberately separate: uploads (yours, by basename) and the
+ * configured file roots (everything else, through the existing /raw
+ * confinement). Anything else returns null and renders as a plain path.
+ */
+export function servableUrl(absolute: string): string | null {
+	let real: string;
+	try {
+		real = realpathSync(absolute);
+	} catch {
+		return null;
+	}
+
+	const uploads = (() => {
+		try {
+			return realpathSync(uploadsDir());
+		} catch {
+			return null;
+		}
+	})();
+	if (uploads && real.startsWith(uploads + sep)) {
+		const name = real.slice(uploads.length + 1);
+		return name.includes(sep) ? null : `/api/uploads/${encodeURIComponent(name)}`;
+	}
+
+	for (const [name, root] of Object.entries(FILE_ROOTS)) {
+		let realRoot: string;
+		try {
+			realRoot = realpathSync(root);
+		} catch {
+			continue;
+		}
+		if (real === realRoot || real.startsWith(realRoot + sep)) {
+			const rest = relative(realRoot, real);
+			const encoded = rest.split(sep).map(encodeURIComponent).join('/');
+			return encoded ? `/raw/${encodeURIComponent(name)}/${encoded}` : null;
+		}
+	}
+	return null;
+}
