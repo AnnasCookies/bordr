@@ -1,5 +1,6 @@
 <script lang="ts">
 	import RichText from './rich-text.svelte';
+	import type { ResolvedPathname } from '$app/types';
 	import type { Block } from '$lib/server/transcript/types';
 
 	let {
@@ -36,7 +37,18 @@
 		{/if}
 	{:else if block.kind === 'image'}
 		<figure class="shot">
-			<img src={block.src} alt={block.caption || 'photo'} loading="lazy" />
+			<!-- Opens the full-size original; a phone screenshot is unreadable
+			     at thumbnail height and the cap below makes it one. -->
+			<!--
+				Opens the full-size original. Cast rather than resolve()d: `src`
+				is not a route but a byte endpoint (/api/uploads/… or /raw/…)
+				composed server-side by `servableUrl`, and it opens in a new tab
+				rather than navigating the app. Same escape hatch the file
+				viewer uses for its download links.
+			-->
+			<a href={block.src as ResolvedPathname} target="_blank" rel="noopener noreferrer">
+				<img src={block.src} alt={block.caption || 'photo'} loading="lazy" />
+			</a>
 			{#if block.caption}<figcaption>{block.caption}</figcaption>{/if}
 		</figure>
 	{:else if block.kind === 'thinking' && showWork}
@@ -97,7 +109,14 @@
 	}
 	.shot img {
 		max-width: 100%;
+		/* A portrait phone screenshot is twice the viewport tall, so one photo
+		   costs several screens of scrolling to get past. Capped and tappable
+		   rather than shrunk to a thumbnail: the point of sending a screenshot
+		   is usually that it is readable. */
+		max-height: 55vh;
+		width: auto;
 		height: auto;
+		object-fit: contain;
 		border-radius: 10px;
 		display: block;
 	}
