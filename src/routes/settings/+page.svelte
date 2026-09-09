@@ -14,7 +14,7 @@
 	import { checkPush, togglePushDetailed, type PushState } from '$lib/push-client';
 	import { onMount } from 'svelte';
 	import { resolve } from '$app/paths';
-	import type { KeyStripMode } from '$lib/prefs.svelte';
+	import type { HarnessAccent, ToolDetail, KeyStripMode } from '$lib/prefs.svelte';
 
 	let pushState = $state<PushState>('unknown');
 	let pushMessage = $state<string | null>(null);
@@ -136,18 +136,6 @@
 					onchange={(v) => prefs.set('keyStrip', v)}
 				/>
 				<ToggleRow
-					label="Colour bubbles by harness"
-					hint="Tint the agent bubble with that harness's own accent, so claude and codex are told apart at a glance. A colour picked below always wins."
-					checked={prefs.value.harnessBubbles}
-					onchange={(v) => prefs.set('harnessBubbles', v)}
-				/>
-				<ToggleRow
-					label="Show the work"
-					hint="Tool calls, their results and the agent's thinking, as expandable rows in every conversation. Each conversation's own toggle overrides this and is remembered."
-					checked={prefs.value.showWork}
-					onchange={(v) => prefs.set('showWork', v)}
-				/>
-				<ToggleRow
 					label="Swipe to cycle agents"
 					hint="Swipe across a conversation for the next or previous agent in the list. Swiping from either screen edge still goes back."
 					checked={prefs.value.swipeAgents}
@@ -194,6 +182,21 @@
 					checked={prefs.value.bubbles}
 					onchange={(v) => prefs.set('bubbles', v)}
 				/>
+				<ToggleRow
+					label="Show the work"
+					hint="Tool calls, their results and the agent's thinking, as expandable rows. Each conversation's own toggle overrides this and is remembered."
+					checked={prefs.value.showWork}
+					onchange={(v) => prefs.set('showWork', v)}
+				/>
+				<SettingRow
+					label="Tool calls"
+					value={prefs.value.toolDetail}
+					options={[
+						{ v: 'formatted' as ToolDetail, l: 'Readable' },
+						{ v: 'json' as ToolDetail, l: 'Raw JSON' }
+					]}
+					onchange={(v) => prefs.set('toolDetail', v)}
+				/>
 				{#if prefs.value.bubbles}
 					<ColourRow
 						label="You"
@@ -209,6 +212,20 @@
 						onbackground={(v) => prefs.setBubble('agent', v)}
 						ontext={(v) => prefs.set('agentText', v)}
 					/>
+					<SettingRow
+						label="Harness accent"
+						value={prefs.value.harnessAccent}
+						options={[
+							{ v: 'edge' as HarnessAccent, l: 'Edge' },
+							{ v: 'tint' as HarnessAccent, l: 'Tint' },
+							{ v: 'off' as HarnessAccent, l: 'Off' }
+						]}
+						onchange={(v) => prefs.set('harnessAccent', v)}
+					/>
+					<p class="px-3.5 pb-2 text-[12px] text-muted">
+						Edge puts the harness's colour down the side of the bubble; tint blends it into the
+						background. A colour picked above overrides both.
+					</p>
 					<button
 						class="w-full px-3.5 py-3 text-left text-[15px] text-working"
 						onclick={() => prefs.reset('userBubble', 'userText', 'agentBubble', 'agentText')}

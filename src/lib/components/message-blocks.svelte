@@ -2,6 +2,7 @@
 	import { SvelteSet } from 'svelte/reactivity';
 	import RichText from './rich-text.svelte';
 	import CodeBlock from './code-block.svelte';
+	import ToolDetail from './tool-detail.svelte';
 	import { langForPath } from '$lib/highlight';
 	import type { Block } from '$lib/server/transcript/types';
 
@@ -38,7 +39,7 @@
 
 	function hasBody(block: Block): boolean {
 		if (block.kind !== 'tool') return false;
-		return block.detail !== '' || block.result !== null || block.diff !== null;
+		return block.input !== null || block.result !== null || block.diff !== null;
 	}
 </script>
 
@@ -114,9 +115,8 @@
 								/>
 							{/if}
 						</div>
-					{:else if block.detail}
-						<!-- A tool's input is always JSON. -->
-						<CodeBlock code={block.detail} lang="json" {mono} />
+					{:else if block.input}
+						<ToolDetail name={block.name} input={block.input} {mono} />
 					{/if}
 					{#if block.result}
 						<pre class="pre out" class:bad={block.result.isError}>{block.result.text}</pre>

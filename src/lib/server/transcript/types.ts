@@ -36,8 +36,13 @@ export type Block =
 			name: string;
 			/** One line: the argument that identifies the call. `Read(projector.ts)`. */
 			summary: string;
-			/** Pretty-printed input, shown when the row is expanded. */
-			detail: string;
+			/**
+			 * The call's arguments, as the harness recorded them. Kept as an
+			 * object rather than pre-stringified JSON so the view can render
+			 * each tool the way a terminal shows it — a Bash call as a command,
+			 * a Write as its contents — and fall back to JSON on request.
+			 */
+			input: Record<string, unknown> | null;
 			result: ToolResult | null;
 			diff: EditDiff | null;
 	  }
@@ -111,7 +116,7 @@ export function backfillBlocks(message: Message): Message {
 			kind: 'tool',
 			name: tool.name,
 			summary: tool.summary,
-			detail: '',
+			input: null,
 			result: null,
 			diff: null
 		});

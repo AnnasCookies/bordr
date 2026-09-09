@@ -117,16 +117,6 @@ export function askFromQuestions(input: Record<string, unknown> | undefined) {
 	return { question, options };
 }
 
-/** Pretty-printed input for the expanded row. */
-function toolDetail(input: Record<string, unknown> | undefined): string {
-	if (!input || Object.keys(input).length === 0) return '';
-	try {
-		return JSON.stringify(input, null, 2);
-	} catch {
-		return '';
-	}
-}
-
 /** A tool_result's content is a string or a block array; flatten either. */
 function resultText(content: unknown): string {
 	if (typeof content === 'string') return content;
@@ -375,7 +365,7 @@ export const claudeAdapter: Adapter = {
 						kind: 'tool',
 						name: toolLabel(block.name),
 						summary: toolSummary(block.name, block.input ?? {}),
-						detail: toolDetail(block.input),
+						input: block.input ?? null,
 						result: null,
 						diff:
 							block.name === 'Edit' && typeof block.input?.old_string === 'string'

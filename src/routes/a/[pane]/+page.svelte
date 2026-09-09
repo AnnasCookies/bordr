@@ -8,7 +8,7 @@
 	import { prefs } from '$lib/prefs.svelte';
 	import { flatOrder } from '$lib/grouping';
 	import { decideSwipe, inHorizontalScroller, neighbourPane } from '$lib/swipe';
-	import { harnessBorder, harnessBubble, harnessText, STATUS_INK } from '$lib/theme';
+	import { harnessBorder, harnessBubble, harnessHex, harnessText, STATUS_INK } from '$lib/theme';
 	import { ansiToHtml } from '$lib/ansi';
 	import { termGrid } from '$lib/term-grid';
 	import { throttleTrailing } from '$lib/throttle';
@@ -166,19 +166,21 @@
 	const statusHtmlFirst = $derived(ansiToHtml(statusRows[0] ?? ''));
 
 	/**
-	 * The agent bubble, tinted with this harness's accent unless a colour has
-	 * been picked by hand. A picked colour always wins: it is an explicit
-	 * choice and must not be second-guessed per harness.
+	 * How the harness shows on an agent bubble.
+	 *
+	 * 'edge' is the default because blending an accent into the background
+	 * muddies it — orange into a light grey is a dull beige, and every theme
+	 * colour it touches shifts. A stripe down the side carries the accent at
+	 * full strength and leaves the bubble the colour it was.
 	 */
+	const accentMode = $derived(prefs.value.agentBubble ? 'off' : prefs.value.harnessAccent);
 	const agentBubbleColour = $derived(
-		prefs.value.agentBubble ||
-			(prefs.value.harnessBubbles
-				? harnessBubble(
-						detail.agent,
-						prefs.resolvedTheme === 'dark',
-						prefs.bubbleColours.agentBubble
-					)
-				: prefs.bubbleColours.agentBubble)
+		accentMode === 'tint'
+			? harnessBubble(detail.agent, prefs.resolvedTheme === 'dark', prefs.bubbleColours.agentBubble)
+			: prefs.bubbleColours.agentBubble
+	);
+	const agentEdge = $derived(
+		accentMode === 'edge' ? harnessHex(detail.agent, prefs.resolvedTheme === 'dark') : ''
 	);
 	const watched = $derived(data.watched);
 	const visibleMessages = $derived(detail.messages.slice(-shown));
@@ -985,7 +987,10 @@
 									{#if prose(message).length > 0}
 										<div
 											class="max-w-[92%] rounded-2xl rounded-bl-sm px-3 py-2 [overflow-wrap:anywhere]"
-											style="background:{agentBubbleColour}; color:{prefs.bubbleColours.agentText}"
+											style="background:{agentBubbleColour}; color:{prefs.bubbleColours
+												.agentText}{agentEdge
+												? `; border-left:3px solid ${agentEdge}; border-top-left-radius:6px; border-bottom-left-radius:6px`
+												: ''}"
 										>
 											<MessageBlocks blocks={prose(message)} mono={prefs.value.monoSize} />
 										</div>

@@ -6,6 +6,8 @@ export type SortBy = 'status-title' | 'title' | 'recent';
 export type PreviewMode = 'activity' | 'cwd' | 'none';
 export type Theme = 'light' | 'dark' | 'system';
 export type KeyStripMode = 'always' | 'peek';
+export type HarnessAccent = 'edge' | 'tint' | 'off';
+export type ToolDetail = 'formatted' | 'json';
 
 export interface Prefs {
 	v: number;
@@ -18,8 +20,14 @@ export interface Prefs {
 	keyStrip: KeyStripMode;
 	/** Show tool calls, results and thinking in a conversation by default. */
 	showWork: boolean;
-	/** Tint the agent bubble with the harness's accent when no colour is picked. */
-	harnessBubbles: boolean;
+	/**
+	 * How the harness's accent reaches a bubble. 'edge' is a stripe down the
+	 * side; 'tint' blends it into the background, which muddies every theme
+	 * colour it touches; 'off' leaves the bubble alone.
+	 */
+	harnessAccent: HarnessAccent;
+	/** Render a tool call the way a terminal shows it, or as raw JSON. */
+	toolDetail: ToolDetail;
 	enterSends: boolean;
 	dictationLang: string;
 	/**
@@ -48,7 +56,8 @@ export const DEFAULTS: Prefs = {
 	monoSize: 11,
 	keyStrip: 'peek',
 	showWork: true,
-	harnessBubbles: true,
+	harnessAccent: 'edge',
+	toolDetail: 'formatted',
 	enterSends: false,
 	dictationLang: 'en-GB',
 	dictationHold: true,
@@ -78,6 +87,8 @@ const SORTS: SortBy[] = ['status-title', 'title', 'recent'];
 const PREVIEWS: PreviewMode[] = ['activity', 'cwd', 'none'];
 const THEMES: Theme[] = ['light', 'dark', 'system'];
 const STRIPS: KeyStripMode[] = ['always', 'peek'];
+const ACCENTS: HarnessAccent[] = ['edge', 'tint', 'off'];
+const TOOL_DETAILS: ToolDetail[] = ['formatted', 'json'];
 
 function pick<T extends string>(value: unknown, allowed: T[], fallback: T): T {
 	return allowed.includes(value as T) ? (value as T) : fallback;
@@ -125,7 +136,8 @@ export function normalisePrefs(raw: unknown): Prefs {
 		keyStrip:
 			stored.v === VERSION ? pick(stored.keyStrip, STRIPS, DEFAULTS.keyStrip) : DEFAULTS.keyStrip,
 		showWork: bool(stored.showWork, DEFAULTS.showWork),
-		harnessBubbles: bool(stored.harnessBubbles, DEFAULTS.harnessBubbles),
+		harnessAccent: pick(stored.harnessAccent, ACCENTS, DEFAULTS.harnessAccent),
+		toolDetail: pick(stored.toolDetail, TOOL_DETAILS, DEFAULTS.toolDetail),
 		enterSends: bool(stored.enterSends, DEFAULTS.enterSends),
 		dictationLang:
 			typeof stored.dictationLang === 'string' && stored.dictationLang.trim()
