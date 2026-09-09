@@ -1,5 +1,7 @@
 <script lang="ts">
 	import { browser } from '$app/environment';
+	import { prefs } from '$lib/prefs.svelte';
+	import { highlight } from '$lib/highlight';
 	import { marked } from 'marked';
 	import DOMPurify from 'dompurify';
 
@@ -66,9 +68,43 @@
 	 * hydration upgrades it in place.
 	 */
 	const html = $derived(browser ? render(text) : '');
+
+	/**
+	 * Highlight fenced blocks AFTER sanitising, by reading each block's
+	 * textContent and replacing its markup with shiki's.
+	 *
+	 * Deliberately not part of the markdown pass: that would mean letting
+	 * `style` attributes through DOMPurify for agent-authored HTML. Here the
+	 * input is text taken from the sanitised DOM and the output is markup we
+	 * generated, so nothing the agent wrote can survive as HTML.
+	 */
+	let host = $state<HTMLDivElement | undefined>();
+
+	$effect(() => {
+		// Re-runs when the text or the theme changes; both change the output.
+		void html;
+		const dark = prefs.resolvedTheme === 'dark';
+		const root = host;
+		if (!root) return;
+		let cancelled = false;
+		for (const block of root.querySelectorAll('pre > code')) {
+			if (block.getAttribute('data-lit') === 'yes') continue;
+			// marked writes the fence's language as `language-ts`.
+			const lang = [...block.classList].find((c) => c.startsWith('language-'))?.slice(9) ?? null;
+			const source = block.textContent ?? '';
+			void highlight(source, lang, dark).then((lit) => {
+				if (cancelled || lit === null) return;
+				block.innerHTML = lit;
+				block.setAttribute('data-lit', 'yes');
+			});
+		}
+		return () => {
+			cancelled = true;
+		};
+	});
 </script>
 
-<div class="rich" style="--mono: {mono}px">
+<div class="rich" bind:this={host} style="--mono: {mono}px">
 	{#if browser}
 		<!-- eslint-disable-next-line svelte/no-at-html-tags -- sanitised directly above -->
 		{@html html}

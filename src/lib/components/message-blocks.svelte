@@ -1,6 +1,8 @@
 <script lang="ts">
 	import { SvelteSet } from 'svelte/reactivity';
 	import RichText from './rich-text.svelte';
+	import CodeBlock from './code-block.svelte';
+	import { langForPath } from '$lib/highlight';
 	import type { Block } from '$lib/server/transcript/types';
 
 	let {
@@ -87,16 +89,34 @@
 				</summary>
 				<div class="body" style="--mono: {mono}px">
 					{#if block.diff}
+						<!-- Both sides highlighted as the language of the file being
+						     edited, so a diff reads like the editor rather than a
+						     wall of red and green. -->
 						<div class="diff">
-							{#each lines(block.diff.before) as line, n (`-${n}`)}
-								<div class="del">-{line}</div>
-							{/each}
-							{#each lines(block.diff.after) as line, n (`+${n}`)}
-								<div class="add">+{line}</div>
-							{/each}
+							{#if block.diff.before}
+								<CodeBlock
+									code={lines(block.diff.before)
+										.map((l) => `-${l}`)
+										.join('\n')}
+									lang={langForPath(block.diff.file)}
+									{mono}
+									tone="del"
+								/>
+							{/if}
+							{#if block.diff.after}
+								<CodeBlock
+									code={lines(block.diff.after)
+										.map((l) => `+${l}`)
+										.join('\n')}
+									lang={langForPath(block.diff.file)}
+									{mono}
+									tone="add"
+								/>
+							{/if}
 						</div>
 					{:else if block.detail}
-						<pre class="pre">{block.detail}</pre>
+						<!-- A tool's input is always JSON. -->
+						<CodeBlock code={block.detail} lang="json" {mono} />
 					{/if}
 					{#if block.result}
 						<pre class="pre out" class:bad={block.result.isError}>{block.result.text}</pre>
@@ -263,21 +283,8 @@
 		margin: 0 0 0.4em;
 		max-height: 20em;
 		overflow-y: auto;
-		border-radius: 6px;
-		overflow-x: auto;
-		font-family: var(--font-mono, ui-monospace, monospace);
-		font-size: var(--mono);
-		background: color-mix(in srgb, currentColor 8%, transparent);
-		padding: 0.4em 0;
-	}
-	.diff div {
-		padding: 0 0.6em;
-		white-space: pre;
-	}
-	.del {
-		background: color-mix(in srgb, #d9534f 16%, transparent);
-	}
-	.add {
-		background: color-mix(in srgb, #3fa45b 16%, transparent);
+		display: flex;
+		flex-direction: column;
+		gap: 2px;
 	}
 </style>
