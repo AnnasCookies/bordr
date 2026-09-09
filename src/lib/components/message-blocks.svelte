@@ -1,6 +1,6 @@
 <script lang="ts">
+	import { SvelteSet } from 'svelte/reactivity';
 	import RichText from './rich-text.svelte';
-	import type { ResolvedPathname } from '$app/types';
 	import type { Block } from '$lib/server/transcript/types';
 
 	let {
@@ -20,6 +20,20 @@
 		return text.length === 0 ? [] : text.split('\n');
 	}
 
+	/**
+	 * Which photos have been opened out. Keyed by index rather than src: the
+	 * same screenshot can legitimately appear twice in one turn, and each
+	 * copy should open on its own.
+	 */
+	// SvelteSet, not Set: a plain Set mutated in place is the same object, so
+	// nothing would re-render. This one tracks its own reads and writes.
+	const expanded = new SvelteSet<number>();
+
+	function toggle(i: number) {
+		if (expanded.has(i)) expanded.delete(i);
+		else expanded.add(i);
+	}
+
 	function hasBody(block: Block): boolean {
 		if (block.kind !== 'tool') return false;
 		return block.detail !== '' || block.result !== null || block.diff !== null;
@@ -37,18 +51,22 @@
 		{/if}
 	{:else if block.kind === 'image'}
 		<figure class="shot">
-			<!-- Opens the full-size original; a phone screenshot is unreadable
-			     at thumbnail height and the cap below makes it one. -->
 			<!--
-				Opens the full-size original. Cast rather than resolve()d: `src`
-				is not a route but a byte endpoint (/api/uploads/… or /raw/…)
-				composed server-side by `servableUrl`, and it opens in a new tab
-				rather than navigating the app. Same escape hatch the file
-				viewer uses for its download links.
+				Collapsed to a strip by default. A portrait phone screenshot is
+				taller than the viewport, and several of them turn a conversation
+				into a scrolling exercise — but shrinking one to a thumbnail
+				defeats the point of sending it, so tapping opens it out in place.
 			-->
-			<a href={block.src as ResolvedPathname} target="_blank" rel="noopener noreferrer">
+			<button
+				type="button"
+				class="frame"
+				class:open={expanded.has(i)}
+				onclick={() => toggle(i)}
+				aria-expanded={expanded.has(i)}
+			>
 				<img src={block.src} alt={block.caption || 'photo'} loading="lazy" />
-			</a>
+				{#if !expanded.has(i)}<span class="hint">tap to expand</span>{/if}
+			</button>
 			{#if block.caption}<figcaption>{block.caption}</figcaption>{/if}
 		</figure>
 	{:else if block.kind === 'thinking' && showWork}
@@ -107,18 +125,46 @@
 	.shot {
 		margin: 0 0 0.5em;
 	}
-	.shot img {
-		max-width: 100%;
-		/* A portrait phone screenshot is twice the viewport tall, so one photo
-		   costs several screens of scrolling to get past. Capped and tappable
-		   rather than shrunk to a thumbnail: the point of sending a screenshot
-		   is usually that it is readable. */
-		max-height: 55vh;
-		width: auto;
-		height: auto;
-		object-fit: contain;
-		border-radius: 10px;
+	.frame {
 		display: block;
+		position: relative;
+		width: 100%;
+		padding: 0;
+		border: 0;
+		background: none;
+		border-radius: 10px;
+		overflow: hidden;
+		cursor: pointer;
+		/* The collapsed strip. Deep enough to recognise a screenshot by, short
+		   enough that three in a row are still scrollable past. */
+		max-height: 8.5rem;
+	}
+	.frame.open {
+		max-height: none;
+	}
+	.frame img {
+		display: block;
+		width: 100%;
+		height: auto;
+		border-radius: 10px;
+	}
+	/* Cropped from the TOP while collapsed: a screenshot's subject is almost
+	   always the top of the screen, not the navigation bar at the bottom. */
+	.frame:not(.open) img {
+		height: 8.5rem;
+		object-fit: cover;
+		object-position: top;
+	}
+	.hint {
+		position: absolute;
+		right: 0.4rem;
+		bottom: 0.4rem;
+		padding: 0.1rem 0.4rem;
+		border-radius: 999px;
+		background: rgba(0, 0, 0, 0.6);
+		color: #fff;
+		font-size: 0.72em;
+		pointer-events: none;
 	}
 	.shot figcaption {
 		margin-top: 0.3em;

@@ -1290,7 +1290,7 @@
 				onkeydown={onKeydown}
 				rows="1"
 				placeholder={detail.picker ? 'Or type a reply…' : 'Type a reply…'}
-				class="[field-sizing:content] max-h-40 min-w-0 flex-1 resize-none bg-transparent py-1.5 text-[16px] placeholder:text-faint focus:outline-none"
+				class="[field-sizing:content] max-h-[min(10rem,22dvh)] min-w-0 flex-1 resize-none bg-transparent py-1.5 text-[16px] placeholder:text-faint focus:outline-none"
 			></textarea>
 			{#if speechSupported}
 				{#if dictating}
