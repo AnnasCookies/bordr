@@ -53,7 +53,9 @@
 	let draft = $state('');
 
 	/** A draft that starts with `!` is a shell command Claude Code will run. */
-	const isShell = $derived(draft.startsWith('!') && draft.trim().length > 1);
+	// The bare `!` counts: the box must say what it is the moment the key is
+	// pressed, not once a command has been typed after it.
+	const isShell = $derived(draft.startsWith('!'));
 	let textarea = $state<HTMLTextAreaElement | undefined>();
 
 	/**

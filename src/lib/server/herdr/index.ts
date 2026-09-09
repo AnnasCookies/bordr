@@ -234,6 +234,26 @@ export async function settleScreen(
  */
 export async function promptAgent(paneId: string, text: string): Promise<void> {
 	const herdr = getClient();
+	/**
+	 * A leading `!` is a MODE SWITCH, not text.
+	 *
+	 * `agent.prompt` writes its text under bracketed paste, so a harness
+	 * receives `!pwd` as pasted characters and answers it as a question —
+	 * measured live: Claude Code replied "…branch feat/rich-transcript,
+	 * clean. What next?" instead of running anything. The `!` has to arrive as
+	 * a keystroke first, which flips the input into its shell mode (verified
+	 * by the prompt row changing from `❯` to a pink `!`), and only then is the
+	 * command pasted and submitted.
+	 */
+	const shell = text.startsWith('!');
+	if (shell) {
+		await herdr.request('pane.send_text', { pane_id: paneId, text: '!' });
+		// The TUI redraws before it will accept the rest.
+		await new Promise((r) => setTimeout(r, 250));
+		text = text.slice(1);
+		// `!` alone has nothing to run; leave the mode open for the next send.
+		if (!text.trim()) return;
+	}
 	try {
 		await herdr.request('agent.prompt', { target: paneId, text });
 	} catch (e) {
