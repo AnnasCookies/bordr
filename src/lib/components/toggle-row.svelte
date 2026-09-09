@@ -1,10 +1,20 @@
 <script lang="ts">
+	import type { Snippet } from 'svelte';
+
 	let {
 		label,
 		hint,
 		checked,
-		onchange
-	}: { label: string; hint?: string; checked: boolean; onchange: (v: boolean) => void } = $props();
+		onchange,
+		preview
+	}: {
+		label: string;
+		hint?: string;
+		checked: boolean;
+		onchange: (v: boolean) => void;
+		/** A live example of what the switch does, shown under the row. */
+		preview?: Snippet;
+	} = $props();
 </script>
 
 <button
@@ -29,3 +39,7 @@
 		></span>
 	</span>
 </button>
+
+{#if preview}
+	<div class="px-3.5 pt-0 pb-3">{@render preview()}</div>
+{/if}

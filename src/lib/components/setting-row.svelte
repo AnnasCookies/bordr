@@ -6,16 +6,21 @@
 </script>
 
 <script lang="ts" generics="T extends string">
+	import type { Snippet } from 'svelte';
+
 	let {
 		label,
 		options,
 		value,
-		onchange
+		onchange,
+		preview
 	}: {
 		label: string;
 		options: Segment<T>[];
 		value: T;
 		onchange: (v: T) => void;
+		/** A live example of what the current choice does. */
+		preview?: Snippet;
 	} = $props();
 </script>
 
@@ -34,4 +39,7 @@
 			</button>
 		{/each}
 	</div>
+	{#if preview}
+		<div class="mt-2.5">{@render preview()}</div>
+	{/if}
 </div>

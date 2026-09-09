@@ -15,6 +15,40 @@
 	import { onMount } from 'svelte';
 	import { resolve } from '$app/paths';
 	import type { HarnessAccent, ToolDetail, KeyStripMode } from '$lib/prefs.svelte';
+	import MessageBlocks from '$lib/components/message-blocks.svelte';
+	// Aliased: `ToolDetail` is already the name of the preference type.
+	import ToolDetailView from '$lib/components/tool-detail.svelte';
+	import { harnessBubble, harnessHex, harnessText } from '$lib/theme';
+	import type { Block } from '$lib/server/transcript/types';
+
+	/**
+	 * The examples under each setting are rendered by the SAME components the
+	 * conversation uses, from real block data. A hand-drawn mock would drift
+	 * the first time the renderer changed; this cannot.
+	 */
+	const sampleInput = { command: 'bun run test:unit', description: 'Run the unit tests' };
+	const sampleTool: Block[] = [
+		{
+			kind: 'tool',
+			name: 'Bash',
+			summary: 'Run the unit tests',
+			input: sampleInput,
+			result: { text: 'Tests  322 passed (322)', isError: false, truncatedLines: 0 },
+			diff: null
+		}
+	];
+	const sampleWork: Block[] = [{ kind: 'text', text: 'All 322 passed.' }, ...sampleTool];
+
+	const sampleEdge = $derived(
+		prefs.value.harnessAccent === 'edge' && !prefs.value.agentBubble
+			? harnessHex('claude', prefs.resolvedTheme === 'dark')
+			: ''
+	);
+	const sampleBubble = $derived(
+		prefs.value.harnessAccent === 'tint' && !prefs.value.agentBubble
+			? harnessBubble('claude', prefs.resolvedTheme === 'dark', prefs.bubbleColours.agentBubble)
+			: prefs.bubbleColours.agentBubble
+	);
 
 	let pushState = $state<PushState>('unknown');
 	let pushMessage = $state<string | null>(null);
@@ -41,6 +75,100 @@
 		setTimeout(() => (testState = 'idle'), 4000);
 	}
 </script>
+
+<!--
+	Live examples. Every one reads the real preference and renders with the
+	real component where there is one, so a preview cannot drift from the
+	thing it is previewing — the failure mode of a hand-drawn mock.
+-->
+{#snippet bubblePreview()}
+	<div class="rounded-lg bg-page p-2">
+		{#if prefs.value.bubbles}
+			<div class="mb-1 flex justify-end">
+				<span
+					class="max-w-[80%] rounded-2xl rounded-br-sm px-2.5 py-1.5 text-[12.5px]"
+					style="background:{prefs.bubbleColours.userBubble}; color:{prefs.bubbleColours.userText}"
+					>run the tests</span
+				>
+			</div>
+			<div class="flex">
+				<span
+					class="max-w-[80%] rounded-2xl rounded-bl-sm px-2.5 py-1.5 text-[12.5px]"
+					style="background:{sampleBubble}; color:{prefs.bubbleColours.agentText}{sampleEdge
+						? `; border-left:3px solid ${sampleEdge}`
+						: ''}">All 322 passed.</span
+				>
+			</div>
+		{:else}
+			<p class="text-[12.5px]">
+				<span class="font-mono text-working">›</span> run the tests
+			</p>
+			<p class="text-[12.5px]">
+				<span class="font-mono {harnessText('claude')}">·</span> All 322 passed.
+			</p>
+		{/if}
+	</div>
+{/snippet}
+
+{#snippet accentPreview()}
+	<div class="flex gap-1.5 rounded-lg bg-page p-2">
+		{#each ['claude', 'codex', 'pi'] as kind (kind)}
+			<span
+				class="flex-1 rounded-lg rounded-bl-sm px-2 py-1.5 text-center font-mono text-[11px]"
+				style="background:{prefs.value.harnessAccent === 'tint'
+					? harnessBubble(kind, prefs.resolvedTheme === 'dark', prefs.bubbleColours.agentBubble)
+					: prefs.bubbleColours.agentBubble}; color:{prefs.bubbleColours.agentText}{prefs.value
+					.harnessAccent === 'edge'
+					? `; border-left:3px solid ${harnessHex(kind, prefs.resolvedTheme === 'dark')}`
+					: ''}">{kind}</span
+			>
+		{/each}
+	</div>
+{/snippet}
+
+{#snippet workPreview()}
+	<div class="rounded-lg bg-page p-2">
+		<MessageBlocks
+			blocks={sampleWork}
+			mono={prefs.value.monoSize}
+			showWork={prefs.value.showWork}
+		/>
+		{#if !prefs.value.showWork}
+			<p class="text-[12px] text-muted">Tool calls hidden; the agent's prose still shows.</p>
+		{/if}
+	</div>
+{/snippet}
+
+{#snippet toolPreview()}
+	<!-- The detail directly, not the accordion around it: the whole point of
+	     this setting is what is INSIDE the row, and a collapsed row shows
+	     nothing either way. -->
+	<div class="rounded-lg bg-page p-2">
+		<p class="mb-1 font-mono text-[11px] text-muted">Bash · Run the unit tests</p>
+		<ToolDetailView name="Bash" input={sampleInput} mono={prefs.value.monoSize} />
+	</div>
+{/snippet}
+
+{#snippet monoPreview()}
+	<div class="rounded-lg bg-page p-2">
+		<ToolDetailView name="Bash" input={sampleInput} mono={prefs.value.monoSize} />
+	</div>
+{/snippet}
+
+{#snippet stripPreview()}
+	<div class="rounded-lg bg-page p-2 text-[12px] text-muted">
+		{#if prefs.value.keyStrip === 'always'}
+			Every conversation opens with the terminal peek and the key strip below it.
+		{:else}
+			Hidden until you tap ⌨ — the conversation starts as chat only.
+		{/if}
+		<div class="mt-1.5 flex gap-1">
+			{#each ['esc', 'tab', '↑', '↓', '⏎'] as key (key)}
+				<span class="rounded-md bg-chip px-2 py-1 font-mono text-[11px]">{key}</span>
+			{/each}
+		</div>
+	</div>
+{/snippet}
 
 <div class="flex min-h-dvh flex-col">
 	<header class="px-4 pt-4 pb-3">
@@ -117,7 +245,9 @@
 						{ v: '13', l: '13' }
 					]}
 					onchange={(v) => prefs.set('monoSize', Number(v))}
-				/>
+				>
+					{#snippet preview()}{@render monoPreview()}{/snippet}
+				</SettingRow>
 			</div>
 		</section>
 
@@ -134,7 +264,9 @@
 						{ v: 'peek' as KeyStripMode, l: 'On demand' }
 					]}
 					onchange={(v) => prefs.set('keyStrip', v)}
-				/>
+				>
+					{#snippet preview()}{@render stripPreview()}{/snippet}
+				</SettingRow>
 				<ToggleRow
 					label="Swipe to cycle agents"
 					hint="Swipe across a conversation for the next or previous agent in the list. Swiping from either screen edge still goes back."
@@ -181,13 +313,17 @@
 					hint="Off uses the prefixed transcript: › you, · the agent."
 					checked={prefs.value.bubbles}
 					onchange={(v) => prefs.set('bubbles', v)}
-				/>
+				>
+					{#snippet preview()}{@render bubblePreview()}{/snippet}
+				</ToggleRow>
 				<ToggleRow
 					label="Show the work"
 					hint="Tool calls, their results and the agent's thinking, as expandable rows. Each conversation's own toggle overrides this and is remembered."
 					checked={prefs.value.showWork}
 					onchange={(v) => prefs.set('showWork', v)}
-				/>
+				>
+					{#snippet preview()}{@render workPreview()}{/snippet}
+				</ToggleRow>
 				<SettingRow
 					label="Tool calls"
 					value={prefs.value.toolDetail}
@@ -196,7 +332,9 @@
 						{ v: 'json' as ToolDetail, l: 'Raw JSON' }
 					]}
 					onchange={(v) => prefs.set('toolDetail', v)}
-				/>
+				>
+					{#snippet preview()}{@render toolPreview()}{/snippet}
+				</SettingRow>
 				{#if prefs.value.bubbles}
 					<ColourRow
 						label="You"
@@ -221,7 +359,9 @@
 							{ v: 'off' as HarnessAccent, l: 'Off' }
 						]}
 						onchange={(v) => prefs.set('harnessAccent', v)}
-					/>
+					>
+						{#snippet preview()}{@render accentPreview()}{/snippet}
+					</SettingRow>
 					<p class="px-3.5 pb-2 text-[12px] text-muted">
 						Edge puts the harness's colour down the side of the bubble; tint blends it into the
 						background. A colour picked above overrides both.
