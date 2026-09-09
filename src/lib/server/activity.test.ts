@@ -28,7 +28,9 @@ describe('extractActivity', () => {
 	});
 
 	it('takes the LAST spinner row, not an older one left on screen', () => {
-		const screen = ['✻ Brewed for 9s · done 11:15 PM', 'more output', '✢ Thinking… (2s)'].join('\n');
+		const screen = ['✻ Brewed for 9s · done 11:15 PM', 'more output', '✢ Thinking… (2s)'].join(
+			'\n'
+		);
 		expect(extractActivity(screen)?.text).toBe('Thinking… (2s)');
 	});
 
