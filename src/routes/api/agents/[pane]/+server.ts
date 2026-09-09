@@ -1,8 +1,8 @@
 import { error, json } from '@sveltejs/kit';
-import { rawAgent, readVisible, toSummary } from '$lib/server/herdr';
+import { rawAgent, readPane, readVisible, toSummary } from '$lib/server/herdr';
 import { adapterFor } from '$lib/server/transcript';
 import { DEFAULT_TAIL_BYTES, readTranscriptTail } from '$lib/server/transcript/tail';
-import { menuFooter, parsePicker, pendingAsk } from '$lib/server/picker';
+import { menuFooter, parsePicker, pendingAsk, suggestionFrom } from '$lib/server/picker';
 import { extractStatusLines } from '$lib/server/status';
 import { cleanSnapshot } from '$lib/server/snapshot';
 import type { AgentDetail, Message } from '$lib/types';
@@ -94,6 +94,28 @@ export const GET: RequestHandler = async ({ params, url }) => {
 	// tappable. Any picker on screen is answerable.
 	const picker = parsePicker(visible);
 
+	/**
+	 * Claude Code's ghost prompt, when it is offering one.
+	 *
+	 * Costs a second screen read, so it is gated hard: only when the agent is
+	 * waiting for input and nothing else is on screen. A busy pane repaints
+	 * constantly and has no input box to read anyway.
+	 *
+	 * Read separately rather than switching the main read to ANSI: every other
+	 * parser here expects herdr's own plain-text rendering, and re-deriving it
+	 * by stripping escapes would risk changing what they see.
+	 */
+	let suggestion: string | null = null;
+	if (!picker && (summary.status === 'idle' || summary.status === 'done')) {
+		try {
+			suggestion = suggestionFrom(
+				await readPane(summary.paneId, { source: 'visible', ansi: true })
+			);
+		} catch {
+			// A failed read is not a reason to fail the conversation.
+		}
+	}
+
 	const sessionId = (raw.agent_session as { value?: string } | undefined)?.value;
 	const adapter = adapterFor(summary.agent);
 
@@ -161,6 +183,7 @@ export const GET: RequestHandler = async ({ params, url }) => {
 		menu: picker || summary.status === 'working' ? null : menuFooter(visible),
 		degraded,
 		degradedMessage: explain(degraded, summary.agent, reason),
+		suggestion,
 		screenTail,
 		statusLines,
 		hasMore

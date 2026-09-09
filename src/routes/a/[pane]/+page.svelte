@@ -1089,6 +1089,25 @@
 		class="sticky bottom-0 z-10 border-t border-hairline bg-page px-3 py-2.5"
 		style="padding-bottom: max(0.625rem, env(safe-area-inset-bottom))"
 	>
+		<!--
+			The harness's own ghost prompt. Tapping fills the box rather than
+			sending: on a phone you cannot see what you are about to commit to
+			the way you can in a terminal, and it is usually a starting point
+			worth editing. Hidden the moment you type anything of your own.
+		-->
+		{#if detail.suggestion && draft.trim() === ''}
+			<button
+				class="mb-2 flex w-full items-center gap-2 rounded-xl border border-hairline bg-card px-3 py-2 text-left"
+				onclick={() => {
+					draft = detail.suggestion ?? '';
+					textarea?.focus();
+				}}
+			>
+				<span class="shrink-0 text-[13px] text-faint" aria-hidden="true">&rarr;</span>
+				<span class="min-w-0 flex-1 truncate text-[14px] text-muted">{detail.suggestion}</span>
+			</button>
+		{/if}
+
 		{#if previews.length > 0 || preparing > 0}
 			<div class="mb-2 flex items-center gap-2 overflow-x-auto">
 				{#each previews as src, i (src)}

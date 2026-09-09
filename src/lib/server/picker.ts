@@ -379,3 +379,45 @@ export function menuFooter(visible: string): string | null {
 	}
 	return null;
 }
+
+/**
+ * The ghost prompt Claude Code offers in its input box — the one a terminal
+ * accepts with the right arrow, then Enter.
+ *
+ * It never reaches the transcript (nothing is written until it is accepted),
+ * so the screen is the only source. Telling it apart from text you actually
+ * typed is what the ANSI is for, and the three states are cleanly separated
+ * (measured across eleven live panes, 2026-09-09):
+ *
+ *   empty box   `\u276f `             no SGR at all
+ *   typed text  SGR 38;2;255;255;255 with a 48; background — real characters
+ *   suggestion  SGR 2 (dim), no background — a hint painted over an empty box
+ *
+ * ponytail: heuristic on one harness's styling, and Claude Code could restyle
+ * it. It fails closed — a changed style yields no suggestion, never a wrong
+ * one — and the key strip's right arrow still accepts it regardless.
+ */
+// Built from a char code, not a literal escape: the same approach ansi.ts
+// takes, and what keeps no-control-regex satisfied.
+const ESC = String.fromCharCode(27);
+const INPUT_ROW = /\u276f[ \u00a0]([\s\S]*?)(?:\r|$)/;
+const DIM_RUN = new RegExp(`${ESC}\\[2m([^]*)`);
+const HAS_BACKGROUND = new RegExp(`${ESC}\\[48;`);
+const SGR = new RegExp(`${ESC}\\[[0-9;]*m`, 'g');
+
+export function suggestionFrom(ansi: string): string | null {
+	for (const line of ansi.split('\n')) {
+		const row = INPUT_ROW.exec(line);
+		if (!row) continue;
+		const payload = row[1];
+		// A background means these are real characters in the buffer, not a hint
+		// painted over an empty box.
+		if (HAS_BACKGROUND.test(payload)) continue;
+		const dim = DIM_RUN.exec(payload);
+		if (!dim) continue;
+		const text = dim[1].replace(SGR, '').replace(/\s+/g, ' ').trim();
+		if (text.length === 0) continue;
+		return text;
+	}
+	return null;
+}
