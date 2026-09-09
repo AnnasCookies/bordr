@@ -5,6 +5,7 @@ import { backfillBlocks } from '$lib/server/transcript/types';
 import { DEFAULT_TAIL_BYTES, readTranscriptTail } from '$lib/server/transcript/tail';
 import { menuFooter, parsePicker, pendingAsk, suggestionFrom } from '$lib/server/picker';
 import { extractStatusLines } from '$lib/server/status';
+import { stripAnsi } from '$lib/ansi';
 import { cleanSnapshot } from '$lib/server/snapshot';
 import type { AgentDetail, Message } from '$lib/types';
 import type { RequestHandler } from './$types';
@@ -106,15 +107,27 @@ export const GET: RequestHandler = async ({ params, url }) => {
 	 * parser here expects herdr's own plain-text rendering, and re-deriving it
 	 * by stripping escapes would risk changing what they see.
 	 */
+	/**
+	 * The same screen again, with its colour.
+	 *
+	 * Read separately rather than switching the main read to ANSI: every other
+	 * parser here expects herdr's own plain-text rendering, and re-deriving it
+	 * by stripping escapes would risk changing what they see. One extra read
+	 * on a local socket is a few milliseconds.
+	 */
+	let ansiVisible = '';
+	try {
+		ansiVisible = await readPane(summary.paneId, { source: 'visible', ansi: true });
+	} catch {
+		// A failed read costs the colour and the ghost prompt, not the page.
+	}
+
+	// Claude Code's ghost prompt, when it is offering one. Only when the agent
+	// is waiting for input and nothing else is on screen: a busy pane repaints
+	// constantly and has no input box to read anyway.
 	let suggestion: string | null = null;
 	if (!picker && (summary.status === 'idle' || summary.status === 'done')) {
-		try {
-			suggestion = suggestionFrom(
-				await readPane(summary.paneId, { source: 'visible', ansi: true })
-			);
-		} catch {
-			// A failed read is not a reason to fail the conversation.
-		}
+		suggestion = suggestionFrom(ansiVisible);
 	}
 
 	const sessionId = (raw.agent_session as { value?: string } | undefined)?.value;
@@ -168,6 +181,26 @@ export const GET: RequestHandler = async ({ params, url }) => {
 	// strips it from snapshot bodies so it never shows twice.
 	const statusLines = extractStatusLines(visible);
 
+	/**
+	 * The same lines with their SGR colour, for the header.
+	 *
+	 * Matched by content rather than re-running the scrape over ANSI: the
+	 * extractor's own guards (a leading box-drawing character disqualifies a
+	 * line) would never fire against text that starts with an escape
+	 * sequence, and box borders would start being reported as status lines.
+	 * Falls back to the plain line whenever the match fails.
+	 */
+	const ansiRows = ansiVisible.split('\n');
+	const plainRows = ansiRows.map((row) =>
+		stripAnsi(row)
+			.trim()
+			.replace(/\s{2,}/g, '  ')
+	);
+	const statusAnsi = statusLines.map((line) => {
+		const at = plainRows.indexOf(line);
+		return at >= 0 ? ansiRows[at].trim() : line;
+	});
+
 	// The pane's screen, for driving a TUI from the keypad: every non-blank
 	// row, minus the footer already in the header. A tail of eighteen rows
 	// cut Claude Code's /config panel off above the highlighted row, and
@@ -191,6 +224,7 @@ export const GET: RequestHandler = async ({ params, url }) => {
 		suggestion,
 		screenTail,
 		statusLines,
+		statusAnsi,
 		hasMore
 	} satisfies AgentDetail);
 };

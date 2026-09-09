@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { ansiToHtml } from './ansi';
+import { ansiToHtml, stripAnsi } from './ansi';
 
 const ESC = String.fromCharCode(27);
 const sgr = (codes: string) => `${ESC}[${codes}m`;
@@ -88,5 +88,22 @@ describe('ansiToHtml: terminal cell grid', () => {
 		const html = ansiToHtml('\u001b[31m─\u001b[0m', true);
 		expect(html).toContain('color:#f87171');
 		expect(html).toContain('class="tc"');
+	});
+});
+
+describe('stripAnsi', () => {
+	const E = String.fromCharCode(27);
+
+	it('leaves what a terminal would actually show', () => {
+		expect(stripAnsi(`${E}[0m${E}[38;2;136;136;136mCTX 48%${E}[0m`)).toBe('CTX 48%');
+	});
+
+	it('is a no-op on text that carries no escapes', () => {
+		expect(stripAnsi('plain 100%')).toBe('plain 100%');
+	});
+
+	it('drops OSC sequences too, not just SGR', () => {
+		// BEL-terminated, which is the form a shell actually writes a title in.
+		expect(stripAnsi(`${E}]0;a title\u0007done`)).toBe('done');
 	});
 });

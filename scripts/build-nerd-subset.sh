@@ -1,28 +1,37 @@
 #!/usr/bin/env bash
-# Rebuild static/fonts/nerd-symbols.woff2.
+# Rebuild the Nerd Font symbol subsets in static/fonts/.
 #
-# Why a subset: the full CaskaydiaMono Nerd Font Mono is 2.9MB, and the
-# Material Design range alone is ~7,000 glyphs (1MB on its own as woff2). A
-# phone should not download that to draw a spinner.
+# THREE faces, not one, each with its own unicode-range in layout.css. The
+# browser downloads a face only when the page actually contains a codepoint in
+# its range, so full coverage costs nothing for the ranges nobody uses:
 #
-# The ranges below were chosen from evidence, not taste: across every live
-# pane on this machine, 13,261 of 13,403 non-ASCII symbol uses were box
-# drawing, blocks, braille and arrows. Codicons, Devicons and Seti had zero
-# uses and are excluded; Material is limited to the few a harness status line
-# actually draws. Widen it if something shows as tofu.
+#   core   box drawing, blocks, braille, arrows, Powerline   ~13KB   almost always
+#   icons  Seti, Devicons, Codicons, Font Awesome, Weather,  ~570KB  prompt icons
+#          Font Logos, Powerline Extra, Pomicons
+#   mdi    Material Design Icons                             ~430KB  starship, etc
+#
+# Subsetting to the glyphs one machine happens to use would be smaller still,
+# but every user runs a different prompt — this way anyone's status line
+# renders, and only the person whose prompt uses Material pays for Material.
 set -euo pipefail
 
 SRC=${1:-/usr/share/fonts/TTF/CaskaydiaMonoNerdFontMono-Regular.ttf}
-OUT=${2:-static/fonts/nerd-symbols.woff2}
+OUT=${2:-static/fonts}
 
-RANGES='U+2190-2BFF,U+2500-259F,U+25A0-25FF,U+2800-28FF,U+E0A0-E0D7,U+E300-E3E3,U+F000-F2FF,U+F300-F381,U+F400-F533,U+F01BC,U+F0443,U+F04C5,U+F06A9'
+CORE='U+2190-2BFF,U+2500-259F,U+25A0-25FF,U+2800-28FF,U+E0A0-E0D7'
+ICONS='U+E000-E00A,U+E200-E2A9,U+E300-E3E3,U+E5FA-E6B7,U+E700-E8EF,U+EA60-EC1E,U+ED00-EFCE,U+F000-F2FF,U+F300-F381,U+F400-F533'
+MDI='U+F0001-F1AF0'
 
 [ -f "$SRC" ] || { echo "Source font not found: $SRC" >&2; exit 1; }
-mkdir -p "$(dirname "$OUT")"
+mkdir -p "$OUT"
 
-uvx --with brotli --from fonttools pyftsubset "$SRC" \
-  --unicodes="$RANGES" \
-  --layout-features='' --no-hinting --desubroutinize \
-  --flavor=woff2 --output-file="$OUT"
+build() {
+  uvx --with brotli --from fonttools pyftsubset "$SRC" \
+    --unicodes="$2" --layout-features='' --no-hinting --desubroutinize \
+    --flavor=woff2 --output-file="$OUT/nerd-$1.woff2"
+  printf '  nerd-%-6s %5s KB\n' "$1" "$(( $(stat -c%s "$OUT/nerd-$1.woff2") / 1024 ))"
+}
 
-printf '%s: %s KB\n' "$OUT" "$(( $(stat -c%s "$OUT") / 1024 ))"
+build core "$CORE"
+build icons "$ICONS"
+build mdi "$MDI"

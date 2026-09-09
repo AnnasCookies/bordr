@@ -157,6 +157,15 @@
 	const detail = $derived(data.detail);
 
 	/**
+	 * The status footer with its terminal colour. `statusAnsi` carries the
+	 * same lines as `statusLines` with their escapes intact; the fallback
+	 * covers a payload cached on a phone that has not reloaded yet.
+	 */
+	const statusRows = $derived(detail.statusAnsi?.length ? detail.statusAnsi : detail.statusLines);
+	const statusHtml = $derived(statusRows.map((line) => ansiToHtml(line)).join('\n'));
+	const statusHtmlFirst = $derived(ansiToHtml(statusRows[0] ?? ''));
+
+	/**
 	 * The agent bubble, tinted with this harness's accent unless a colour has
 	 * been picked by hand. A picked colour always wins: it is an explicit
 	 * choice and must not be second-guessed per harness.
@@ -821,10 +830,17 @@
 				class="flex w-full items-center gap-1 px-4 pb-1.5 text-left font-mono text-[10px] text-muted"
 				onclick={() => (statusOpen = !statusOpen)}
 			>
+				<!--
+					Safe: ansiToHtml escapes every HTML metacharacter in the payload
+					and emits only <span style="…"> wrappers for SGR colour — the
+					same guarantee the screen peek relies on, proven by the
+					escaping cases in src/lib/ansi.test.ts.
+				-->
+				<!-- eslint-disable svelte/no-at-html-tags -->
 				{#if statusOpen}
-					<span class="whitespace-pre-wrap">{detail.statusLines.join('\n')}</span>
+					<span class="whitespace-pre-wrap">{@html statusHtml}</span>
 				{:else}
-					<span class="min-w-0 flex-1 truncate">{detail.statusLines[0]}</span>
+					<span class="min-w-0 flex-1 truncate">{@html statusHtmlFirst}</span>
 					<span aria-hidden="true">▾</span>
 				{/if}
 			</button>

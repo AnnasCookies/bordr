@@ -193,3 +193,14 @@ export function ansiToHtml(input: string, gridded = false): string {
 	}
 	return out;
 }
+
+/**
+ * Drop every escape sequence, leaving the characters a terminal would show.
+ *
+ * Used to line an ANSI screen read up against herdr's own plain-text
+ * rendering of the same screen, so a line can be found by its content and
+ * then rendered with its colour.
+ */
+export function stripAnsi(input: string): string {
+	return input.replace(CSI, '').replace(OSC, '');
+}
