@@ -201,17 +201,45 @@
 	 * as your own message straight away, and retired the moment the real one
 	 * appears.
 	 */
-	let pendingSends = $state<{ id: number; text: string }[]>([]);
+	let pendingSends = $state<{ id: number; text: string; at: number }[]>([]);
 	let pendingSeq = 0;
 
 	$effect(() => {
 		if (pendingSends.length === 0) return;
-		// Matched on text rather than order: a queued prompt can land after a
-		// later one, and the harness may rewrite the tail as it goes.
-		const landed = new Set(
-			detail.messages.filter((m) => m.role === 'user').map((m) => m.text.trim())
+
+		/**
+		 * What has actually landed in the transcript.
+		 *
+		 * Matched on text rather than order: a queued prompt can land after a
+		 * later one, and the harness may rewrite the tail as it goes.
+		 *
+		 * A `!` command contributes NO text — its content is a tool block — so
+		 * it has to be recovered from the block's own command, or every shell
+		 * command sent from the phone stayed "queued" forever.
+		 */
+		// An array rather than a Set: this is a local scratch value, and the
+		// lint rule that steers reactive state to SvelteSet cannot tell the
+		// difference. There are only ever a handful of unsent prompts.
+		const landed: string[] = [];
+		for (const message of detail.messages) {
+			if (message.role !== 'user') continue;
+			if (message.text.trim()) landed.push(message.text.trim());
+			for (const block of message.blocks ?? []) {
+				if (block.kind !== 'tool' || block.name !== '!') continue;
+				const command = String(block.input?.command ?? '').trim();
+				if (command) landed.push(`!${command}`);
+			}
+		}
+
+		// A prompt cannot still be queued once the agent has stopped: if it had
+		// been taken it would be in the transcript, and if it has not it is
+		// never going to be. The grace period covers the transcript lagging the
+		// state change by a beat.
+		const settled = detail.status === 'idle' || detail.status === 'done';
+		const now = Date.now();
+		const still = pendingSends.filter(
+			(p) => !landed.includes(p.text.trim()) && !(settled && now - p.at > 20_000)
 		);
-		const still = pendingSends.filter((p) => !landed.has(p.text.trim()));
 		if (still.length !== pendingSends.length) pendingSends = still;
 	});
 
@@ -697,7 +725,8 @@
 			// Only a delivered prompt clears the box; a refused one stays put
 			// to be fixed or resent. Echo it first: herdr has accepted it, so
 			// showing it is a statement of fact, not optimism.
-			if (draft.trim()) pendingSends = [...pendingSends, { id: ++pendingSeq, text: draft }];
+			if (draft.trim())
+				pendingSends = [...pendingSends, { id: ++pendingSeq, text: draft, at: Date.now() }];
 			draft = '';
 		} catch (e) {
 			sendError = (e as Error).message;
