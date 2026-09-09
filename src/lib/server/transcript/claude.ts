@@ -160,6 +160,19 @@ function projectsDir(): string {
 const MACHINERY_PREFIXES = ['<command-message>', '<local-command-caveat>', '<system-reminder>'];
 
 /**
+ * A shell command run from the composer with `!`, and its output.
+ *
+ * Claude Code records these as two ordinary `user` string messages, so
+ * without this they rendered as literal XML in your own blue bubble:
+ * `<bash-input>pwd</bash-input>` followed by
+ * `<bash-stdout>/home/tony</bash-stdout><bash-stderr></bash-stderr>`. They are
+ * a command and its result, so they render as one.
+ */
+const BASH_INPUT = /^<bash-input>([\s\S]*)<\/bash-input>$/;
+const BASH_STDOUT = /<bash-stdout>([\s\S]*?)<\/bash-stdout>/;
+const BASH_STDERR = /<bash-stderr>([\s\S]*?)<\/bash-stderr>/;
+
+/**
  * More of Claude Code's own voice in the `user` role, none of it flagged:
  * a background agent finishing (multi-kilobyte reports, sometimes behind a
  * "[SYSTEM NOTIFICATION]" preamble), the summary it writes to itself after
@@ -304,6 +317,8 @@ export const claudeAdapter: Adapter = {
 		 * in a later entry, and an answered question must not still be offered.
 		 */
 		const asked: Array<{ at: number; tool: Block }> = [];
+		/** The `!` command still waiting for its output entry. */
+		let lastBash: Block | null = null;
 		for (const line of jsonl.split('\n')) {
 			if (!line.trim()) continue;
 
@@ -337,6 +352,37 @@ export const claudeAdapter: Adapter = {
 				if (content.startsWith('<command-name>') || content.startsWith('<local-command-stdout>')) {
 					const system = systemMessage(content);
 					if (system) messages.push(system);
+					continue;
+				}
+				const command = BASH_INPUT.exec(content.trim());
+				if (command) {
+					// The output lands in the NEXT entry, so the block is held
+					// open the same way a tool_use waits for its tool_result.
+					const tool: Block = {
+						kind: 'tool',
+						name: '!',
+						summary: clip(command[1]),
+						input: { command: command[1] },
+						result: null,
+						diff: null
+					};
+					lastBash = tool;
+					messages.push(fromBlocks('user', [tool]));
+					continue;
+				}
+				if (content.startsWith('<bash-stdout>')) {
+					const out = BASH_STDOUT.exec(content)?.[1] ?? '';
+					const err = BASH_STDERR.exec(content)?.[1] ?? '';
+					if (lastBash && lastBash.kind === 'tool') {
+						const text = [out, err].filter((part) => part.trim()).join('\n');
+						lastBash.result = {
+							text,
+							isError: err.trim().length > 0,
+							truncatedLines: 0
+						};
+						lastBash = null;
+					}
+					// Never its own message: it belongs to the command above it.
 					continue;
 				}
 				if (MACHINERY_PREFIXES.some((prefix) => content.startsWith(prefix))) continue;

@@ -51,6 +51,9 @@
 	 */
 	let showControls = $state(prefs.value.keyStrip === 'always');
 	let draft = $state('');
+
+	/** A draft that starts with `!` is a shell command Claude Code will run. */
+	const isShell = $derived(draft.startsWith('!') && draft.trim().length > 1);
 	let textarea = $state<HTMLTextAreaElement | undefined>();
 
 	/**
@@ -1290,7 +1293,16 @@
 			</p>
 		{/if}
 
-		<div class="flex items-end gap-1.5 rounded-xl border border-edge bg-card p-2">
+		<!--
+			A `!` draft is a SHELL command, not a message to the agent — it runs
+			on the host. The box says so before you send it, because the two are
+			one keystroke apart and only one of them is undoable.
+		-->
+		<div
+			class="flex items-end gap-1.5 rounded-xl border p-2 {isShell
+				? 'border-working bg-working-bg'
+				: 'border-edge bg-card'}"
+		>
 			<button
 				class="flex h-[34px] w-[34px] shrink-0 items-center justify-center rounded-lg {showControls
 					? 'bg-working-bg text-working'
@@ -1327,7 +1339,11 @@
 				bind:value={draft}
 				onkeydown={onKeydown}
 				rows="1"
-				placeholder={detail.picker ? 'Or type a reply…' : 'Type a reply…'}
+				placeholder={isShell
+					? 'Runs on the host…'
+					: detail.picker
+						? 'Or type a reply…'
+						: 'Type a reply…'}
 				class="[field-sizing:content] max-h-[min(10rem,22dvh)] min-w-0 flex-1 resize-none bg-transparent py-1.5 text-[16px] placeholder:text-faint focus:outline-none"
 			></textarea>
 			{#if speechSupported}

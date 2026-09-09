@@ -461,3 +461,45 @@ describe('AskUserQuestion', () => {
 		expect(askFromQuestions(undefined)).toBeNull();
 	});
 });
+
+describe('shell commands run with !', () => {
+	it('renders the command and its output as one block, not as XML', () => {
+		// Claude Code records both as ordinary user string messages; without
+		// this they showed as literal <bash-input> tags in the user's bubble.
+		const jsonl = [
+			JSON.stringify({ type: 'user', message: { content: '<bash-input>pwd</bash-input>' } }),
+			JSON.stringify({
+				type: 'user',
+				message: {
+					content: '<bash-stdout>/home/tony/bordr</bash-stdout><bash-stderr></bash-stderr>'
+				}
+			})
+		].join('\n');
+
+		const messages = claudeAdapter.parse(jsonl);
+		expect(messages).toHaveLength(1);
+		const tool = messages[0].blocks?.[0];
+		expect(tool).toMatchObject({ kind: 'tool', name: '!', summary: 'pwd' });
+		expect(tool && tool.kind === 'tool' && tool.result).toMatchObject({
+			text: '/home/tony/bordr',
+			isError: false
+		});
+	});
+
+	it('marks a command that wrote to stderr as an error', () => {
+		const jsonl = [
+			JSON.stringify({ type: 'user', message: { content: '<bash-input>nope</bash-input>' } }),
+			JSON.stringify({
+				type: 'user',
+				message: {
+					content: '<bash-stdout></bash-stdout><bash-stderr>nope: command not found</bash-stderr>'
+				}
+			})
+		].join('\n');
+		const tool = claudeAdapter.parse(jsonl)[0].blocks?.[0];
+		expect(tool && tool.kind === 'tool' && tool.result).toMatchObject({
+			text: 'nope: command not found',
+			isError: true
+		});
+	});
+});
