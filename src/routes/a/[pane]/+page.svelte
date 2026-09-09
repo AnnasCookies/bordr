@@ -976,10 +976,25 @@
 					{/if}
 				{/each}
 
+				{#if detail.status === 'working'}
+					<div class="ml-[22px] flex items-center gap-1.5 font-mono text-[11px] text-muted">
+						{#each [0, 1, 2] as n (n)}
+							<span
+								class="h-1 w-1 rounded-full bg-working motion-safe:animate-[bordr-pulse_1.2s_ease-in-out_infinite]"
+								style="animation-delay: {n * 0.2}s; opacity: {1 - n * 0.35}"
+							></span>
+						{/each}
+						working
+					</div>
+				{/if}
+
 				<!--
-					Sent, accepted by herdr, not yet in the transcript. Shown as
-					your own message so a queued prompt is visibly queued rather
-					than apparently lost.
+					Sent, accepted by herdr, not yet in the transcript.
+
+					BELOW the working indicator, which is where the terminal puts
+					it: the agent is still finishing the turn above, and your
+					prompt is waiting behind it. Above the spinner it read as
+					though it had already been picked up.
 				-->
 				{#each pendingSends as sent (sent.id)}
 					{#if prefs.value.bubbles}
@@ -1002,21 +1017,9 @@
 						</div>
 					{/if}
 					<p class="text-right text-[11px] text-faint">
-						{detail.status === 'working' ? 'queued' : 'sent'} · waiting for the transcript
+						{detail.status === 'working' ? 'queued behind this turn' : 'sent'}
 					</p>
 				{/each}
-
-				{#if detail.status === 'working'}
-					<div class="ml-[22px] flex items-center gap-1.5 font-mono text-[11px] text-muted">
-						{#each [0, 1, 2] as n (n)}
-							<span
-								class="h-1 w-1 rounded-full bg-working motion-safe:animate-[bordr-pulse_1.2s_ease-in-out_infinite]"
-								style="animation-delay: {n * 0.2}s; opacity: {1 - n * 0.35}"
-							></span>
-						{/each}
-						working
-					</div>
-				{/if}
 			{/if}
 
 			{#if toolCount > 0}
