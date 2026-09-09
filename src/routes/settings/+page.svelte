@@ -136,6 +136,12 @@
 					onchange={(v) => prefs.set('keyStrip', v)}
 				/>
 				<ToggleRow
+					label="Colour bubbles by harness"
+					hint="Tint the agent bubble with that harness's own accent, so claude and codex are told apart at a glance. A colour picked below always wins."
+					checked={prefs.value.harnessBubbles}
+					onchange={(v) => prefs.set('harnessBubbles', v)}
+				/>
+				<ToggleRow
 					label="Show the work"
 					hint="Tool calls, their results and the agent's thinking, as expandable rows in every conversation. Each conversation's own toggle overrides this and is remembered."
 					checked={prefs.value.showWork}

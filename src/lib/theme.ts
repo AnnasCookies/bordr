@@ -1,3 +1,5 @@
+import { parseHex } from './contrast';
+
 /** One accent per harness, used anywhere an agent is named or quoted.
  *  Full literal class strings — Tailwind cannot see composed names. */
 export const HARNESS_TEXT: Record<string, string> = {
@@ -69,3 +71,23 @@ export const STATUS_INK: Record<string, string> = {
  */
 export const UNKNOWN_RAIL =
 	'repeating-linear-gradient(0deg, var(--idle-rail) 0 4px, transparent 4px 8px)';
+
+/**
+ * The agent bubble, tinted with the harness's own accent.
+ *
+ * A full-strength accent is unreadable as a background, so the accent is
+ * blended into the neutral bubble at a low ratio — enough that claude and
+ * codex are told apart at a glance, not enough to fight the text on top.
+ * Falls back to the neutral bubble for a harness with no accent.
+ */
+export function harnessBubble(agent: string, dark: boolean, neutral: string): string {
+	const accent = HARNESS_HEX[agent];
+	if (!accent) return neutral;
+	const tint = parseHex(dark ? accent.dark : accent.light);
+	const base = parseHex(neutral);
+	if (!tint || !base) return neutral;
+	// Lighter touch on dark, where a tint reads much more strongly.
+	const ratio = dark ? 0.16 : 0.13;
+	const mixed = base.map((channel, i) => Math.round(channel + (tint[i] - channel) * ratio));
+	return `#${mixed.map((c) => c.toString(16).padStart(2, '0')).join('')}`;
+}

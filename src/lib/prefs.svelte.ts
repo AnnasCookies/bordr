@@ -18,6 +18,8 @@ export interface Prefs {
 	keyStrip: KeyStripMode;
 	/** Show tool calls, results and thinking in a conversation by default. */
 	showWork: boolean;
+	/** Tint the agent bubble with the harness's accent when no colour is picked. */
+	harnessBubbles: boolean;
 	enterSends: boolean;
 	dictationLang: string;
 	/**
@@ -46,6 +48,7 @@ export const DEFAULTS: Prefs = {
 	monoSize: 11,
 	keyStrip: 'peek',
 	showWork: true,
+	harnessBubbles: true,
 	enterSends: false,
 	dictationLang: 'en-GB',
 	dictationHold: true,
@@ -122,6 +125,7 @@ export function normalisePrefs(raw: unknown): Prefs {
 		keyStrip:
 			stored.v === VERSION ? pick(stored.keyStrip, STRIPS, DEFAULTS.keyStrip) : DEFAULTS.keyStrip,
 		showWork: bool(stored.showWork, DEFAULTS.showWork),
+		harnessBubbles: bool(stored.harnessBubbles, DEFAULTS.harnessBubbles),
 		enterSends: bool(stored.enterSends, DEFAULTS.enterSends),
 		dictationLang:
 			typeof stored.dictationLang === 'string' && stored.dictationLang.trim()

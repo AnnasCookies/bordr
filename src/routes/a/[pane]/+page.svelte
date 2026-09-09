@@ -8,7 +8,7 @@
 	import { prefs } from '$lib/prefs.svelte';
 	import { flatOrder } from '$lib/grouping';
 	import { decideSwipe, inHorizontalScroller, neighbourPane } from '$lib/swipe';
-	import { harnessBorder, harnessText, STATUS_INK } from '$lib/theme';
+	import { harnessBorder, harnessBubble, harnessText, STATUS_INK } from '$lib/theme';
 	import { ansiToHtml } from '$lib/ansi';
 	import { termGrid } from '$lib/term-grid';
 	import { throttleTrailing } from '$lib/throttle';
@@ -137,11 +137,51 @@
 	let flashKey = $state('');
 
 	const detail = $derived(data.detail);
+
+	/**
+	 * The agent bubble, tinted with this harness's accent unless a colour has
+	 * been picked by hand. A picked colour always wins: it is an explicit
+	 * choice and must not be second-guessed per harness.
+	 */
+	const agentBubbleColour = $derived(
+		prefs.value.agentBubble ||
+			(prefs.value.harnessBubbles
+				? harnessBubble(
+						detail.agent,
+						prefs.resolvedTheme === 'dark',
+						prefs.bubbleColours.agentBubble
+					)
+				: prefs.bubbleColours.agentBubble)
+	);
 	const watched = $derived(data.watched);
 	const visibleMessages = $derived(detail.messages.slice(-shown));
 	const hidden = $derived(Math.max(0, detail.messages.length - shown));
 	const canShowEarlier = $derived(hidden > 0 || detail.hasMore);
 	const toolCount = $derived(visibleMessages.reduce((n, m) => n + m.tools.length, 0));
+
+	/**
+	 * Prompts that herdr has accepted but the transcript has not caught up
+	 * with yet.
+	 *
+	 * The harness writes its file when it starts the turn, which for a queued
+	 * prompt is after whatever it is already doing — so a sent message could
+	 * sit invisible for minutes and look like it never went. These are shown
+	 * as your own message straight away, and retired the moment the real one
+	 * appears.
+	 */
+	let pendingSends = $state<{ id: number; text: string }[]>([]);
+	let pendingSeq = 0;
+
+	$effect(() => {
+		if (pendingSends.length === 0) return;
+		// Matched on text rather than order: a queued prompt can land after a
+		// later one, and the harness may rewrite the tail as it goes.
+		const landed = new Set(
+			detail.messages.filter((m) => m.role === 'user').map((m) => m.text.trim())
+		);
+		const still = pendingSends.filter((p) => !landed.has(p.text.trim()));
+		if (still.length !== pendingSends.length) pendingSends = still;
+	});
 
 	/**
 	 * The list store, not a second raw EventSource: it already owns the
@@ -623,7 +663,9 @@
 				if (!sent.ok) throw await failure(sent, 'send');
 			}
 			// Only a delivered prompt clears the box; a refused one stays put
-			// to be fixed or resent.
+			// to be fixed or resent. Echo it first: herdr has accepted it, so
+			// showing it is a statement of fact, not optimism.
+			if (draft.trim()) pendingSends = [...pendingSends, { id: ++pendingSeq, text: draft }];
 			draft = '';
 		} catch (e) {
 			sendError = (e as Error).message;
@@ -908,8 +950,7 @@
 								{#if prefs.value.bubbles}
 									<div
 										class="max-w-[92%] rounded-2xl rounded-bl-sm px-3 py-2 [overflow-wrap:anywhere]"
-										style="background:{prefs.bubbleColours.agentBubble}; color:{prefs.bubbleColours
-											.agentText}"
+										style="background:{agentBubbleColour}; color:{prefs.bubbleColours.agentText}"
 									>
 										<MessageBlocks
 											blocks={message.blocks ?? []}
@@ -933,6 +974,36 @@
 							</div>
 						</div>
 					{/if}
+				{/each}
+
+				<!--
+					Sent, accepted by herdr, not yet in the transcript. Shown as
+					your own message so a queued prompt is visibly queued rather
+					than apparently lost.
+				-->
+				{#each pendingSends as sent (sent.id)}
+					{#if prefs.value.bubbles}
+						<div class="flex justify-end">
+							<span
+								class="max-w-[85%] rounded-2xl rounded-br-sm px-3 py-2 [overflow-wrap:anywhere] whitespace-pre-wrap opacity-60"
+								style="background:{prefs.bubbleColours.userBubble}; color:{prefs.bubbleColours
+									.userText}">{sent.text}</span
+							>
+						</div>
+					{:else}
+						<div class="flex gap-2 opacity-60">
+							<span
+								class="shrink-0 font-mono text-[13px] leading-[1.7] text-working"
+								aria-hidden="true">›</span
+							>
+							<span class="min-w-0 flex-1 font-medium [overflow-wrap:anywhere] whitespace-pre-wrap"
+								>{sent.text}</span
+							>
+						</div>
+					{/if}
+					<p class="text-right text-[11px] text-faint">
+						{detail.status === 'working' ? 'queued' : 'sent'} · waiting for the transcript
+					</p>
 				{/each}
 
 				{#if detail.status === 'working'}
@@ -1185,7 +1256,13 @@
 					: 'text-muted'}"
 				aria-label="Manual controls"
 				aria-pressed={showControls}
-				onclick={() => (showControls = !showControls)}
+				onclick={() => {
+					showControls = !showControls;
+					// Remembered, not just for this conversation: the keyboard
+					// button is the only place most people will ever change
+					// this, and it used to reset on every open.
+					prefs.set('keyStrip', showControls ? 'always' : 'peek');
+				}}
 			>
 				<Icon name="keyboard" size={19} />
 			</button>

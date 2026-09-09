@@ -16,7 +16,12 @@ export interface SlashCommand {
  * contain it, then descriptions that do. Within a tier, the harness's own
  * order (built-ins first, then installed, alphabetical).
  */
-export function rankCommands(commands: SlashCommand[], typed: string, limit = 8): SlashCommand[] {
+/**
+ * The list is a scroll box, so the cap only exists to bound the DOM. Eight
+ * filled less than half of it and never scrolled, which read as "that is all
+ * there is" — with 341 commands installed it very much was not.
+ */
+export function rankCommands(commands: SlashCommand[], typed: string, limit = 60): SlashCommand[] {
 	const query = typed.replace(/^\//, '').toLowerCase();
 	if (!query) return commands.slice(0, limit);
 	const tiers: SlashCommand[][] = [[], [], []];
