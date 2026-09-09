@@ -51,6 +51,13 @@ export type Block =
 export interface Message {
 	role: 'user' | 'assistant' | 'system';
 	/**
+	 * When the harness wrote this entry, epoch milliseconds, or 0 when it did
+	 * not say. Used to slot a prompt that has been sent but not yet written to
+	 * the transcript into its real place, rather than piling every unclaimed
+	 * one at the end.
+	 */
+	at?: number;
+	/**
 	 * Text of the turn, flattened. Derived from `blocks` for adapters that
 	 * emit them. Kept because the preview, search and picker all read it, and
 	 * none of them wants block structure.
@@ -96,12 +103,18 @@ export function flattenTools(blocks: Block[]): ToolCall[] {
 }
 
 /** Build a Message from blocks, deriving the flat fields exactly once. */
-export function fromBlocks(role: Message['role'], blocks: Block[], ask?: Message['ask']): Message {
+export function fromBlocks(
+	role: Message['role'],
+	blocks: Block[],
+	ask?: Message['ask'],
+	at = 0
+): Message {
 	return {
 		role,
 		text: flattenBlocks(blocks),
 		tools: flattenTools(blocks),
 		blocks,
+		...(at ? { at } : {}),
 		...(ask ? { ask } : {})
 	};
 }

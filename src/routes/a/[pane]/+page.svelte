@@ -195,6 +195,44 @@
 	const toolCount = $derived(visibleMessages.reduce((n, m) => n + m.tools.length, 0));
 
 	/**
+	 * The transcript with any still-unclaimed prompts slotted into it by time.
+	 *
+	 * A queued prompt is NOT written to the transcript when you send it — the
+	 * harness writes its file per turn, so it exists only on that pane's
+	 * screen until the turn processes it. The terminal still shows it in
+	 * place, above whatever ran afterwards, so collecting them all at the end
+	 * put them in the wrong order the moment any tool ran after one.
+	 */
+	type Row =
+		| { kind: 'message'; message: (typeof visibleMessages)[number]; key: string }
+		| { kind: 'pending'; sent: { id: number; text: string; at: number }; key: string };
+
+	const rows = $derived.by((): Row[] => {
+		const base = detail.messages.length - visibleMessages.length;
+		const out: Row[] = visibleMessages.map((message, i) => ({
+			kind: 'message' as const,
+			message,
+			key: `m${base + i}`
+		}));
+		for (const sent of pendingSends) {
+			// After the last entry the harness wrote before this was sent.
+			// Timestamps are only on entries the harness stamped; anything
+			// unstamped keeps its relative position by falling through.
+			let at = out.length;
+			for (let i = out.length - 1; i >= 0; i--) {
+				const row = out[i];
+				const stamp = row.kind === 'message' ? (row.message.at ?? 0) : row.sent.at;
+				if (stamp && stamp <= sent.at) {
+					at = i + 1;
+					break;
+				}
+			}
+			out.splice(at, 0, { kind: 'pending', sent, key: `p${sent.id}` });
+		}
+		return out;
+	});
+
+	/**
 	 * Prompts that herdr has accepted but the transcript has not caught up
 	 * with yet.
 	 *
@@ -489,13 +527,49 @@
 		shown += 200;
 	}
 
-	function scrollBottom() {
-		window.scrollTo({ top: document.body.scrollHeight });
+	/**
+	 * Whatever is actually scrolling.
+	 *
+	 * On the phone that is the window. On desktop the conversation column
+	 * scrolls inside itself so the session tree can stay put — which silently
+	 * broke stick-to-bottom, because `window.scrollY` never moves there.
+	 */
+	function scrollHost(): HTMLElement | null {
+		if (!swipeRoot) return null;
+		return getComputedStyle(swipeRoot).overflowY === 'auto' ? swipeRoot : null;
 	}
 
+	function scrollBottom() {
+		const host = scrollHost();
+		if (host) host.scrollTop = host.scrollHeight;
+		else window.scrollTo({ top: document.body.scrollHeight });
+	}
+
+	/** Within a screenful-ish of the end, which is what "following" means. */
 	function nearBottom(): boolean {
+		const host = scrollHost();
+		if (host) return host.scrollTop + host.clientHeight >= host.scrollHeight - 160;
 		return window.innerHeight + window.scrollY >= document.body.scrollHeight - 160;
 	}
+
+	/**
+	 * Whether the reader is following the end. Drives the jump button: showing
+	 * it while already at the bottom is noise, and hiding it while scrolled up
+	 * is the thing that makes a long transcript feel like a trap.
+	 */
+	let following = $state(true);
+
+	function onScroll() {
+		following = nearBottom();
+	}
+
+	$effect(() => {
+		const host = scrollHost();
+		const target: HTMLElement | Window = host ?? window;
+		target.addEventListener('scroll', onScroll, { passive: true });
+		onScroll();
+		return () => target.removeEventListener('scroll', onScroll);
+	});
 
 	/** Refresh from the server; keep the view pinned to the bottom unless the
 	 *  reader has deliberately scrolled up. */
@@ -1036,84 +1110,118 @@
 						</button>
 					</div>
 				{:else}
-					{#each visibleMessages as message, i (detail.messages.length - visibleMessages.length + i)}
-						{#if message.role === 'system'}
-							<div class="flex justify-center">
-								<span
-									class="rounded-full border border-hairline bg-card px-3 py-1 font-mono text-[11px] text-muted"
-									>{message.text}</span
-								>
-							</div>
-						{:else if message.role === 'user'}
+					{#each rows as row (row.key)}
+						{#if row.kind === 'pending'}
+							{@const sent = row.sent}
 							{#if prefs.value.bubbles}
 								<div class="flex justify-end">
 									<span
-										class="max-w-[85%] rounded-2xl rounded-br-sm px-3 py-2 [overflow-wrap:anywhere] whitespace-pre-wrap"
+										class="max-w-[85%] rounded-2xl rounded-br-sm px-3 py-2 [overflow-wrap:anywhere] whitespace-pre-wrap opacity-60"
 										style="background:{prefs.bubbleColours.userBubble}; color:{prefs.bubbleColours
-											.userText}"
+											.userText}">{sent.text}</span
 									>
-										<MessageBlocks
-											blocks={message.blocks ?? []}
-											mono={prefs.value.monoSize}
-											plain
-										/>
-									</span>
 								</div>
 							{:else}
-								<div class="flex gap-2">
+								<div class="flex gap-2 opacity-60">
 									<span
 										class="shrink-0 font-mono text-[13px] leading-[1.7] text-working"
 										aria-hidden="true">›</span
 									>
-									<span class="min-w-0 flex-1 font-medium [overflow-wrap:anywhere]">
-										<MessageBlocks
-											blocks={message.blocks ?? []}
-											mono={prefs.value.monoSize}
-											plain
-										/>
-									</span>
+									<span
+										class="min-w-0 flex-1 font-medium [overflow-wrap:anywhere] whitespace-pre-wrap"
+										>{sent.text}</span
+									>
 								</div>
 							{/if}
-						{:else if message.text || (showWork && (message.blocks?.length ?? 0) > 0)}
-							<!-- A turn that is only tool calls has nothing to show while the
-						     work is hidden; rendering the prefix anyway left a column of
-						     bare dots separated by empty space. -->
-							<div class="flex gap-2">
-								{#if !prefs.value.bubbles}
+							<p class="text-right text-[11px] text-faint">
+								{detail.status === 'working' ? 'queued behind this turn' : 'sent'}
+							</p>
+						{:else}
+							{@const message = row.message}
+							{#if message.role === 'system'}
+								<div class="flex justify-center">
 									<span
-										class="shrink-0 font-mono text-[13px] leading-[1.7] {harnessText(detail.agent)}"
-										aria-hidden="true">·</span
+										class="rounded-full border border-hairline bg-card px-3 py-1 font-mono text-[11px] text-muted"
+										>{message.text}</span
 									>
-								{/if}
-								<div class="min-w-0 flex-1">
-									{#if prefs.value.bubbles}
-										{#if prose(message).length > 0}
-											<div
-												class="max-w-[92%] rounded-2xl rounded-bl-sm px-3 py-2 [overflow-wrap:anywhere]"
-												style="background:{agentBubbleColour}; color:{prefs.bubbleColours
-													.agentText}{agentEdge
-													? `; border-left:3px solid ${agentEdge}; border-top-left-radius:6px; border-bottom-left-radius:6px`
-													: ''}"
-											>
-												<MessageBlocks blocks={prose(message)} mono={prefs.value.monoSize} />
-											</div>
-										{/if}
-										<MessageBlocks blocks={work(message)} mono={prefs.value.monoSize} {showWork} />
-									{:else}
-										<div
-											class="border-l-2 pl-2.5 [overflow-wrap:anywhere] text-body {harnessBorder(
-												detail.agent
-											)}"
+								</div>
+							{:else if message.role === 'user'}
+								{#if prefs.value.bubbles}
+									<div class="flex justify-end">
+										<span
+											class="max-w-[85%] rounded-2xl rounded-br-sm px-3 py-2 [overflow-wrap:anywhere] whitespace-pre-wrap"
+											style="background:{prefs.bubbleColours.userBubble}; color:{prefs.bubbleColours
+												.userText}"
 										>
 											<MessageBlocks
 												blocks={message.blocks ?? []}
 												mono={prefs.value.monoSize}
+												plain
+											/>
+										</span>
+									</div>
+								{:else}
+									<div class="flex gap-2">
+										<span
+											class="shrink-0 font-mono text-[13px] leading-[1.7] text-working"
+											aria-hidden="true">›</span
+										>
+										<span class="min-w-0 flex-1 font-medium [overflow-wrap:anywhere]">
+											<MessageBlocks
+												blocks={message.blocks ?? []}
+												mono={prefs.value.monoSize}
+												plain
+											/>
+										</span>
+									</div>
+								{/if}
+							{:else if message.text || (showWork && (message.blocks?.length ?? 0) > 0)}
+								<!-- A turn that is only tool calls has nothing to show while the
+						     work is hidden; rendering the prefix anyway left a column of
+						     bare dots separated by empty space. -->
+								<div class="flex gap-2">
+									{#if !prefs.value.bubbles}
+										<span
+											class="shrink-0 font-mono text-[13px] leading-[1.7] {harnessText(
+												detail.agent
+											)}"
+											aria-hidden="true">·</span
+										>
+									{/if}
+									<div class="min-w-0 flex-1">
+										{#if prefs.value.bubbles}
+											{#if prose(message).length > 0}
+												<div
+													class="max-w-[92%] rounded-2xl rounded-bl-sm px-3 py-2 [overflow-wrap:anywhere]"
+													style="background:{agentBubbleColour}; color:{prefs.bubbleColours
+														.agentText}{agentEdge
+														? `; border-left:3px solid ${agentEdge}; border-top-left-radius:6px; border-bottom-left-radius:6px`
+														: ''}"
+												>
+													<MessageBlocks blocks={prose(message)} mono={prefs.value.monoSize} />
+												</div>
+											{/if}
+											<MessageBlocks
+												blocks={work(message)}
+												mono={prefs.value.monoSize}
 												{showWork}
 											/>
-										</div>
-									{/if}
+										{:else}
+											<div
+												class="border-l-2 pl-2.5 [overflow-wrap:anywhere] text-body {harnessBorder(
+													detail.agent
+												)}"
+											>
+												<MessageBlocks
+													blocks={message.blocks ?? []}
+													mono={prefs.value.monoSize}
+													{showWork}
+												/>
+											</div>
+										{/if}
+									</div>
 								</div>
-							</div>
+							{/if}
 						{/if}
 					{/each}
 
@@ -1137,31 +1245,6 @@
 					prompt is waiting behind it. Above the spinner it read as
 					though it had already been picked up.
 				-->
-					{#each pendingSends as sent (sent.id)}
-						{#if prefs.value.bubbles}
-							<div class="flex justify-end">
-								<span
-									class="max-w-[85%] rounded-2xl rounded-br-sm px-3 py-2 [overflow-wrap:anywhere] whitespace-pre-wrap opacity-60"
-									style="background:{prefs.bubbleColours.userBubble}; color:{prefs.bubbleColours
-										.userText}">{sent.text}</span
-								>
-							</div>
-						{:else}
-							<div class="flex gap-2 opacity-60">
-								<span
-									class="shrink-0 font-mono text-[13px] leading-[1.7] text-working"
-									aria-hidden="true">›</span
-								>
-								<span
-									class="min-w-0 flex-1 font-medium [overflow-wrap:anywhere] whitespace-pre-wrap"
-									>{sent.text}</span
-								>
-							</div>
-						{/if}
-						<p class="text-right text-[11px] text-faint">
-							{detail.status === 'working' ? 'queued behind this turn' : 'sent'}
-						</p>
-					{/each}
 				{/if}
 
 				{#if toolCount > 0}
@@ -1300,6 +1383,22 @@
 				</div>
 			{/if}
 		</main>
+
+		<!--
+			Only while scrolled away from the end. Placed just above the
+			composer so a thumb reaches it, and it never covers the last
+			message because the composer is already reserving that space.
+		-->
+		{#if !following}
+			<div class="pointer-events-none sticky bottom-0 z-20 flex justify-center pb-1">
+				<button
+					class="pointer-events-auto flex items-center gap-1 rounded-full border border-hairline bg-card px-3 py-1.5 text-[12.5px] text-working shadow-[0_2px_8px_rgba(0,0,0,.12)]"
+					onclick={() => scrollBottom()}
+				>
+					<span aria-hidden="true">↓</span> Latest
+				</button>
+			</div>
+		{/if}
 
 		<div
 			class="sticky bottom-0 z-10 border-t border-hairline bg-page px-3 py-2.5"

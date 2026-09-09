@@ -332,6 +332,7 @@ export const claudeAdapter: Adapter = {
 			// would throw and cost the whole conversation, not just the line.
 			if (parsed === null || typeof parsed !== 'object') continue;
 			const entry = parsed as {
+				timestamp?: string;
 				type?: string;
 				isMeta?: boolean;
 				isSidechain?: boolean;
@@ -339,6 +340,9 @@ export const claudeAdapter: Adapter = {
 			};
 
 			if (entry.type !== 'user' && entry.type !== 'assistant') continue;
+			// Epoch ms, so the view can interleave a prompt that has been sent
+			// but not yet written here. 0 when the harness omitted it.
+			const at = entry.timestamp ? Date.parse(entry.timestamp) || 0 : 0;
 			// Sub-agent turns share the file but are not this conversation.
 			if (entry.isSidechain === true) continue;
 			const content = entry.message?.content;
@@ -367,7 +371,7 @@ export const claudeAdapter: Adapter = {
 						diff: null
 					};
 					lastBash = tool;
-					messages.push(fromBlocks('user', [tool]));
+					messages.push(fromBlocks('user', [tool], undefined, at));
 					continue;
 				}
 				if (content.startsWith('<bash-stdout>')) {
@@ -392,7 +396,9 @@ export const claudeAdapter: Adapter = {
 					if (system) messages.push(system);
 					continue;
 				}
-				messages.push({ role: entry.type, text: content, tools: [] });
+				// Omitted when 0, so a message with no timestamp keeps the shape
+				// it has always had rather than carrying a meaningless field.
+				messages.push({ role: entry.type, text: content, tools: [], ...(at ? { at } : {}) });
 				continue;
 			}
 
