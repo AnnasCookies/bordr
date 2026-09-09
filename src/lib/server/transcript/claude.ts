@@ -93,6 +93,30 @@ export function toolLabel(name: string): string {
 	return tail ? tail : name;
 }
 
+/**
+ * Claude Code asks through the AskUserQuestion tool rather than a terminal
+ * dialog, so nothing appears on the pane's screen for the picker parser to
+ * find. The options are in the tool input; the phone answers by typing the
+ * label back, exactly as it does for codex's request_user_input.
+ *
+ * Only the first question travels: the answer goes back as one typed line, so
+ * offering options from two questions at once would send an answer to the
+ * wrong one.
+ */
+export function askFromQuestions(input: Record<string, unknown> | undefined) {
+	const questions = input?.questions;
+	if (!Array.isArray(questions) || questions.length === 0) return null;
+	const first = questions[0] as { question?: unknown; options?: unknown };
+	const question = str(first.question);
+	const options = Array.isArray(first.options)
+		? first.options
+				.map((option) => str((option as { label?: unknown })?.label))
+				.filter((label) => label.length > 0)
+		: [];
+	if (!question || options.length === 0) return null;
+	return { question, options };
+}
+
 /** Pretty-printed input for the expanded row. */
 function toolDetail(input: Record<string, unknown> | undefined): string {
 	if (!input || Object.keys(input).length === 0) return '';
@@ -284,6 +308,12 @@ export const claudeAdapter: Adapter = {
 		const messages: Message[] = [];
 		/** tool_use id -> the block awaiting its result, which lands later. */
 		const pending = new Map<string, Block>();
+		/**
+		 * Questions asked through AskUserQuestion, with the block that carries
+		 * their answer. Resolved after the whole file is read: the result lands
+		 * in a later entry, and an answered question must not still be offered.
+		 */
+		const asked: Array<{ at: number; tool: Block }> = [];
 		for (const line of jsonl.split('\n')) {
 			if (!line.trim()) continue;
 
@@ -334,6 +364,7 @@ export const claudeAdapter: Adapter = {
 			if (!Array.isArray(content_blocks)) continue;
 
 			const blocks: Block[] = [];
+			let ask: Message['ask'] | undefined;
 			for (const block of content_blocks) {
 				if (block.type === 'text' && block.text) {
 					blocks.push({ kind: 'text', text: block.text });
@@ -359,6 +390,13 @@ export const claudeAdapter: Adapter = {
 					// The result arrives in a LATER entry, keyed by this id, so
 					// the block is held open until then rather than re-scanned.
 					if (block.id) pending.set(block.id, tool);
+					if (block.name === 'AskUserQuestion') {
+						const question = askFromQuestions(block.input);
+						if (question) {
+							ask = question;
+							asked.push({ at: messages.length, tool });
+						}
+					}
 				} else if (block.type === 'tool_result' && block.tool_use_id) {
 					const tool = pending.get(block.tool_use_id);
 					if (tool && tool.kind === 'tool') {
@@ -385,7 +423,13 @@ export const claudeAdapter: Adapter = {
 				continue;
 			}
 
-			messages.push(fromBlocks(entry.type, blocks));
+			messages.push(fromBlocks(entry.type, blocks, ask));
+		}
+		// A question that has been answered is no longer pending. The result
+		// arrives in an entry that renders no message of its own, so nothing
+		// else would ever clear the card.
+		for (const { at, tool } of asked) {
+			if (tool.kind === 'tool' && tool.result !== null) delete messages[at]?.ask;
 		}
 		return messages;
 	}

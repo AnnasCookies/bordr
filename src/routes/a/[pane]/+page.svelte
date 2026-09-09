@@ -19,7 +19,12 @@
 
 	const TAIL = 80;
 
-	let showWork = $state(false);
+	/**
+	 * Tool calls, results and thinking. Starts from the persisted preference
+	 * so the choice survives leaving the conversation — it used to reset to
+	 * hidden on every open, which made the work look like it was not there.
+	 */
+	let showWork = $state(prefs.value.showWork);
 	/**
 	 * The manual harness controls: the screen peek and the key strip together.
 	 * They belong together — you press a key and watch the screen react — and
@@ -947,7 +952,10 @@
 				<div class="flex justify-center">
 					<button
 						class="rounded-full px-3 py-1 text-[11.5px] text-working"
-						onclick={() => (showWork = !showWork)}
+						onclick={() => {
+							showWork = !showWork;
+							prefs.set('showWork', showWork);
+						}}
 					>
 						{showWork ? 'Hide' : 'Show'} the work ({toolCount})
 					</button>

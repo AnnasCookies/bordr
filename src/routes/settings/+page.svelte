@@ -136,6 +136,12 @@
 					onchange={(v) => prefs.set('keyStrip', v)}
 				/>
 				<ToggleRow
+					label="Show the work"
+					hint="Tool calls, their results and the agent's thinking, as expandable rows in every conversation. Each conversation's own toggle overrides this and is remembered."
+					checked={prefs.value.showWork}
+					onchange={(v) => prefs.set('showWork', v)}
+				/>
+				<ToggleRow
 					label="Swipe to cycle agents"
 					hint="Swipe across a conversation for the next or previous agent in the list. Swiping from either screen edge still goes back."
 					checked={prefs.value.swipeAgents}

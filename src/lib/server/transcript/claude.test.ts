@@ -2,7 +2,7 @@ import { afterAll, afterEach, describe, expect, it } from 'vitest';
 import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { claudeAdapter, toolLabel, toolSummary } from './claude';
+import { askFromQuestions, claudeAdapter, toolLabel, toolSummary } from './claude';
 import { adapterFor } from './index';
 
 const jsonl = readFileSync(new URL('./fixtures/claude-session.jsonl', import.meta.url), 'utf8');
@@ -405,5 +405,59 @@ describe('blocks', () => {
 		// The flat text stays prose-only: preview and search must not start
 		// quoting the model's reasoning back at the user.
 		expect(message.text).toBe('Going with the first.');
+	});
+});
+
+describe('AskUserQuestion', () => {
+	function entry(role: 'user' | 'assistant', content: unknown) {
+		return JSON.stringify({ type: role, message: { content } });
+	}
+
+	const question = {
+		questions: [
+			{
+				question: 'How far do you want me to take it?',
+				header: 'Scope',
+				options: [{ label: 'All four stages' }, { label: 'Stage 1 only' }]
+			}
+		]
+	};
+
+	it('offers the options while the question is unanswered', () => {
+		const jsonl = entry('assistant', [
+			{ type: 'tool_use', id: 'ask_1', name: 'AskUserQuestion', input: question }
+		]);
+		expect(claudeAdapter.parse(jsonl)[0].ask).toEqual({
+			question: 'How far do you want me to take it?',
+			options: ['All four stages', 'Stage 1 only']
+		});
+	});
+
+	it('stops offering them once the result lands', () => {
+		// The answering entry renders no message of its own, so nothing else
+		// would ever clear a stale card.
+		const jsonl = [
+			entry('assistant', [
+				{ type: 'tool_use', id: 'ask_1', name: 'AskUserQuestion', input: question }
+			]),
+			entry('user', [{ type: 'tool_result', tool_use_id: 'ask_1', content: 'All four stages' }])
+		].join('\n');
+		expect(claudeAdapter.parse(jsonl)[0].ask).toBeUndefined();
+	});
+
+	it('offers only the first question, since the answer is one typed line', () => {
+		const two = {
+			questions: [
+				{ question: 'One?', options: [{ label: 'a' }] },
+				{ question: 'Two?', options: [{ label: 'b' }] }
+			]
+		};
+		expect(askFromQuestions(two)).toEqual({ question: 'One?', options: ['a'] });
+	});
+
+	it('ignores a malformed or empty question rather than showing an empty card', () => {
+		expect(askFromQuestions({ questions: [] })).toBeNull();
+		expect(askFromQuestions({ questions: [{ question: 'Hm?', options: [] }] })).toBeNull();
+		expect(askFromQuestions(undefined)).toBeNull();
 	});
 });

@@ -8,7 +8,7 @@ export type Theme = 'light' | 'dark' | 'system';
 export type KeyStripMode = 'always' | 'peek';
 
 export interface Prefs {
-	v: 1;
+	v: number;
 	groupBy: GroupBy;
 	sort: SortBy;
 	rollup: boolean;
@@ -16,6 +16,8 @@ export interface Prefs {
 	theme: Theme;
 	monoSize: number;
 	keyStrip: KeyStripMode;
+	/** Show tool calls, results and thinking in a conversation by default. */
+	showWork: boolean;
 	enterSends: boolean;
 	dictationLang: string;
 	/**
@@ -35,14 +37,15 @@ export interface Prefs {
 }
 
 export const DEFAULTS: Prefs = {
-	v: 1,
+	v: 2,
 	groupBy: 'workspace',
 	sort: 'status-title',
 	rollup: true,
 	preview: 'activity',
 	theme: 'system',
 	monoSize: 11,
-	keyStrip: 'always',
+	keyStrip: 'peek',
+	showWork: true,
 	enterSends: false,
 	dictationLang: 'en-GB',
 	dictationHold: true,
@@ -61,6 +64,12 @@ export const DEFAULTS: Prefs = {
 };
 
 const KEY = 'bordr-prefs';
+/**
+ * Bumped when a DEFAULT changes in a way an existing install must pick up.
+ * Every field is validated regardless, so this only gates the few that
+ * deliberately reset.
+ */
+const VERSION = 2;
 const GROUPS: GroupBy[] = ['workspace', 'status', 'harness', 'none'];
 const SORTS: SortBy[] = ['status-title', 'title', 'recent'];
 const PREVIEWS: PreviewMode[] = ['activity', 'cwd', 'none'];
@@ -97,7 +106,7 @@ export function normalisePrefs(raw: unknown): Prefs {
 	const stored = raw as Partial<Record<keyof Prefs, unknown>>;
 	const size = Number(stored.monoSize);
 	return {
-		v: 1,
+		v: VERSION,
 		groupBy: pick(stored.groupBy, GROUPS, DEFAULTS.groupBy),
 		sort: pick(stored.sort, SORTS, DEFAULTS.sort),
 		rollup: bool(stored.rollup, DEFAULTS.rollup),
@@ -107,7 +116,12 @@ export function normalisePrefs(raw: unknown): Prefs {
 		monoSize: Number.isFinite(size)
 			? Math.min(Math.max(Math.round(size), 10), 13)
 			: DEFAULTS.monoSize,
-		keyStrip: pick(stored.keyStrip, STRIPS, DEFAULTS.keyStrip),
+		// One-time migration: the manual controls used to default to Open, and
+		// a stored 'always' would otherwise outlive the change forever — a
+		// default is only ever read when nothing is stored.
+		keyStrip:
+			stored.v === VERSION ? pick(stored.keyStrip, STRIPS, DEFAULTS.keyStrip) : DEFAULTS.keyStrip,
+		showWork: bool(stored.showWork, DEFAULTS.showWork),
 		enterSends: bool(stored.enterSends, DEFAULTS.enterSends),
 		dictationLang:
 			typeof stored.dictationLang === 'string' && stored.dictationLang.trim()
