@@ -37,7 +37,12 @@
 	$effect(() => prefs.watchSystemTheme());
 </script>
 
-<div class="mx-auto min-h-dvh max-w-screen-sm bg-page text-ink">
+<!--
+	The phone cap stays; desktop drops it so the session tree and the
+	conversation can use the window. `max-w-screen-sm` centred on a 1440px
+	display left the tree squeezed against a column of empty page.
+-->
+<div class="mx-auto min-h-dvh max-w-screen-sm bg-page text-ink lg:max-w-none">
 	{#if updated.current}
 		<!--
 			Never reloaded for the person: a draft or a dictation in flight would

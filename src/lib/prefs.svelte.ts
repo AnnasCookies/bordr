@@ -8,6 +8,7 @@ export type Theme = 'light' | 'dark' | 'system';
 export type KeyStripMode = 'always' | 'peek';
 export type HarnessAccent = 'edge' | 'tint' | 'off';
 export type ToolDetail = 'formatted' | 'json';
+export type TreeScope = 'all' | 'agents';
 
 export interface Prefs {
 	v: number;
@@ -28,6 +29,11 @@ export interface Prefs {
 	harnessAccent: HarnessAccent;
 	/** Render a tool call the way a terminal shows it, or as raw JSON. */
 	toolDetail: ToolDetail;
+	/**
+	 * Whether the desktop tree lists every pane or only those with an agent.
+	 * Some people work agent-first and do not want their shells in the way.
+	 */
+	treeScope: TreeScope;
 	enterSends: boolean;
 	dictationLang: string;
 	/**
@@ -58,6 +64,7 @@ export const DEFAULTS: Prefs = {
 	showWork: true,
 	harnessAccent: 'edge',
 	toolDetail: 'formatted',
+	treeScope: 'all',
 	enterSends: false,
 	dictationLang: 'en-GB',
 	dictationHold: true,
@@ -89,6 +96,7 @@ const THEMES: Theme[] = ['light', 'dark', 'system'];
 const STRIPS: KeyStripMode[] = ['always', 'peek'];
 const ACCENTS: HarnessAccent[] = ['edge', 'tint', 'off'];
 const TOOL_DETAILS: ToolDetail[] = ['formatted', 'json'];
+const TREE_SCOPES: TreeScope[] = ['all', 'agents'];
 
 function pick<T extends string>(value: unknown, allowed: T[], fallback: T): T {
 	return allowed.includes(value as T) ? (value as T) : fallback;
@@ -138,6 +146,7 @@ export function normalisePrefs(raw: unknown): Prefs {
 		showWork: bool(stored.showWork, DEFAULTS.showWork),
 		harnessAccent: pick(stored.harnessAccent, ACCENTS, DEFAULTS.harnessAccent),
 		toolDetail: pick(stored.toolDetail, TOOL_DETAILS, DEFAULTS.toolDetail),
+		treeScope: pick(stored.treeScope, TREE_SCOPES, DEFAULTS.treeScope),
 		enterSends: bool(stored.enterSends, DEFAULTS.enterSends),
 		dictationLang:
 			typeof stored.dictationLang === 'string' && stored.dictationLang.trim()

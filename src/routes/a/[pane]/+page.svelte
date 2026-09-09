@@ -15,6 +15,7 @@
 	import { rankCommands, type SlashCommand } from '$lib/commands';
 	import Icon from '$lib/components/icon.svelte';
 	import MessageBlocks from '$lib/components/message-blocks.svelte';
+	import SessionTree from '$lib/components/session-tree.svelte';
 	import type { Block } from '$lib/server/transcript/types';
 	let { data } = $props();
 
@@ -860,250 +861,275 @@
 
 <svelte:head><title>{detail.title || detail.paneId} · bordr</title></svelte:head>
 
-<div class="flex min-h-dvh flex-col" bind:this={swipeRoot}>
-	<header class="sticky top-0 z-10 border-b border-hairline bg-page">
-		<div class="flex items-center gap-1 px-2 pt-1 pb-1.5">
-			<a
-				href={resolve('/')}
-				class="flex h-10 w-10 shrink-0 items-center justify-center font-mono text-base text-working"
-				aria-label="Back to agents">←</a
-			>
-			<span class="min-w-0 flex-1">
-				<span class="block truncate text-[16px] font-semibold">{detail.title || detail.paneId}</span
+<!--
+	Desktop adds a session tree beside the conversation; the phone gets
+	exactly what it had. Everything is one breakpoint — there is no second
+	conversation component to keep in step, which is what makes this safe.
+-->
+<div class="lg:flex lg:h-dvh lg:overflow-hidden">
+	<aside class="hidden w-[276px] shrink-0 lg:block">
+		<SessionTree current={detail.paneId} />
+	</aside>
+	<div
+		class="flex min-h-dvh flex-col lg:h-dvh lg:min-h-0 lg:flex-1 lg:overflow-y-auto"
+		bind:this={swipeRoot}
+	>
+		<header class="sticky top-0 z-10 border-b border-hairline bg-page">
+			<div class="flex items-center gap-1 px-2 pt-1 pb-1.5">
+				<a
+					href={resolve('/')}
+					class="flex h-10 w-10 shrink-0 items-center justify-center font-mono text-base text-working"
+					aria-label="Back to agents">←</a
 				>
-				<span class="block truncate font-mono text-[10.5px] text-muted">
-					<span class={STATUS_INK[detail.status] ?? 'text-faint'}>● {detail.status}</span>
-					· <span class={harnessText(detail.agent)}>{detail.agent}</span>
-					{#if detail.workspaceLabel}· {detail.workspaceLabel}{/if}
-					{#if position >= 0 && order.length > 1}
-						· {position + 1}/{order.length}
-					{/if}
+				<span class="min-w-0 flex-1">
+					<span class="block truncate text-[16px] font-semibold"
+						>{detail.title || detail.paneId}</span
+					>
+					<span class="block truncate font-mono text-[10.5px] text-muted">
+						<span class={STATUS_INK[detail.status] ?? 'text-faint'}>● {detail.status}</span>
+						· <span class={harnessText(detail.agent)}>{detail.agent}</span>
+						{#if detail.workspaceLabel}· {detail.workspaceLabel}{/if}
+						{#if position >= 0 && order.length > 1}
+							· {position + 1}/{order.length}
+						{/if}
+					</span>
 				</span>
-			</span>
-			{#if detail.status === 'working'}
+				{#if detail.status === 'working'}
+					<button
+						class="flex h-9 shrink-0 items-center gap-1.5 rounded-full border border-edge px-3 text-[13px] font-medium"
+						onclick={stop}
+					>
+						<span
+							class="h-2 w-2 rounded-full bg-working ring-[3px] ring-working-halo"
+							aria-hidden="true"
+						></span>
+						Stop
+					</button>
+				{/if}
 				<button
-					class="flex h-9 shrink-0 items-center gap-1.5 rounded-full border border-edge px-3 text-[13px] font-medium"
-					onclick={stop}
+					class="flex h-9 w-9 shrink-0 items-center justify-center rounded-full border {watched
+						? 'border-blocked-edge bg-blocked-bg text-blocked-ink'
+						: 'border-edge text-faint'}"
+					aria-label={watched ? 'Stop notifying on done' : 'Notify on every done'}
+					aria-pressed={watched}
+					onclick={toggleWatch}
 				>
-					<span
-						class="h-2 w-2 rounded-full bg-working ring-[3px] ring-working-halo"
-						aria-hidden="true"
-					></span>
-					Stop
+					<Icon name="bell" size={17} />
 				</button>
-			{/if}
-			<button
-				class="flex h-9 w-9 shrink-0 items-center justify-center rounded-full border {watched
-					? 'border-blocked-edge bg-blocked-bg text-blocked-ink'
-					: 'border-edge text-faint'}"
-				aria-label={watched ? 'Stop notifying on done' : 'Notify on every done'}
-				aria-pressed={watched}
-				onclick={toggleWatch}
-			>
-				<Icon name="bell" size={17} />
-			</button>
-		</div>
+			</div>
 
-		{#if detail.statusLines.length > 0}
-			<button
-				class="flex w-full items-center gap-1 px-4 pb-1.5 text-left font-mono text-[10px] text-muted"
-				onclick={() => (statusOpen = !statusOpen)}
-			>
-				<!--
+			{#if detail.statusLines.length > 0}
+				<button
+					class="flex w-full items-center gap-1 px-4 pb-1.5 text-left font-mono text-[10px] text-muted"
+					onclick={() => (statusOpen = !statusOpen)}
+				>
+					<!--
 					Safe: ansiToHtml escapes every HTML metacharacter in the payload
 					and emits only <span style="…"> wrappers for SGR colour — the
 					same guarantee the screen peek relies on, proven by the
 					escaping cases in src/lib/ansi.test.ts.
 				-->
-				<!-- eslint-disable svelte/no-at-html-tags -->
-				{#if statusOpen}
-					<span class="whitespace-pre-wrap">{@html statusHtml}</span>
-				{:else}
-					<span class="min-w-0 flex-1 truncate">{@html statusHtmlFirst}</span>
-					<span aria-hidden="true">▾</span>
-				{/if}
-			</button>
-		{/if}
-	</header>
-
-	<main class="flex-1 px-4 pt-3 pb-2">
-		{#if detail.degraded !== 'none'}
-			<p class="mb-3 flex items-center gap-2 text-[12px] text-muted">
-				<span class="min-w-0 flex-1">
-					{detail.degradedMessage}
-				</span>
-				<button
-					class="shrink-0 text-working"
-					disabled={loadingBack}
-					onclick={() => loadScrollback(scrollbackLines)}
-				>
-					{loadingBack ? 'Loading…' : scrollback === null ? 'Load scrollback' : 'Reload scrollback'}
-				</button>
-			</p>
-		{/if}
-
-		{#if scrollbackError}
-			<p
-				role="status"
-				class="mb-3 rounded-[10px] bg-danger-bg px-3 py-2 text-[12.5px] text-danger-ink"
-			>
-				{scrollbackError}
-			</p>
-		{/if}
-
-		{#if uncertain}
-			<p
-				role="status"
-				class="mb-3 flex items-start gap-2 rounded-[10px] border border-blocked-edge bg-blocked-surface px-3 py-2.5 text-[12.5px] text-blocked-ink"
-			>
-				<span class="font-mono" aria-hidden="true">!</span>
-				<span class="min-w-0 flex-1">{uncertain}</span>
-				<button class="shrink-0 underline" onclick={() => (uncertain = null)}>Dismiss</button>
-			</p>
-		{/if}
-
-		{#if canShowEarlier}
-			<div class="mb-3 flex justify-center">
-				<button
-					class="rounded-full border border-edge px-3 py-1.5 text-[11.5px] text-muted disabled:opacity-50"
-					disabled={loadingEarlier}
-					onclick={showEarlier}
-				>
-					{#if loadingEarlier}
-						Reading further back…
-					{:else if hidden > 0}
-						Show earlier ({hidden} more)
+					<!-- eslint-disable svelte/no-at-html-tags -->
+					{#if statusOpen}
+						<span class="whitespace-pre-wrap">{@html statusHtml}</span>
 					{:else}
-						Load earlier from disk
+						<span class="min-w-0 flex-1 truncate">{@html statusHtmlFirst}</span>
+						<span aria-hidden="true">▾</span>
 					{/if}
 				</button>
-			</div>
-		{/if}
+			{/if}
+		</header>
 
-		<div class="flex flex-col gap-3 text-[14.5px] leading-[1.5]">
-			{#if scrollback !== null}
-				<div
-					use:termGrid
-					class="term overflow-x-auto rounded-lg border border-hairline bg-card px-3 py-2.5 text-body"
-					style="font-size: {prefs.value.monoSize}px"
+		<main class="mx-auto w-full max-w-screen-sm flex-1 px-4 pt-3 pb-2 lg:max-w-3xl">
+			{#if detail.degraded !== 'none'}
+				<p class="mb-3 flex items-center gap-2 text-[12px] text-muted">
+					<span class="min-w-0 flex-1">
+						{detail.degradedMessage}
+					</span>
+					<button
+						class="shrink-0 text-working"
+						disabled={loadingBack}
+						onclick={() => loadScrollback(scrollbackLines)}
+					>
+						{loadingBack
+							? 'Loading…'
+							: scrollback === null
+								? 'Load scrollback'
+								: 'Reload scrollback'}
+					</button>
+				</p>
+			{/if}
+
+			{#if scrollbackError}
+				<p
+					role="status"
+					class="mb-3 rounded-[10px] bg-danger-bg px-3 py-2 text-[12.5px] text-danger-ink"
 				>
-					{#each scrollback.split('\n') as line, i (i)}
-						<!--
+					{scrollbackError}
+				</p>
+			{/if}
+
+			{#if uncertain}
+				<p
+					role="status"
+					class="mb-3 flex items-start gap-2 rounded-[10px] border border-blocked-edge bg-blocked-surface px-3 py-2.5 text-[12.5px] text-blocked-ink"
+				>
+					<span class="font-mono" aria-hidden="true">!</span>
+					<span class="min-w-0 flex-1">{uncertain}</span>
+					<button class="shrink-0 underline" onclick={() => (uncertain = null)}>Dismiss</button>
+				</p>
+			{/if}
+
+			{#if canShowEarlier}
+				<div class="mb-3 flex justify-center">
+					<button
+						class="rounded-full border border-edge px-3 py-1.5 text-[11.5px] text-muted disabled:opacity-50"
+						disabled={loadingEarlier}
+						onclick={showEarlier}
+					>
+						{#if loadingEarlier}
+							Reading further back…
+						{:else if hidden > 0}
+							Show earlier ({hidden} more)
+						{:else}
+							Load earlier from disk
+						{/if}
+					</button>
+				</div>
+			{/if}
+
+			<div class="flex flex-col gap-3 text-[14.5px] leading-[1.5]">
+				{#if scrollback !== null}
+					<div
+						use:termGrid
+						class="term overflow-x-auto rounded-lg border border-hairline bg-card px-3 py-2.5 text-body"
+						style="font-size: {prefs.value.monoSize}px"
+					>
+						{#each scrollback.split('\n') as line, i (i)}
+							<!--
 							Safe: ansiToHtml escapes every HTML metacharacter in the payload
 							and emits only <span style="…"> wrappers for SGR colour — proven
 							by the escaping cases in src/lib/ansi.test.ts. Terminal output is
 							untrusted, which is exactly why it is escaped rather than trusted.
 						-->
-						<!-- eslint-disable svelte/no-at-html-tags -->
-						<div class="whitespace-pre">{@html ansiToHtml(line, true) || '&nbsp;'}</div>
-					{/each}
-				</div>
-				<div class="flex justify-center gap-2">
-					<button
-						class="rounded-full border border-edge px-3 py-1.5 text-[11.5px] text-muted"
-						disabled={loadingBack}
-						onclick={() => loadScrollback(scrollbackLines + 400)}
-					>
-						Load more ({scrollbackLines} lines shown)
-					</button>
-					<!-- Scrollback is a still photograph; this is the way back to the live view. -->
-					<button
-						class="rounded-full border border-edge px-3 py-1.5 text-[11.5px] text-working"
-						onclick={() => {
-							scrollback = null;
-							requestAnimationFrame(scrollBottom);
-						}}
-					>
-						Back to live view
-					</button>
-				</div>
-			{:else}
-				{#each visibleMessages as message, i (detail.messages.length - visibleMessages.length + i)}
-					{#if message.role === 'system'}
-						<div class="flex justify-center">
-							<span
-								class="rounded-full border border-hairline bg-card px-3 py-1 font-mono text-[11px] text-muted"
-								>{message.text}</span
-							>
-						</div>
-					{:else if message.role === 'user'}
-						{#if prefs.value.bubbles}
-							<div class="flex justify-end">
+							<!-- eslint-disable svelte/no-at-html-tags -->
+							<div class="whitespace-pre">{@html ansiToHtml(line, true) || '&nbsp;'}</div>
+						{/each}
+					</div>
+					<div class="flex justify-center gap-2">
+						<button
+							class="rounded-full border border-edge px-3 py-1.5 text-[11.5px] text-muted"
+							disabled={loadingBack}
+							onclick={() => loadScrollback(scrollbackLines + 400)}
+						>
+							Load more ({scrollbackLines} lines shown)
+						</button>
+						<!-- Scrollback is a still photograph; this is the way back to the live view. -->
+						<button
+							class="rounded-full border border-edge px-3 py-1.5 text-[11.5px] text-working"
+							onclick={() => {
+								scrollback = null;
+								requestAnimationFrame(scrollBottom);
+							}}
+						>
+							Back to live view
+						</button>
+					</div>
+				{:else}
+					{#each visibleMessages as message, i (detail.messages.length - visibleMessages.length + i)}
+						{#if message.role === 'system'}
+							<div class="flex justify-center">
 								<span
-									class="max-w-[85%] rounded-2xl rounded-br-sm px-3 py-2 [overflow-wrap:anywhere] whitespace-pre-wrap"
-									style="background:{prefs.bubbleColours.userBubble}; color:{prefs.bubbleColours
-										.userText}"
+									class="rounded-full border border-hairline bg-card px-3 py-1 font-mono text-[11px] text-muted"
+									>{message.text}</span
 								>
-									<MessageBlocks blocks={message.blocks ?? []} mono={prefs.value.monoSize} plain />
-								</span>
 							</div>
-						{:else}
-							<div class="flex gap-2">
-								<span
-									class="shrink-0 font-mono text-[13px] leading-[1.7] text-working"
-									aria-hidden="true">›</span
-								>
-								<span class="min-w-0 flex-1 font-medium [overflow-wrap:anywhere]">
-									<MessageBlocks blocks={message.blocks ?? []} mono={prefs.value.monoSize} plain />
-								</span>
-							</div>
-						{/if}
-					{:else if message.text || (showWork && (message.blocks?.length ?? 0) > 0)}
-						<!-- A turn that is only tool calls has nothing to show while the
-						     work is hidden; rendering the prefix anyway left a column of
-						     bare dots separated by empty space. -->
-						<div class="flex gap-2">
-							{#if !prefs.value.bubbles}
-								<span
-									class="shrink-0 font-mono text-[13px] leading-[1.7] {harnessText(detail.agent)}"
-									aria-hidden="true">·</span
-								>
-							{/if}
-							<div class="min-w-0 flex-1">
-								{#if prefs.value.bubbles}
-									{#if prose(message).length > 0}
-										<div
-											class="max-w-[92%] rounded-2xl rounded-bl-sm px-3 py-2 [overflow-wrap:anywhere]"
-											style="background:{agentBubbleColour}; color:{prefs.bubbleColours
-												.agentText}{agentEdge
-												? `; border-left:3px solid ${agentEdge}; border-top-left-radius:6px; border-bottom-left-radius:6px`
-												: ''}"
-										>
-											<MessageBlocks blocks={prose(message)} mono={prefs.value.monoSize} />
-										</div>
-									{/if}
-									<MessageBlocks blocks={work(message)} mono={prefs.value.monoSize} {showWork} />
-								{:else}
-									<div
-										class="border-l-2 pl-2.5 [overflow-wrap:anywhere] text-body {harnessBorder(
-											detail.agent
-										)}"
+						{:else if message.role === 'user'}
+							{#if prefs.value.bubbles}
+								<div class="flex justify-end">
+									<span
+										class="max-w-[85%] rounded-2xl rounded-br-sm px-3 py-2 [overflow-wrap:anywhere] whitespace-pre-wrap"
+										style="background:{prefs.bubbleColours.userBubble}; color:{prefs.bubbleColours
+											.userText}"
 									>
 										<MessageBlocks
 											blocks={message.blocks ?? []}
 											mono={prefs.value.monoSize}
-											{showWork}
+											plain
 										/>
-									</div>
+									</span>
+								</div>
+							{:else}
+								<div class="flex gap-2">
+									<span
+										class="shrink-0 font-mono text-[13px] leading-[1.7] text-working"
+										aria-hidden="true">›</span
+									>
+									<span class="min-w-0 flex-1 font-medium [overflow-wrap:anywhere]">
+										<MessageBlocks
+											blocks={message.blocks ?? []}
+											mono={prefs.value.monoSize}
+											plain
+										/>
+									</span>
+								</div>
+							{/if}
+						{:else if message.text || (showWork && (message.blocks?.length ?? 0) > 0)}
+							<!-- A turn that is only tool calls has nothing to show while the
+						     work is hidden; rendering the prefix anyway left a column of
+						     bare dots separated by empty space. -->
+							<div class="flex gap-2">
+								{#if !prefs.value.bubbles}
+									<span
+										class="shrink-0 font-mono text-[13px] leading-[1.7] {harnessText(detail.agent)}"
+										aria-hidden="true">·</span
+									>
 								{/if}
+								<div class="min-w-0 flex-1">
+									{#if prefs.value.bubbles}
+										{#if prose(message).length > 0}
+											<div
+												class="max-w-[92%] rounded-2xl rounded-bl-sm px-3 py-2 [overflow-wrap:anywhere]"
+												style="background:{agentBubbleColour}; color:{prefs.bubbleColours
+													.agentText}{agentEdge
+													? `; border-left:3px solid ${agentEdge}; border-top-left-radius:6px; border-bottom-left-radius:6px`
+													: ''}"
+											>
+												<MessageBlocks blocks={prose(message)} mono={prefs.value.monoSize} />
+											</div>
+										{/if}
+										<MessageBlocks blocks={work(message)} mono={prefs.value.monoSize} {showWork} />
+									{:else}
+										<div
+											class="border-l-2 pl-2.5 [overflow-wrap:anywhere] text-body {harnessBorder(
+												detail.agent
+											)}"
+										>
+											<MessageBlocks
+												blocks={message.blocks ?? []}
+												mono={prefs.value.monoSize}
+												{showWork}
+											/>
+										</div>
+									{/if}
+								</div>
 							</div>
+						{/if}
+					{/each}
+
+					{#if detail.status === 'working'}
+						<div class="ml-[22px] flex items-center gap-1.5 font-mono text-[11px] text-muted">
+							{#each [0, 1, 2] as n (n)}
+								<span
+									class="h-1 w-1 rounded-full bg-working motion-safe:animate-[bordr-pulse_1.2s_ease-in-out_infinite]"
+									style="animation-delay: {n * 0.2}s; opacity: {1 - n * 0.35}"
+								></span>
+							{/each}
+							working
 						</div>
 					{/if}
-				{/each}
 
-				{#if detail.status === 'working'}
-					<div class="ml-[22px] flex items-center gap-1.5 font-mono text-[11px] text-muted">
-						{#each [0, 1, 2] as n (n)}
-							<span
-								class="h-1 w-1 rounded-full bg-working motion-safe:animate-[bordr-pulse_1.2s_ease-in-out_infinite]"
-								style="animation-delay: {n * 0.2}s; opacity: {1 - n * 0.35}"
-							></span>
-						{/each}
-						working
-					</div>
-				{/if}
-
-				<!--
+					<!--
 					Sent, accepted by herdr, not yet in the transcript.
 
 					BELOW the working indicator, which is where the terminal puts
@@ -1111,384 +1137,386 @@
 					prompt is waiting behind it. Above the spinner it read as
 					though it had already been picked up.
 				-->
-				{#each pendingSends as sent (sent.id)}
-					{#if prefs.value.bubbles}
-						<div class="flex justify-end">
-							<span
-								class="max-w-[85%] rounded-2xl rounded-br-sm px-3 py-2 [overflow-wrap:anywhere] whitespace-pre-wrap opacity-60"
-								style="background:{prefs.bubbleColours.userBubble}; color:{prefs.bubbleColours
-									.userText}">{sent.text}</span
-							>
-						</div>
-					{:else}
-						<div class="flex gap-2 opacity-60">
-							<span
-								class="shrink-0 font-mono text-[13px] leading-[1.7] text-working"
-								aria-hidden="true">›</span
-							>
-							<span class="min-w-0 flex-1 font-medium [overflow-wrap:anywhere] whitespace-pre-wrap"
-								>{sent.text}</span
-							>
-						</div>
-					{/if}
-					<p class="text-right text-[11px] text-faint">
-						{detail.status === 'working' ? 'queued behind this turn' : 'sent'}
-					</p>
-				{/each}
-			{/if}
-
-			{#if toolCount > 0}
-				<div class="flex justify-center">
-					<button
-						class="rounded-full px-3 py-1 text-[11.5px] text-working"
-						onclick={() => {
-							showWork = !showWork;
-							prefs.set('showWork', showWork);
-						}}
-					>
-						{showWork ? 'Hide' : 'Show'} the work ({toolCount})
-					</button>
-				</div>
-			{/if}
-		</div>
-
-		{#if detail.picker && detail.picker.options.length > 0}
-			<section
-				class="mt-4 flex overflow-hidden rounded-xl border border-blocked-edge bg-blocked-surface shadow-[0_6px_18px_rgba(217,119,6,.10)]"
-			>
-				<span class="w-1 shrink-0 self-stretch bg-blocked"></span>
-				<div class="min-w-0 flex-1 p-3">
-					<p class="font-mono text-[10.5px] tracking-[.3px] text-blocked-ink">
-						? WAITING ON YOU{detail.picker.multi ? ' · MULTI-SELECT' : ''}
-					</p>
-					{#if detail.picker.question}
-						<p class="mt-1.5 text-[15px]">{detail.picker.question}</p>
-					{/if}
-					<div class="mt-2 flex flex-col gap-1.5">
-						{#each detail.picker.options as option (option.index)}
-							<button
-								class="flex items-center gap-2 rounded-lg px-3 py-2.5 text-left text-[14px] disabled:opacity-50 {detail
-									.picker.multi
-									? option.selected
-										? 'border border-working bg-card'
-										: 'border border-black/[.08] bg-card dark:border-white/[.08]'
-									: option.selected
-										? 'bg-ink text-card'
-										: 'border border-black/[.08] bg-card dark:border-white/[.08]'}"
-								disabled={busy}
-								onclick={() => answer(option.index)}
-							>
-								{#if detail.picker.multi}
-									<span
-										class="flex h-5 w-5 shrink-0 items-center justify-center rounded-[5px] text-[12px] {option.checked
-											? 'bg-working text-white'
-											: 'border-[1.5px] border-idle-rail'}">{option.checked ? '✓' : ''}</span
-									>
-								{:else}
-									<span class="shrink-0 font-mono text-[12px]"
-										>{option.selected ? '❯ ' : ''}{option.index}</span
-									>
-								{/if}
-								<span class="min-w-0 flex-1">{option.label}</span>
-							</button>
-						{/each}
-					</div>
-					{#if detail.picker.multi}
-						<button
-							class="mt-2.5 w-full rounded-lg bg-ink py-3 text-[14px] font-medium text-card disabled:opacity-50"
-							disabled={busy}
-							onclick={() => sendKeys(['enter'])}
-						>
-							Submit selection
-						</button>
-					{/if}
-					<p class="mt-2 text-[11px] text-faint">
-						{#if detail.picker.axis === 'horizontal'}
-							Arrow keys move the slider and Enter confirms; verified against the screen.
-						{:else if detail.picker.numbered}
-							Digit is sent as a keystroke and verified against the screen.
+					{#each pendingSends as sent (sent.id)}
+						{#if prefs.value.bubbles}
+							<div class="flex justify-end">
+								<span
+									class="max-w-[85%] rounded-2xl rounded-br-sm px-3 py-2 [overflow-wrap:anywhere] whitespace-pre-wrap opacity-60"
+									style="background:{prefs.bubbleColours.userBubble}; color:{prefs.bubbleColours
+										.userText}">{sent.text}</span
+								>
+							</div>
 						{:else}
-							Arrow keys and Enter are sent, then verified against the screen.
+							<div class="flex gap-2 opacity-60">
+								<span
+									class="shrink-0 font-mono text-[13px] leading-[1.7] text-working"
+									aria-hidden="true">›</span
+								>
+								<span
+									class="min-w-0 flex-1 font-medium [overflow-wrap:anywhere] whitespace-pre-wrap"
+									>{sent.text}</span
+								>
+							</div>
 						{/if}
-					</p>
-				</div>
-			</section>
-		{/if}
+						<p class="text-right text-[11px] text-faint">
+							{detail.status === 'working' ? 'queued behind this turn' : 'sent'}
+						</p>
+					{/each}
+				{/if}
 
-		{#if !detail.picker && detail.menu}
-			<!-- A menu bordr could not read as options (omp's model browser,
-			     Claude Code's /config): say so, and open the key strip. -->
-			<section
-				class="mt-4 flex overflow-hidden rounded-xl border border-blocked-edge bg-blocked-surface"
-			>
-				<span class="w-1 shrink-0 self-stretch bg-blocked"></span>
-				<div class="min-w-0 flex-1 p-3">
-					<p class="font-mono text-[10.5px] tracking-[.3px] text-blocked-ink">
-						⌨ MENU OPEN ON THE TERMINAL
-					</p>
-					<p class="mt-1.5 text-[13px] [overflow-wrap:anywhere] text-muted">{detail.menu}</p>
-					{#if !showControls}
+				{#if toolCount > 0}
+					<div class="flex justify-center">
 						<button
-							class="mt-2.5 rounded-lg bg-ink px-3.5 py-2 text-[13px] font-medium text-card"
+							class="rounded-full px-3 py-1 text-[11.5px] text-working"
 							onclick={() => {
-								showControls = true;
-								requestAnimationFrame(() => screenBox?.scrollIntoView({ block: 'start' }));
+								showWork = !showWork;
+								prefs.set('showWork', showWork);
 							}}
 						>
-							Show the screen and key strip
+							{showWork ? 'Hide' : 'Show'} the work ({toolCount})
 						</button>
-					{/if}
-				</div>
-			</section>
-		{/if}
+					</div>
+				{/if}
+			</div>
 
-		{#if showControls}
-			<div class="mt-4">
-				<!--
+			{#if detail.picker && detail.picker.options.length > 0}
+				<section
+					class="mt-4 flex overflow-hidden rounded-xl border border-blocked-edge bg-blocked-surface shadow-[0_6px_18px_rgba(217,119,6,.10)]"
+				>
+					<span class="w-1 shrink-0 self-stretch bg-blocked"></span>
+					<div class="min-w-0 flex-1 p-3">
+						<p class="font-mono text-[10.5px] tracking-[.3px] text-blocked-ink">
+							? WAITING ON YOU{detail.picker.multi ? ' · MULTI-SELECT' : ''}
+						</p>
+						{#if detail.picker.question}
+							<p class="mt-1.5 text-[15px]">{detail.picker.question}</p>
+						{/if}
+						<div class="mt-2 flex flex-col gap-1.5">
+							{#each detail.picker.options as option (option.index)}
+								<button
+									class="flex items-center gap-2 rounded-lg px-3 py-2.5 text-left text-[14px] disabled:opacity-50 {detail
+										.picker.multi
+										? option.selected
+											? 'border border-working bg-card'
+											: 'border border-black/[.08] bg-card dark:border-white/[.08]'
+										: option.selected
+											? 'bg-ink text-card'
+											: 'border border-black/[.08] bg-card dark:border-white/[.08]'}"
+									disabled={busy}
+									onclick={() => answer(option.index)}
+								>
+									{#if detail.picker.multi}
+										<span
+											class="flex h-5 w-5 shrink-0 items-center justify-center rounded-[5px] text-[12px] {option.checked
+												? 'bg-working text-white'
+												: 'border-[1.5px] border-idle-rail'}">{option.checked ? '✓' : ''}</span
+										>
+									{:else}
+										<span class="shrink-0 font-mono text-[12px]"
+											>{option.selected ? '❯ ' : ''}{option.index}</span
+										>
+									{/if}
+									<span class="min-w-0 flex-1">{option.label}</span>
+								</button>
+							{/each}
+						</div>
+						{#if detail.picker.multi}
+							<button
+								class="mt-2.5 w-full rounded-lg bg-ink py-3 text-[14px] font-medium text-card disabled:opacity-50"
+								disabled={busy}
+								onclick={() => sendKeys(['enter'])}
+							>
+								Submit selection
+							</button>
+						{/if}
+						<p class="mt-2 text-[11px] text-faint">
+							{#if detail.picker.axis === 'horizontal'}
+								Arrow keys move the slider and Enter confirms; verified against the screen.
+							{:else if detail.picker.numbered}
+								Digit is sent as a keystroke and verified against the screen.
+							{:else}
+								Arrow keys and Enter are sent, then verified against the screen.
+							{/if}
+						</p>
+					</div>
+				</section>
+			{/if}
+
+			{#if !detail.picker && detail.menu}
+				<!-- A menu bordr could not read as options (omp's model browser,
+			     Claude Code's /config): say so, and open the key strip. -->
+				<section
+					class="mt-4 flex overflow-hidden rounded-xl border border-blocked-edge bg-blocked-surface"
+				>
+					<span class="w-1 shrink-0 self-stretch bg-blocked"></span>
+					<div class="min-w-0 flex-1 p-3">
+						<p class="font-mono text-[10.5px] tracking-[.3px] text-blocked-ink">
+							⌨ MENU OPEN ON THE TERMINAL
+						</p>
+						<p class="mt-1.5 text-[13px] [overflow-wrap:anywhere] text-muted">{detail.menu}</p>
+						{#if !showControls}
+							<button
+								class="mt-2.5 rounded-lg bg-ink px-3.5 py-2 text-[13px] font-medium text-card"
+								onclick={() => {
+									showControls = true;
+									requestAnimationFrame(() => screenBox?.scrollIntoView({ block: 'start' }));
+								}}
+							>
+								Show the screen and key strip
+							</button>
+						{/if}
+					</div>
+				</section>
+			{/if}
+
+			{#if showControls}
+				<div class="mt-4">
+					<!--
 					The whole pane, scrollable, held at the bottom where the prompt
 					and footer live; a long panel (Claude Code's /config) is read by
 					scrolling up inside the box rather than being cut off.
 				-->
-				<div
-					use:termGrid
-					bind:this={screenBox}
-					onscroll={onScreenScroll}
-					class="term max-h-[60vh] overflow-auto rounded-[10px] border border-hairline bg-card px-3 py-2.5 text-body"
-					style="font-size: {prefs.value.monoSize}px"
-				>
-					{#each detail.screenTail.split('\n') as line, i (i)}
-						<!--
+					<div
+						use:termGrid
+						bind:this={screenBox}
+						onscroll={onScreenScroll}
+						class="term max-h-[60vh] overflow-auto rounded-[10px] border border-hairline bg-card px-3 py-2.5 text-body"
+						style="font-size: {prefs.value.monoSize}px"
+					>
+						{#each detail.screenTail.split('\n') as line, i (i)}
+							<!--
 							Safe: ansiToHtml escapes every HTML metacharacter in the payload
 							and emits only <span style="…"> wrappers for SGR colour — proven
 							by the escaping cases in src/lib/ansi.test.ts. Terminal output is
 							untrusted, which is exactly why it is escaped rather than trusted.
 						-->
-						<!-- eslint-disable svelte/no-at-html-tags -->
-						<div class="whitespace-pre">{@html ansiToHtml(line, true) || '&nbsp;'}</div>
-					{/each}
+							<!-- eslint-disable svelte/no-at-html-tags -->
+							<div class="whitespace-pre">{@html ansiToHtml(line, true) || '&nbsp;'}</div>
+						{/each}
+					</div>
+					<p class="mt-1 text-[11.5px] text-faint">
+						The pane's screen, live · scroll up inside it for the rest
+					</p>
 				</div>
-				<p class="mt-1 text-[11.5px] text-faint">
-					The pane's screen, live · scroll up inside it for the rest
-				</p>
-			</div>
-		{/if}
-	</main>
+			{/if}
+		</main>
 
-	<div
-		class="sticky bottom-0 z-10 border-t border-hairline bg-page px-3 py-2.5"
-		style="padding-bottom: max(0.625rem, env(safe-area-inset-bottom))"
-	>
-		<!--
+		<div
+			class="sticky bottom-0 z-10 border-t border-hairline bg-page px-3 py-2.5"
+			style="padding-bottom: max(0.625rem, env(safe-area-inset-bottom))"
+		>
+			<!--
 			The harness's own ghost prompt. Tapping fills the box rather than
 			sending: on a phone you cannot see what you are about to commit to
 			the way you can in a terminal, and it is usually a starting point
 			worth editing. Hidden the moment you type anything of your own.
 		-->
-		{#if detail.suggestion && draft.trim() === ''}
-			<button
-				class="mb-2 flex w-full items-center gap-2 rounded-xl border border-hairline bg-card px-3 py-2 text-left"
-				onclick={() => {
-					draft = detail.suggestion ?? '';
-					textarea?.focus();
-				}}
-			>
-				<span class="shrink-0 text-[13px] text-faint" aria-hidden="true">&rarr;</span>
-				<span class="min-w-0 flex-1 truncate text-[14px] text-muted">{detail.suggestion}</span>
-			</button>
-		{/if}
+			{#if detail.suggestion && draft.trim() === ''}
+				<button
+					class="mb-2 flex w-full items-center gap-2 rounded-xl border border-hairline bg-card px-3 py-2 text-left"
+					onclick={() => {
+						draft = detail.suggestion ?? '';
+						textarea?.focus();
+					}}
+				>
+					<span class="shrink-0 text-[13px] text-faint" aria-hidden="true">&rarr;</span>
+					<span class="min-w-0 flex-1 truncate text-[14px] text-muted">{detail.suggestion}</span>
+				</button>
+			{/if}
 
-		{#if previews.length > 0 || preparing > 0}
-			<div class="mb-2 flex items-center gap-2 overflow-x-auto">
-				{#each previews as src, i (src)}
-					<span class="relative shrink-0">
-						<img
-							{src}
-							alt=""
-							class="h-16 w-16 rounded-[10px] border border-hairline object-cover"
-						/>
-						<button
-							class="absolute -top-1.5 -right-1.5 flex h-[22px] w-[22px] items-center justify-center rounded-full bg-ink text-[11px] text-card"
-							aria-label="Remove image"
-							onclick={() => removeAt(i)}>✕</button
-						>
-					</span>
-				{/each}
-				{#if preparing > 0}
-					<span
-						class="flex h-16 w-16 shrink-0 items-center justify-center rounded-[10px] border border-dashed border-hairline font-mono text-[11px] text-faint"
-						role="status"
-						aria-live="polite"
-					>
-						{preparing > 1 ? `${preparing} more…` : 'shrinking…'}
-					</span>
-				{/if}
-				<span class="shrink-0 font-mono text-[11px] text-faint">{attachments.length} / 6</span>
-			</div>
-		{/if}
-
-		{#if slashQuery}
-			<div
-				class="mb-2 max-h-[45vh] overflow-y-auto rounded-xl border border-edge bg-card"
-				role="listbox"
-				aria-label="Slash commands"
-			>
-				{#if commandList === null}
-					<p class="px-3 py-2 text-[12.5px] text-muted">Loading commands…</p>
-				{:else if suggestions.length === 0}
-					<p class="px-3 py-2 text-[12.5px] text-muted">Nothing matches {draft}.</p>
-				{:else}
-					{#each suggestions as command (command.name)}
-						<button
-							type="button"
-							role="option"
-							aria-selected="false"
-							class="flex w-full items-baseline gap-2 border-b border-hairline px-3 py-2 text-left last:border-b-0"
-							onclick={() => pickCommand(command)}
-						>
-							<span class="shrink-0 font-mono text-[13px] text-working">/{command.name}</span>
-							<span class="min-w-0 flex-1 truncate text-[12.5px] text-muted"
-								>{command.description}</span
+			{#if previews.length > 0 || preparing > 0}
+				<div class="mb-2 flex items-center gap-2 overflow-x-auto">
+					{#each previews as src, i (src)}
+						<span class="relative shrink-0">
+							<img
+								{src}
+								alt=""
+								class="h-16 w-16 rounded-[10px] border border-hairline object-cover"
+							/>
+							<button
+								class="absolute -top-1.5 -right-1.5 flex h-[22px] w-[22px] items-center justify-center rounded-full bg-ink text-[11px] text-card"
+								aria-label="Remove image"
+								onclick={() => removeAt(i)}>✕</button
 							>
-							{#if command.source !== 'builtin'}
-								<span class="shrink-0 font-mono text-[10px] text-faint">{command.source}</span>
-							{/if}
-						</button>
+						</span>
 					{/each}
-				{/if}
-			</div>
-		{/if}
+					{#if preparing > 0}
+						<span
+							class="flex h-16 w-16 shrink-0 items-center justify-center rounded-[10px] border border-dashed border-hairline font-mono text-[11px] text-faint"
+							role="status"
+							aria-live="polite"
+						>
+							{preparing > 1 ? `${preparing} more…` : 'shrinking…'}
+						</span>
+					{/if}
+					<span class="shrink-0 font-mono text-[11px] text-faint">{attachments.length} / 6</span>
+				</div>
+			{/if}
 
-		{#if sendError}
-			<p
-				role="status"
-				class="mb-2 rounded-[10px] bg-danger-bg px-3 py-2 text-[12.5px] text-danger-ink"
-			>
-				{sendError}
-			</p>
-		{/if}
+			{#if slashQuery}
+				<div
+					class="mb-2 max-h-[45vh] overflow-y-auto rounded-xl border border-edge bg-card"
+					role="listbox"
+					aria-label="Slash commands"
+				>
+					{#if commandList === null}
+						<p class="px-3 py-2 text-[12.5px] text-muted">Loading commands…</p>
+					{:else if suggestions.length === 0}
+						<p class="px-3 py-2 text-[12.5px] text-muted">Nothing matches {draft}.</p>
+					{:else}
+						{#each suggestions as command (command.name)}
+							<button
+								type="button"
+								role="option"
+								aria-selected="false"
+								class="flex w-full items-baseline gap-2 border-b border-hairline px-3 py-2 text-left last:border-b-0"
+								onclick={() => pickCommand(command)}
+							>
+								<span class="shrink-0 font-mono text-[13px] text-working">/{command.name}</span>
+								<span class="min-w-0 flex-1 truncate text-[12.5px] text-muted"
+									>{command.description}</span
+								>
+								{#if command.source !== 'builtin'}
+									<span class="shrink-0 font-mono text-[10px] text-faint">{command.source}</span>
+								{/if}
+							</button>
+						{/each}
+					{/if}
+				</div>
+			{/if}
 
-		<!--
+			{#if sendError}
+				<p
+					role="status"
+					class="mb-2 rounded-[10px] bg-danger-bg px-3 py-2 text-[12.5px] text-danger-ink"
+				>
+					{sendError}
+				</p>
+			{/if}
+
+			<!--
 			A `!` draft is a SHELL command, not a message to the agent — it runs
 			on the host. The box says so before you send it, because the two are
 			one keystroke apart and only one of them is undoable.
 		-->
-		<div
-			class="flex items-end gap-1.5 rounded-xl border p-2 {isShell
-				? 'border-working bg-working-bg'
-				: 'border-edge bg-card'}"
-		>
-			<button
-				class="flex h-[34px] w-[34px] shrink-0 items-center justify-center rounded-lg {showControls
-					? 'bg-working-bg text-working'
-					: 'text-muted'}"
-				aria-label="Manual controls"
-				aria-pressed={showControls}
-				onclick={() => {
-					showControls = !showControls;
-					// Remembered, not just for this conversation: the keyboard
-					// button is the only place most people will ever change
-					// this, and it used to reset on every open.
-					prefs.set('keyStrip', showControls ? 'always' : 'peek');
-				}}
+			<div
+				class="flex items-end gap-1.5 rounded-xl border p-2 {isShell
+					? 'border-working bg-working-bg'
+					: 'border-edge bg-card'}"
 			>
-				<Icon name="keyboard" size={19} />
-			</button>
-			<button
-				class="flex h-[34px] w-[34px] shrink-0 items-center justify-center rounded-lg text-muted"
-				aria-label="Attach a photo"
-				onclick={() => fileInput?.click()}
-			>
-				<Icon name="camera" size={19} />
-			</button>
-			<input
-				bind:this={fileInput}
-				type="file"
-				accept="image/*"
-				multiple
-				class="hidden"
-				onchange={(e) => void addFiles(e.currentTarget)}
-			/>
-			<textarea
-				bind:this={textarea}
-				bind:value={draft}
-				onkeydown={onKeydown}
-				rows="1"
-				placeholder={isShell
-					? 'Runs on the host…'
-					: detail.picker
-						? 'Or type a reply…'
-						: 'Type a reply…'}
-				class="[field-sizing:content] max-h-[min(10rem,22dvh)] min-w-0 flex-1 resize-none bg-transparent py-1.5 text-[16px] placeholder:text-faint focus:outline-none"
-			></textarea>
-			{#if speechSupported}
-				{#if dictating}
-					<button
-						class="flex h-[34px] shrink-0 items-center gap-1.5 rounded-full bg-danger-bg px-2.5"
-						aria-label="Stop dictation"
-						onclick={toggleDictation}
-					>
-						<span class="h-2.5 w-2.5 rounded-[2px] bg-danger" aria-hidden="true"></span>
-						<span class="flex items-end gap-px" aria-hidden="true">
-							{#each [3, 6, 4, 8, 5, 9, 4, 7, 3, 6] as h, n (n)}
-								<span
-									class="w-px bg-danger motion-safe:animate-[bordr-pulse_1s_ease-in-out_infinite]"
-									style="height: {h}px; animation-delay: {n * 0.08}s"
-								></span>
-							{/each}
-						</span>
-						<span class="font-mono text-[11px] text-danger-ink">stop</span>
-					</button>
-				{:else}
-					<button
-						class="flex h-[34px] w-[34px] shrink-0 items-center justify-center rounded-lg text-muted"
-						aria-label="Dictate"
-						onclick={toggleDictation}
-					>
-						<Icon name="mic" size={19} />
-					</button>
+				<button
+					class="flex h-[34px] w-[34px] shrink-0 items-center justify-center rounded-lg {showControls
+						? 'bg-working-bg text-working'
+						: 'text-muted'}"
+					aria-label="Manual controls"
+					aria-pressed={showControls}
+					onclick={() => {
+						showControls = !showControls;
+						// Remembered, not just for this conversation: the keyboard
+						// button is the only place most people will ever change
+						// this, and it used to reset on every open.
+						prefs.set('keyStrip', showControls ? 'always' : 'peek');
+					}}
+				>
+					<Icon name="keyboard" size={19} />
+				</button>
+				<button
+					class="flex h-[34px] w-[34px] shrink-0 items-center justify-center rounded-lg text-muted"
+					aria-label="Attach a photo"
+					onclick={() => fileInput?.click()}
+				>
+					<Icon name="camera" size={19} />
+				</button>
+				<input
+					bind:this={fileInput}
+					type="file"
+					accept="image/*"
+					multiple
+					class="hidden"
+					onchange={(e) => void addFiles(e.currentTarget)}
+				/>
+				<textarea
+					bind:this={textarea}
+					bind:value={draft}
+					onkeydown={onKeydown}
+					rows="1"
+					placeholder={isShell
+						? 'Runs on the host…'
+						: detail.picker
+							? 'Or type a reply…'
+							: 'Type a reply…'}
+					class="[field-sizing:content] max-h-[min(10rem,22dvh)] min-w-0 flex-1 resize-none bg-transparent py-1.5 text-[16px] placeholder:text-faint focus:outline-none"
+				></textarea>
+				{#if speechSupported}
+					{#if dictating}
+						<button
+							class="flex h-[34px] shrink-0 items-center gap-1.5 rounded-full bg-danger-bg px-2.5"
+							aria-label="Stop dictation"
+							onclick={toggleDictation}
+						>
+							<span class="h-2.5 w-2.5 rounded-[2px] bg-danger" aria-hidden="true"></span>
+							<span class="flex items-end gap-px" aria-hidden="true">
+								{#each [3, 6, 4, 8, 5, 9, 4, 7, 3, 6] as h, n (n)}
+									<span
+										class="w-px bg-danger motion-safe:animate-[bordr-pulse_1s_ease-in-out_infinite]"
+										style="height: {h}px; animation-delay: {n * 0.08}s"
+									></span>
+								{/each}
+							</span>
+							<span class="font-mono text-[11px] text-danger-ink">stop</span>
+						</button>
+					{:else}
+						<button
+							class="flex h-[34px] w-[34px] shrink-0 items-center justify-center rounded-lg text-muted"
+							aria-label="Dictate"
+							onclick={toggleDictation}
+						>
+							<Icon name="mic" size={19} />
+						</button>
+					{/if}
 				{/if}
-			{/if}
-			<button
-				class="flex h-[34px] w-[34px] shrink-0 items-center justify-center rounded-lg text-white {draft.trim() ||
-				attachments.length > 0
-					? 'bg-working'
-					: 'bg-idle-rail'}"
-				aria-label="Send"
-				disabled={busy || preparing > 0}
-				onclick={send}
-			>
-				<Icon name="arrow-up" size={19} />
-			</button>
-		</div>
-
-		{#if dictating}
-			<p class="mt-1.5 text-center text-[11px] text-faint" role="status">
-				{#if interim}
-					<span class="italic">{interim}</span>
-				{:else}
-					Web Speech · {prefs.value.dictationLang} ·
-					{prefs.value.dictationHold ? 'until you tap stop' : 'stops at a pause'}
-					{screenHeld ? '· screen stays on' : ''} ·
-					{prefs.value.enterSends ? '⏎ sends' : '⌘⏎ sends, ⏎ is a newline'}
-				{/if}
-			</p>
-		{/if}
-
-		{#if showControls}
-			<div class="mt-2 grid grid-cols-8 gap-[5px]">
-				{#each KEY_STRIP as key (key.k)}
-					<button
-						class="min-h-11 rounded-md py-2.5 font-mono text-[12px] {flashKey === key.k
-							? 'bg-working text-white'
-							: 'bg-key text-key-ink'}"
-						aria-label={key.k}
-						onclick={() => tapKey(key.k)}
-					>
-						{key.l}
-					</button>
-				{/each}
+				<button
+					class="flex h-[34px] w-[34px] shrink-0 items-center justify-center rounded-lg text-white {draft.trim() ||
+					attachments.length > 0
+						? 'bg-working'
+						: 'bg-idle-rail'}"
+					aria-label="Send"
+					disabled={busy || preparing > 0}
+					onclick={send}
+				>
+					<Icon name="arrow-up" size={19} />
+				</button>
 			</div>
-		{/if}
+
+			{#if dictating}
+				<p class="mt-1.5 text-center text-[11px] text-faint" role="status">
+					{#if interim}
+						<span class="italic">{interim}</span>
+					{:else}
+						Web Speech · {prefs.value.dictationLang} ·
+						{prefs.value.dictationHold ? 'until you tap stop' : 'stops at a pause'}
+						{screenHeld ? '· screen stays on' : ''} ·
+						{prefs.value.enterSends ? '⏎ sends' : '⌘⏎ sends, ⏎ is a newline'}
+					{/if}
+				</p>
+			{/if}
+
+			{#if showControls}
+				<div class="mt-2 grid grid-cols-8 gap-[5px]">
+					{#each KEY_STRIP as key (key.k)}
+						<button
+							class="min-h-11 rounded-md py-2.5 font-mono text-[12px] {flashKey === key.k
+								? 'bg-working text-white'
+								: 'bg-key text-key-ink'}"
+							aria-label={key.k}
+							onclick={() => tapKey(key.k)}
+						>
+							{key.l}
+						</button>
+					{/each}
+				</div>
+			{/if}
+		</div>
 	</div>
 </div>
 
