@@ -206,6 +206,49 @@
 	let pendingSends = $state<{ id: number; text: string; at: number }[]>([]);
 	let pendingSeq = 0;
 
+	/**
+	 * Queued prompts survive leaving the conversation.
+	 *
+	 * They used to be component state, so switching agent or reloading lost
+	 * them — and a queued prompt is exactly the thing you leave the app and
+	 * come back to check on. Stored per pane, because they belong to that
+	 * agent's queue and nothing else.
+	 */
+	const PENDING_KEY = $derived(`bordr-pending:${detail.paneId}`);
+	/** A prompt still unclaimed after this long is not coming back. */
+	const PENDING_TTL_MS = 6 * 60 * 60 * 1000;
+
+	$effect(() => {
+		// Re-runs when the pane changes, which is what makes switching agents
+		// load that agent's queue rather than keeping the last one's.
+		const key = PENDING_KEY;
+		let restored: typeof pendingSends = [];
+		try {
+			const raw = JSON.parse(localStorage.getItem(key) ?? '[]');
+			const now = Date.now();
+			if (Array.isArray(raw)) {
+				restored = raw.filter(
+					(p) => p && typeof p.text === 'string' && now - Number(p.at ?? 0) < PENDING_TTL_MS
+				);
+			}
+		} catch {
+			// Unreadable storage is not a reason to lose the conversation.
+		}
+		pendingSeq = restored.reduce((n, p) => Math.max(n, Number(p.id) || 0), 0);
+		pendingSends = restored;
+	});
+
+	$effect(() => {
+		const key = PENDING_KEY;
+		const value = pendingSends;
+		try {
+			if (value.length === 0) localStorage.removeItem(key);
+			else localStorage.setItem(key, JSON.stringify(value));
+		} catch {
+			// Private mode, or storage full. The echo still works in-session.
+		}
+	});
+
 	$effect(() => {
 		if (pendingSends.length === 0) return;
 

@@ -66,3 +66,35 @@ export interface AgentDetail extends AgentSummary {
 
 export type { Message, ToolCall } from './server/transcript/types';
 export type { Picker, PickerOption } from './server/picker';
+
+/** One pane in the session tree. A pane without an agent is a plain shell. */
+export interface PaneNode {
+	paneId: string;
+	tabId: string;
+	workspaceId: string;
+	/** Harness kind, or '' for a shell. */
+	agent: string;
+	hasAgent: boolean;
+	/** An agent's lifecycle status, or 'shell' when there is no agent. */
+	status: string;
+	title: string;
+	cwd: string;
+	focused: boolean;
+}
+
+export interface TabNode {
+	tabId: string;
+	workspaceId: string;
+	label: string;
+	number: number;
+	focused: boolean;
+	panes: PaneNode[];
+}
+
+export interface WorkspaceNode {
+	workspaceId: string;
+	label: string;
+	number: number;
+	focused: boolean;
+	tabs: TabNode[];
+}

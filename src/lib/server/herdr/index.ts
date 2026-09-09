@@ -152,6 +152,19 @@ export async function rawAgent(paneId: string): Promise<Record<string, unknown> 
 	return (await rawAgents()).find((a) => a.pane_id === paneId) ?? null;
 }
 
+/**
+ * Any pane, agent or not.
+ *
+ * `agent.list` omits a pane running a plain shell, so a conversation opened
+ * on one 404'd. `pane.list` carries every pane and the same fields where an
+ * agent exists, so the caller can treat both alike.
+ */
+export async function rawPane(paneId: string): Promise<Record<string, unknown> | null> {
+	const herdr = getClient();
+	const result = await herdr.request<{ panes: Record<string, unknown>[] }>('pane.list');
+	return result.panes.find((p) => p.pane_id === paneId) ?? null;
+}
+
 export async function readVisible(paneId: string): Promise<string> {
 	return readPane(paneId, { source: 'visible' });
 }
@@ -171,14 +184,29 @@ export async function readPane(
 	opts: { source?: 'visible' | 'recent' | 'recent_unwrapped'; lines?: number; ansi?: boolean } = {}
 ): Promise<string> {
 	const herdr = getClient();
-	const result = await herdr.request<{ read?: { text?: string } }>('agent.read', {
-		target: paneId,
+	const params = {
 		source: opts.source ?? 'visible',
 		format: opts.ansi ? 'ansi' : 'text',
 		...(opts.lines ? { lines: opts.lines } : {}),
 		...(opts.ansi ? { strip_ansi: false } : {})
-	});
-	return result.read?.text ?? '';
+	};
+	try {
+		const result = await herdr.request<{ read?: { text?: string } }>('agent.read', {
+			target: paneId,
+			...params
+		});
+		return result.read?.text ?? '';
+	} catch (e) {
+		// `agent.read` resolves an AGENT, so a pane running a plain shell fails
+		// with "agent target … not found". The same screen is readable through
+		// the pane surface, which is what a shell pane needs.
+		if (!(e instanceof HerdrRequestError) && !(e instanceof Error)) throw e;
+		const result = await herdr.request<{ read?: { text?: string } }>('pane.read', {
+			pane_id: paneId,
+			...params
+		});
+		return result.read?.text ?? '';
+	}
 }
 
 /**

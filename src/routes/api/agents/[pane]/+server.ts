@@ -1,5 +1,5 @@
 import { error, json } from '@sveltejs/kit';
-import { rawAgent, readPane, readVisible, toSummary } from '$lib/server/herdr';
+import { rawAgent, rawPane, readPane, readVisible, toSummary } from '$lib/server/herdr';
 import { adapterFor } from '$lib/server/transcript';
 import { backfillBlocks } from '$lib/server/transcript/types';
 import { DEFAULT_TAIL_BYTES, readTranscriptTail } from '$lib/server/transcript/tail';
@@ -79,7 +79,15 @@ export const GET: RequestHandler = async ({ params, url }) => {
 	let summary: ReturnType<typeof toSummary>;
 	try {
 		raw = await rawAgent(params.pane);
-		if (!raw) throw error(404, `no agent in pane ${params.pane}`);
+		if (!raw) {
+			// A pane with no agent is a shell, not a mistake. It has a screen
+			// and takes keys; it has no transcript, status or picker, and the
+			// degraded path below already says exactly that. 404ing here made
+			// every non-agent pane unopenable.
+			const pane = await rawPane(params.pane);
+			if (!pane) throw error(404, `no pane ${params.pane}`);
+			raw = pane;
+		}
 		summary = toSummary(raw);
 		visible = await readVisible(summary.paneId);
 	} catch (e) {
