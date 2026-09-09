@@ -55,7 +55,18 @@ export async function getManager(): Promise<SubscriptionManager> {
 		const created = new SubscriptionManager(getClient(), 15_000, async () =>
 			(await listAgents()).map((a) => a.paneId)
 		);
-		await created.start((await listAgents()).map((a) => a.paneId));
+		// Subscribe BEFORE the snapshot, then add the pane-scoped
+		// subscriptions the snapshot names.
+		//
+		// herdr 0.9.0 (protocol 22): "New lifecycle event subscriptions now
+		// start with live events rather than replaying retained history. API
+		// clients should subscribe before taking their initial snapshot to
+		// avoid missing changes." (#1270). Listing first left a window in
+		// which a status change was neither in the snapshot nor on the stream.
+		// The push watcher's reconcile poll would have found it eventually;
+		// this stops it going missing in the first place.
+		await created.start([]);
+		await created.sync((await listAgents()).map((a) => a.paneId));
 		manager = created;
 		return created;
 	})();
