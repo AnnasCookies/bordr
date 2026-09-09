@@ -54,6 +54,16 @@
 		else collapsed.add(id);
 	}
 
+	/**
+	 * A tab herdr labelled with its own number reads as a bare "2" in a tree.
+	 * Written as a function because an expression starting `{/` is parsed as
+	 * a block closing tag, not a regex.
+	 */
+	function tabLabel(label: string, number: number): string {
+		if (!label) return `tab ${number}`;
+		return /^\d+$/.test(label) ? `tab ${label}` : label;
+	}
+
 	function paneHref(paneId: string) {
 		return resolve('/a/[pane]', { pane: paneId });
 	}
@@ -105,7 +115,7 @@
 					     above it would be a row that says nothing. -->
 					{#if workspace.tabs.length > 1 || tab.panes.length > 1}
 						<p class="truncate py-0.5 pr-2 pl-6 font-mono text-[10.5px] text-faint">
-							{/^\d+$/.test(tab.label) ? `tab ${tab.label}` : tab.label || `tab ${tab.number}`}
+							{tabLabel(tab.label, tab.number)}
 						</p>
 					{/if}
 					{#each tab.panes as pane (pane.paneId)}
