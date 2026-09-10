@@ -1140,7 +1140,7 @@
 						<span class={STATUS_INK[detail.status] ?? 'text-faint'}>● {detail.status}</span>
 						·
 						<span class={harnessText(detail.agent)}
-							>{#if prefs.value.harnessIcons}<HarnessMark agent={detail.agent} />{/if}>
+							>{#if prefs.value.harnessIcons}<HarnessMark agent={detail.agent} />{/if}
 							{detail.agent}</span
 						>
 						{#if detail.workspaceLabel}· {detail.workspaceLabel}{/if}
