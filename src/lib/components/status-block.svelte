@@ -51,7 +51,12 @@
 </script>
 
 <!-- eslint-disable svelte/no-at-html-tags -->
-<div class="flex items-center gap-1 px-4 py-1.5 font-mono text-[10.5px] text-muted">
+<!--
+	More room under the strip than over it. The rows are bar glyphs and braille,
+	whose weight sits low in the line, so even ink centred to the pixel reads as
+	pinned to whatever is beneath.
+-->
+<div class="flex items-center gap-1 px-4 pt-1.5 pb-3 font-mono text-[10.5px] text-muted">
 	{#if open}
 		<button class="min-w-0 flex-1 text-left whitespace-pre-wrap" onclick={ontoggle}>
 			{#each rows as row, i (i)}{@html (i > 0 ? '\n' : '') + ansiToHtml(row)}{/each}
