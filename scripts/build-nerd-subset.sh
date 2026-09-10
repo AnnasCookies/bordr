@@ -13,6 +13,11 @@
 # Subsetting to the glyphs one machine happens to use would be smaller still,
 # but every user runs a different prompt — this way anyone's status line
 # renders, and only the person whose prompt uses Material pays for Material.
+#
+# --name-IDs='*' keeps the name table, and with it the copyright and licence
+# records. Cascadia Code is SIL OFL 1.1, which requires the licence to travel
+# with the font; the subsetter drops those records by default, which would
+# leave a redistributable binary with no licence in it.
 set -euo pipefail
 
 SRC=${1:-/usr/share/fonts/TTF/CaskaydiaMonoNerdFontMono-Regular.ttf}
@@ -28,6 +33,7 @@ mkdir -p "$OUT"
 build() {
   uvx --with brotli --from fonttools pyftsubset "$SRC" \
     --unicodes="$2" --layout-features='' --no-hinting --desubroutinize \
+    --name-IDs='*' --name-legacy \
     --flavor=woff2 --output-file="$OUT/nerd-$1.woff2"
   printf '  nerd-%-6s %5s KB\n' "$1" "$(( $(stat -c%s "$OUT/nerd-$1.woff2") / 1024 ))"
 }
