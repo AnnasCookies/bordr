@@ -1,6 +1,7 @@
 <script lang="ts">
 	import { onMount, tick } from 'svelte';
 	import { goto, invalidateAll } from '$app/navigation';
+	import { page } from '$app/state';
 	import { resolve } from '$app/paths';
 	import { agentStore } from '$lib/agents.svelte';
 	import { mergeResults } from '$lib/dictation';
@@ -497,6 +498,38 @@
 		await attach(picked);
 	}
 
+	/**
+	 * Photos that arrived through the Android share sheet.
+	 *
+	 * /share stashed them and the agents list sent you here with their names.
+	 * Fetched back through the uploads route and attached exactly as a picked
+	 * or pasted photo would be, then the query is cleared so a reload does not
+	 * attach them a second time.
+	 */
+	async function claimShared() {
+		const names = (page.url.searchParams.get('shared') ?? '').split(',').filter(Boolean);
+		if (names.length === 0) return;
+		const text = page.url.searchParams.get('text') ?? '';
+		const files: File[] = [];
+		for (const name of names) {
+			try {
+				const res = await fetch(`/api/uploads/${encodeURIComponent(name)}`);
+				if (!res.ok) continue;
+				const blob = await res.blob();
+				files.push(new File([blob], name, { type: blob.type }));
+			} catch {
+				// A pruned or unreadable share is not worth failing the page for.
+			}
+		}
+		if (text && !draft) draft = text;
+		if (files.length) await attach(files);
+		await goto(resolve('/a/[pane]', { pane: detail.paneId }), {
+			replaceState: true,
+			noScroll: true,
+			keepFocus: true
+		});
+	}
+
 	async function attach(files: File[]) {
 		const picked = files.slice(0, 6 - attachments.length);
 		// Shrunk on the phone: six camera photos were thirty megabytes, more
@@ -620,6 +653,7 @@
 	}
 
 	onMount(() => {
+		void claimShared();
 		scrollBottom();
 		store.start();
 		document.addEventListener('visibilitychange', onVisibility);
@@ -999,7 +1033,9 @@
 						<span class={STATUS_INK[detail.status] ?? 'text-faint'}>● {detail.status}</span>
 						·
 						<span class={harnessText(detail.agent)}
-							><span class="font-mono" aria-hidden="true">{harnessIcon(detail.agent)}</span>
+							>{#if prefs.value.harnessIcons}<span class="font-mono" aria-hidden="true"
+									>{harnessIcon(detail.agent)}</span
+								>{/if}>
 							{detail.agent}</span
 						>
 						{#if detail.workspaceLabel}· {detail.workspaceLabel}{/if}
@@ -1279,9 +1315,11 @@
 										style="animation-delay: {n * 0.2}s; opacity: {1 - n * 0.35}"
 									></span>
 								{/each}
-								<span class="min-w-0 truncate">{detail.activity?.text ?? 'working'}</span>
+								<span class="min-w-0 truncate"
+									>{(prefs.value.showActivity ? detail.activity?.text : null) ?? 'working'}</span
+								>
 							</div>
-							{#if detail.activity?.tip}
+							{#if prefs.value.showActivity && detail.activity?.tip}
 								<p class="mt-0.5 text-[11px] text-faint">{detail.activity.tip}</p>
 							{/if}
 						</div>
@@ -1461,7 +1499,7 @@
 			the way you can in a terminal, and it is usually a starting point
 			worth editing. Hidden the moment you type anything of your own.
 		-->
-				{#if detail.suggestion && draft.trim() === ''}
+				{#if prefs.value.showSuggestions && detail.suggestion && draft.trim() === ''}
 					<button
 						class="mb-2 flex w-full items-center gap-2 rounded-xl border border-hairline bg-card px-3 py-2 text-left"
 						onclick={() => {

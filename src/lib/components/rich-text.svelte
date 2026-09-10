@@ -83,6 +83,7 @@
 	$effect(() => {
 		// Re-runs when the text or the theme changes; both change the output.
 		void html;
+		if (!prefs.value.syntaxHighlight) return;
 		const dark = prefs.resolvedTheme === 'dark';
 		const root = host;
 		if (!root) return;

@@ -2,19 +2,27 @@
 	import { resolve } from '$app/paths';
 	import { collapseHome } from '$lib/grouping';
 	import { harnessIcon, harnessText, STATUS_INK, STATUS_RAIL, UNKNOWN_RAIL } from '$lib/theme';
+	import type { ResolvedPathname } from '$app/types';
 	import type { AgentSummary } from '$lib/types';
 
 	let {
 		agent,
 		unread = false,
-		preview
-	}: { agent: AgentSummary; unread?: boolean; preview: string } = $props();
+		preview,
+		query = ''
+	}: {
+		agent: AgentSummary;
+		unread?: boolean;
+		preview: string;
+		/** Appended to the link, so a share can travel to the conversation. */
+		query?: string;
+	} = $props();
 
 	const dim = $derived(agent.status === 'idle' || agent.status === 'unknown');
 </script>
 
 <a
-	href={resolve('/a/[pane]', { pane: agent.paneId })}
+	href={(resolve('/a/[pane]', { pane: agent.paneId }) + query) as ResolvedPathname}
 	class="flex overflow-hidden rounded-xl border bg-card {agent.status === 'unknown'
 		? 'border-dashed border-black/15 dark:border-white/15'
 		: 'border-hairline'}"

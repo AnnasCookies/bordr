@@ -21,5 +21,22 @@
 			"type": "image/png",
 			"purpose": "any maskable"
 		}
-	]
+	],
+	"share_target": {
+		"action": "/share",
+		"method": "POST",
+		"enctype": "multipart/form-data",
+		"params": {
+			"title": "title",
+			"text": "text",
+			"files": [
+				{
+					"name": "file",
+					"accept": [
+						"image/*"
+					]
+				}
+			]
+		}
+	}
 }

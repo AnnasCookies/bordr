@@ -28,6 +28,7 @@
 		const dark = prefs.resolvedTheme === 'dark';
 		let cancelled = false;
 		lit = null;
+		if (!prefs.value.syntaxHighlight) return;
 		void highlight(source, language, dark).then((html) => {
 			if (!cancelled) lit = html;
 		});

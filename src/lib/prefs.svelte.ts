@@ -34,6 +34,16 @@ export interface Prefs {
 	 * Some people work agent-first and do not want their shells in the way.
 	 */
 	treeScope: TreeScope;
+	/** Render the harness's live verb, elapsed time and tokens while it works. */
+	showActivity: boolean;
+	/** A glyph beside each harness name. */
+	harnessIcons: boolean;
+	/** Colour code, diffs and tool input with VS Code's grammars. */
+	syntaxHighlight: boolean;
+	/** Photos collapse to a strip until tapped. */
+	compactImages: boolean;
+	/** Offer the harness's own ghost prompt above the composer. */
+	showSuggestions: boolean;
 	enterSends: boolean;
 	dictationLang: string;
 	/**
@@ -65,6 +75,11 @@ export const DEFAULTS: Prefs = {
 	harnessAccent: 'edge',
 	toolDetail: 'formatted',
 	treeScope: 'all',
+	showActivity: true,
+	harnessIcons: true,
+	syntaxHighlight: true,
+	compactImages: true,
+	showSuggestions: true,
 	enterSends: false,
 	dictationLang: 'en-GB',
 	dictationHold: true,
@@ -147,6 +162,11 @@ export function normalisePrefs(raw: unknown): Prefs {
 		harnessAccent: pick(stored.harnessAccent, ACCENTS, DEFAULTS.harnessAccent),
 		toolDetail: pick(stored.toolDetail, TOOL_DETAILS, DEFAULTS.toolDetail),
 		treeScope: pick(stored.treeScope, TREE_SCOPES, DEFAULTS.treeScope),
+		showActivity: bool(stored.showActivity, DEFAULTS.showActivity),
+		harnessIcons: bool(stored.harnessIcons, DEFAULTS.harnessIcons),
+		syntaxHighlight: bool(stored.syntaxHighlight, DEFAULTS.syntaxHighlight),
+		compactImages: bool(stored.compactImages, DEFAULTS.compactImages),
+		showSuggestions: bool(stored.showSuggestions, DEFAULTS.showSuggestions),
 		enterSends: bool(stored.enterSends, DEFAULTS.enterSends),
 		dictationLang:
 			typeof stored.dictationLang === 'string' && stored.dictationLang.trim()

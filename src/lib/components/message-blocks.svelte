@@ -4,6 +4,7 @@
 	import CodeBlock from './code-block.svelte';
 	import ToolDetail from './tool-detail.svelte';
 	import { langForPath } from '$lib/highlight';
+	import { prefs } from '$lib/prefs.svelte';
 	import type { Block } from '$lib/server/transcript/types';
 
 	let {
@@ -63,12 +64,13 @@
 			<button
 				type="button"
 				class="frame"
-				class:open={expanded.has(i)}
+				class:open={expanded.has(i) || !prefs.value.compactImages}
 				onclick={() => toggle(i)}
 				aria-expanded={expanded.has(i)}
 			>
 				<img src={block.src} alt={block.caption || 'photo'} loading="lazy" />
-				{#if !expanded.has(i)}<span class="hint">tap to expand</span>{/if}
+				{#if !expanded.has(i) && prefs.value.compactImages}<span class="hint">tap to expand</span
+					>{/if}
 			</button>
 			{#if block.caption}<figcaption>{block.caption}</figcaption>{/if}
 		</figure>

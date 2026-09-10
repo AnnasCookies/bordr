@@ -18,7 +18,8 @@
 	import MessageBlocks from '$lib/components/message-blocks.svelte';
 	// Aliased: `ToolDetail` is already the name of the preference type.
 	import ToolDetailView from '$lib/components/tool-detail.svelte';
-	import { harnessBubble, harnessHex, harnessText } from '$lib/theme';
+	import { harnessBubble, harnessHex, harnessIcon, harnessText } from '$lib/theme';
+	import CodeBlock from '$lib/components/code-block.svelte';
 	import type { Block } from '$lib/server/transcript/types';
 
 	/**
@@ -135,6 +136,58 @@
 		/>
 		{#if !prefs.value.showWork}
 			<p class="text-[12px] text-muted">Tool calls hidden; the agent's prose still shows.</p>
+		{/if}
+	</div>
+{/snippet}
+
+{#snippet activityPreview()}
+	<div class="rounded-lg bg-page p-2">
+		{#if prefs.value.showActivity}
+			<div class="flex items-center gap-1.5 font-mono text-[11px] text-muted">
+				<span class="h-1 w-1 rounded-full bg-working"></span>
+				<span>Channeling… (4m 36s · ↓ 6.5k tokens)</span>
+			</div>
+			<p class="mt-0.5 text-[11px] text-faint">Tip: Use /btw to ask a quick side question</p>
+		{:else}
+			<div class="flex items-center gap-1.5 font-mono text-[11px] text-muted">
+				<span class="h-1 w-1 rounded-full bg-working"></span> working
+			</div>
+		{/if}
+	</div>
+{/snippet}
+
+{#snippet iconPreview()}
+	<div class="flex gap-3 rounded-lg bg-page p-2 font-mono text-[12px]">
+		{#each ['claude', 'codex', 'pi', ''] as kind (kind)}
+			<span class={harnessText(kind)}>
+				{#if prefs.value.harnessIcons}{harnessIcon(kind)}{/if}
+				{kind || 'shell'}
+			</span>
+		{/each}
+	</div>
+{/snippet}
+
+{#snippet syntaxPreview()}
+	<div class="rounded-lg bg-page p-2">
+		<CodeBlock
+			code={'const greeting = `Hello, ${name.trim()}!`;'}
+			lang="typescript"
+			mono={prefs.value.monoSize}
+		/>
+	</div>
+{/snippet}
+
+{#snippet suggestionPreview()}
+	<div class="rounded-lg bg-page p-2">
+		{#if prefs.value.showSuggestions}
+			<div
+				class="flex items-center gap-2 rounded-xl border border-hairline bg-card px-3 py-2 text-[13px]"
+			>
+				<span class="text-faint" aria-hidden="true">&rarr;</span>
+				<span class="truncate text-muted">yeah commit and push both</span>
+			</div>
+		{:else}
+			<p class="text-[12px] text-muted">The harness's own suggested prompt stays hidden.</p>
 		{/if}
 	</div>
 {/snippet}
@@ -268,6 +321,14 @@
 					{#snippet preview()}{@render stripPreview()}{/snippet}
 				</SettingRow>
 				<ToggleRow
+					label="Suggested prompts"
+					hint="The ghost prompt the harness offers in its own input box, as a tappable chip above the composer."
+					checked={prefs.value.showSuggestions}
+					onchange={(v) => prefs.set('showSuggestions', v)}
+				>
+					{#snippet preview()}{@render suggestionPreview()}{/snippet}
+				</ToggleRow>
+				<ToggleRow
 					label="Swipe to cycle agents"
 					hint="Swipe across a conversation for the next or previous agent in the list. Swiping from either screen edge still goes back."
 					checked={prefs.value.swipeAgents}
@@ -324,6 +385,36 @@
 				>
 					{#snippet preview()}{@render workPreview()}{/snippet}
 				</ToggleRow>
+				<ToggleRow
+					label="Activity line"
+					hint="What the harness says it is doing while it works — its verb, elapsed time and tokens — instead of just 'working'."
+					checked={prefs.value.showActivity}
+					onchange={(v) => prefs.set('showActivity', v)}
+				>
+					{#snippet preview()}{@render activityPreview()}{/snippet}
+				</ToggleRow>
+				<ToggleRow
+					label="Harness icons"
+					hint="A glyph beside each harness name, in the list, the tree and the conversation header."
+					checked={prefs.value.harnessIcons}
+					onchange={(v) => prefs.set('harnessIcons', v)}
+				>
+					{#snippet preview()}{@render iconPreview()}{/snippet}
+				</ToggleRow>
+				<ToggleRow
+					label="Syntax highlighting"
+					hint="VS Code's own grammars and themes for code blocks, tool input and both sides of a diff. Off renders plain monospace and downloads nothing."
+					checked={prefs.value.syntaxHighlight}
+					onchange={(v) => prefs.set('syntaxHighlight', v)}
+				>
+					{#snippet preview()}{@render syntaxPreview()}{/snippet}
+				</ToggleRow>
+				<ToggleRow
+					label="Collapse photos"
+					hint="A photo shows as a strip until tapped. Off shows every image at full height."
+					checked={prefs.value.compactImages}
+					onchange={(v) => prefs.set('compactImages', v)}
+				/>
 				<SettingRow
 					label="Tool calls"
 					value={prefs.value.toolDetail}
