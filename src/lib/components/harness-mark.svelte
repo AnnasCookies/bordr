@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { HARNESS_LOGO } from '$lib/harness-logos';
+	import { HARNESS_MARK } from '$lib/harness-marks';
 	import { harnessIcon } from '$lib/theme';
 
 	/**
@@ -13,7 +14,9 @@
 	 */
 	let { agent = '' }: { agent?: string } = $props();
 
-	const path = $derived(HARNESS_LOGO[agent] ?? '');
+	const brand = $derived(HARNESS_LOGO[agent] ?? '');
+	const drawn = $derived(HARNESS_MARK[agent]);
+	const path = $derived(brand || (drawn?.d ?? ''));
 </script>
 
 {#if path}
@@ -25,7 +28,7 @@
 		aria-hidden="true"
 		style="display:inline-block;vertical-align:-0.125em"
 	>
-		<path d={path} />
+		<path d={path} fill-rule={!brand && drawn?.evenodd ? 'evenodd' : 'nonzero'} />
 	</svg>
 {:else}
 	<span class="font-mono" aria-hidden="true">{harnessIcon(agent)}</span>
