@@ -255,6 +255,168 @@
 	</div>
 {/snippet}
 
+{#snippet groupPreview()}
+	<div class="rounded-lg bg-page p-2 text-[12px]">
+		{#if prefs.value.groupBy === 'none'}
+			<p class="text-muted">One flat list, no headings.</p>
+		{:else}
+			{@const heads =
+				prefs.value.groupBy === 'workspace'
+					? ['bordr', 'it-work']
+					: prefs.value.groupBy === 'status'
+						? ['blocked', 'working']
+						: ['claude', 'codex']}
+			{#each heads as head (head)}
+				<p class="font-mono text-[10.5px] text-muted">{head}</p>
+				<p class="mb-1 pl-2 text-ink">a session in that group</p>
+			{/each}
+		{/if}
+	</div>
+{/snippet}
+
+{#snippet sortPreview()}
+	<div class="rounded-lg bg-page p-2 font-mono text-[11px]">
+		{#each prefs.value.sort === 'title' ? ['Alpha task', 'Beta task', 'Gamma task'] : prefs.value.sort === 'recent' ? ['just now', '4m ago', '2h ago'] : ['● blocked', '● working', '● idle'] as row (row)}
+			<div class="text-muted">{row}</div>
+		{/each}
+	</div>
+{/snippet}
+
+{#snippet rollupPreview()}
+	<div class="rounded-lg bg-page p-2">
+		<p class="font-mono text-[10.5px] text-muted">
+			bordr {#if prefs.value.rollup}<span class="text-faint">· 2 working · 1 idle</span>{/if}
+		</p>
+		<p class="pl-2 text-[12px]">Bordr exploration</p>
+	</div>
+{/snippet}
+
+{#snippet previewLinePreview()}
+	<div class="rounded-lg bg-page p-2 text-[12px]">
+		<p class="font-medium">Bordr exploration</p>
+		{#if prefs.value.preview === 'activity'}
+			<p class="font-mono text-[11px] text-muted">Channeling… (4m 36s)</p>
+		{:else if prefs.value.preview === 'cwd'}
+			<p class="font-mono text-[11px] text-muted">~/bordr</p>
+		{:else}
+			<p class="text-[11px] text-faint">Nothing under the title.</p>
+		{/if}
+	</div>
+{/snippet}
+
+{#snippet themePreview()}
+	<div class="flex gap-2 rounded-lg bg-page p-2">
+		{#each [{ l: 'Light', bg: '#ffffff', ink: '#111827', edge: '#e5e7eb' }, { l: 'Dark', bg: '#0b0d10', ink: '#e5e7eb', edge: '#2a2f36' }] as swatch (swatch.l)}
+			<span
+				class="flex h-9 flex-1 items-center justify-center rounded-md border text-[11px]"
+				style="background:{swatch.bg}; color:{swatch.ink}; border-color:{swatch.edge}"
+				>{swatch.l}</span
+			>
+		{/each}
+		<span class="self-center font-mono text-[10.5px] text-muted">
+			{prefs.value.theme === 'system' ? 'follows the device' : `always ${prefs.value.theme}`}
+		</span>
+	</div>
+{/snippet}
+
+{#snippet swipePreview()}
+	<div class="rounded-lg bg-page p-2 text-[12px] text-muted">
+		{#if prefs.value.swipeAgents}
+			<span class="font-mono">← swipe →</span> moves to the next agent in the list.
+		{:else}
+			A sideways swipe does nothing; use the list or the tree.
+		{/if}
+	</div>
+{/snippet}
+
+{#snippet enterPreview()}
+	<div class="rounded-lg bg-page p-2 font-mono text-[11px] text-muted">
+		{#if prefs.value.enterSends}
+			<div>Enter — send</div>
+			<div>Shift+Enter — new line</div>
+		{:else}
+			<div>Enter — new line</div>
+			<div>Ctrl/Cmd+Enter — send</div>
+		{/if}
+	</div>
+{/snippet}
+
+{#snippet dictatePreview()}
+	<div class="flex items-center gap-2 rounded-lg bg-page p-2 text-[12px] text-muted">
+		<span class="h-2 w-2 rounded-full bg-blocked"></span>
+		{#if prefs.value.dictationHold}
+			Keeps listening until you tap stop.
+		{:else}
+			Stops on its own at the end of a sentence.
+		{/if}
+	</div>
+{/snippet}
+
+{#snippet photoPreview()}
+	<div class="rounded-lg bg-page p-2">
+		<div
+			class="flex items-center justify-center rounded-lg border border-hairline bg-chip text-[11px] text-muted {prefs
+				.value.compactImages
+				? 'h-12'
+				: 'h-24'}"
+		>
+			a photo, {prefs.value.compactImages ? 'cropped — tap to open' : 'full height'}
+		</div>
+	</div>
+{/snippet}
+
+{#snippet splitPreview()}
+	<div class="rounded-lg bg-page p-2">
+		{#if prefs.value.splitPanes}
+			<div class="flex h-16 gap-[3px]">
+				<div
+					class="flex flex-[0.62] items-center justify-center rounded-md bg-card text-[10.5px] ring-1 ring-working/60 ring-inset"
+				>
+					this pane
+				</div>
+				<div class="flex flex-[0.38] flex-col gap-[3px]">
+					<div
+						class="term flex flex-1 items-center justify-center rounded-md bg-card text-[9px] text-muted"
+					>
+						screen
+					</div>
+					<div
+						class="term flex flex-1 items-center justify-center rounded-md bg-card text-[9px] text-muted"
+					>
+						screen
+					</div>
+				</div>
+			</div>
+			<p class="mt-1 text-[11px] text-faint">
+				Drag a divider to resize the split in the terminal too.
+			</p>
+		{:else}
+			<div class="flex h-16 items-center justify-center rounded-md bg-card text-[10.5px]">
+				one pane at a time
+			</div>
+			<p class="mt-1 text-[11px] text-faint">The tab's other panes stay a row of chips.</p>
+		{/if}
+	</div>
+{/snippet}
+
+{#snippet branchPreview()}
+	<div class="rounded-lg bg-page p-2">
+		<p class="text-[12.5px]">win-vm-omarchy</p>
+		{#if prefs.value.showBranches}
+			<p class="font-mono text-[10px] text-faint">&#xe0a0; master</p>
+		{/if}
+	</div>
+{/snippet}
+
+{#snippet tabLabelPreview()}
+	<div class="flex gap-3 rounded-lg bg-page p-2 text-[12.5px]">
+		<span class="border-b-2 border-working pb-0.5"
+			>{prefs.value.smartTabLabels ? 'Bordr exploration' : 'tab 1'}</span
+		>
+		<span class="text-muted">{prefs.value.smartTabLabels ? '~/repos/it-work' : 'tab 2'}</span>
+	</div>
+{/snippet}
+
 <div class="flex min-h-dvh flex-col">
 	<header class="px-4 pt-4 pb-3">
 		<h1 class="text-[30px] font-semibold tracking-[-0.6px]">Settings</h1>
@@ -276,7 +438,9 @@
 						{ v: 'none' as GroupBy, l: 'None' }
 					]}
 					onchange={(v) => prefs.set('groupBy', v)}
-				/>
+				>
+					{#snippet preview()}{@render groupPreview()}{/snippet}
+				</SettingRow>
 				<SettingRow
 					label="Sort within group"
 					value={prefs.value.sort}
@@ -286,12 +450,16 @@
 						{ v: 'recent' as SortBy, l: 'Recent' }
 					]}
 					onchange={(v) => prefs.set('sort', v)}
-				/>
+				>
+					{#snippet preview()}{@render sortPreview()}{/snippet}
+				</SettingRow>
 				<ToggleRow
 					label="Show rollup counts"
 					checked={prefs.value.rollup}
 					onchange={(v) => prefs.set('rollup', v)}
-				/>
+				>
+					{#snippet preview()}{@render rollupPreview()}{/snippet}
+				</ToggleRow>
 				<SettingRow
 					label="Preview line"
 					value={prefs.value.preview}
@@ -301,7 +469,9 @@
 						{ v: 'none' as PreviewMode, l: 'None' }
 					]}
 					onchange={(v) => prefs.set('preview', v)}
-				/>
+				>
+					{#snippet preview()}{@render previewLinePreview()}{/snippet}
+				</SettingRow>
 			</div>
 		</section>
 
@@ -319,7 +489,9 @@
 						{ v: 'system' as Theme, l: 'System' }
 					]}
 					onchange={(v) => prefs.set('theme', v)}
-				/>
+				>
+					{#snippet preview()}{@render themePreview()}{/snippet}
+				</SettingRow>
 				<SettingRow
 					label="Mono size in peek & tool rows"
 					value={String(prefs.value.monoSize)}
@@ -333,6 +505,38 @@
 				>
 					{#snippet preview()}{@render monoPreview()}{/snippet}
 				</SettingRow>
+			</div>
+		</section>
+
+		<section>
+			<h2 class="mb-1.5 px-1 font-mono text-[10.5px] text-muted">workspaces &amp; panes</h2>
+			<div
+				class="divide-y divide-black/[.06] overflow-hidden rounded-xl border border-hairline bg-card dark:divide-white/[.06]"
+			>
+				<ToggleRow
+					label="Split panes"
+					hint="Draw a tab as the split herdr actually has, with the pane you are in holding its transcript and composer. Desktop widths only."
+					checked={prefs.value.splitPanes}
+					onchange={(v) => prefs.set('splitPanes', v)}
+				>
+					{#snippet preview()}{@render splitPreview()}{/snippet}
+				</ToggleRow>
+				<ToggleRow
+					label="Git branch in the tree"
+					hint="Read from each workspace's directory; herdr does not serve it."
+					checked={prefs.value.showBranches}
+					onchange={(v) => prefs.set('showBranches', v)}
+				>
+					{#snippet preview()}{@render branchPreview()}{/snippet}
+				</ToggleRow>
+				<ToggleRow
+					label="Name tabs after their contents"
+					hint="herdr labels a tab with its own number until you rename it."
+					checked={prefs.value.smartTabLabels}
+					onchange={(v) => prefs.set('smartTabLabels', v)}
+				>
+					{#snippet preview()}{@render tabLabelPreview()}{/snippet}
+				</ToggleRow>
 			</div>
 		</section>
 
@@ -365,7 +569,9 @@
 					hint="Swipe across a conversation for the next or previous agent in the list. Swiping from either screen edge still goes back."
 					checked={prefs.value.swipeAgents}
 					onchange={(v) => prefs.set('swipeAgents', v)}
-				/>
+				>
+					{#snippet preview()}{@render swipePreview()}{/snippet}
+				</ToggleRow>
 				<ToggleRow
 					label="Enter sends"
 					hint={prefs.value.enterSends
@@ -373,7 +579,9 @@
 						: 'Enter makes a newline; ⌘/Ctrl+Enter sends.'}
 					checked={prefs.value.enterSends}
 					onchange={(v) => prefs.set('enterSends', v)}
-				/>
+				>
+					{#snippet preview()}{@render enterPreview()}{/snippet}
+				</ToggleRow>
 				<ToggleRow
 					label="Dictate until you tap stop"
 					hint={prefs.value.dictationHold
@@ -381,7 +589,9 @@
 						: 'Stops at the first pause. Quick for a one-line reply.'}
 					checked={prefs.value.dictationHold}
 					onchange={(v) => prefs.set('dictationHold', v)}
-				/>
+				>
+					{#snippet preview()}{@render dictatePreview()}{/snippet}
+				</ToggleRow>
 				<label class="block px-3.5 py-3">
 					<span class="mb-2 block text-[15px]">Dictation language</span>
 					<input
@@ -506,7 +716,9 @@
 					hint="A photo shows as a strip until tapped. Off shows every image at full height."
 					checked={prefs.value.compactImages}
 					onchange={(v) => prefs.set('compactImages', v)}
-				/>
+				>
+					{#snippet preview()}{@render photoPreview()}{/snippet}
+				</ToggleRow>
 				<SettingRow
 					label="Tool calls"
 					value={prefs.value.toolDetail}

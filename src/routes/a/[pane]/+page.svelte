@@ -53,6 +53,7 @@
 	let workspaces = $state<WorkspaceNode[]>([]);
 
 	const splitLayout = $derived.by(() => {
+		if (!prefs.value.splitPanes) return undefined;
 		for (const workspace of workspaces) {
 			for (const tab of workspace.tabs) {
 				if (!tab.panes.some((p) => p.paneId === detail.paneId)) continue;

@@ -1,6 +1,7 @@
 <script lang="ts">
 	import { goto } from '$app/navigation';
 	import { resolve } from '$app/paths';
+	import { prefs } from '$lib/prefs.svelte';
 	import { STATUS_RAIL, harnessText } from '$lib/theme';
 	import HarnessMark from './harness-mark.svelte';
 	import PaneSplit from './pane-split.svelte';
@@ -65,6 +66,7 @@
 	function label(tab: (typeof tabs)[number]) {
 		const named = tab.label && !/^\d+$/.test(tab.label);
 		if (named) return tab.label;
+		if (!prefs.value.smartTabLabels) return `tab ${tab.label || tab.number}`;
 		const agent = tab.panes.find((p) => p.hasAgent && p.title);
 		if (agent) return agent.title;
 		const shell = tab.panes.find((p) => p.cwd);

@@ -46,6 +46,12 @@ export interface Prefs {
 	sidebarSplit: number;
 	/** The desktop session tree, open or collapsed out of the way. */
 	sidebarOpen: boolean;
+	/** Draw a tab's panes as herdr's real split, rather than one pane at a time. */
+	splitPanes: boolean;
+	/** The git branch under each workspace in the tree. */
+	showBranches: boolean;
+	/** Name an unnamed tab after what is in it, rather than "tab 2". */
+	smartTabLabels: boolean;
 	/** Render the harness's live verb, elapsed time and tokens while it works. */
 	showActivity: boolean;
 	/** A glyph beside each harness name. */
@@ -103,6 +109,9 @@ export const DEFAULTS: Prefs = {
 	agentOrder: 'priority',
 	sidebarSplit: 0.4,
 	sidebarOpen: true,
+	splitPanes: true,
+	showBranches: true,
+	smartTabLabels: true,
 	showActivity: true,
 	harnessIcons: true,
 	syntaxHighlight: true,
@@ -204,6 +213,9 @@ export function normalisePrefs(raw: unknown): Prefs {
 				? Math.min(Math.max(stored.sidebarSplit, 0.15), 0.75)
 				: DEFAULTS.sidebarSplit,
 		sidebarOpen: bool(stored.sidebarOpen, DEFAULTS.sidebarOpen),
+		splitPanes: bool(stored.splitPanes, DEFAULTS.splitPanes),
+		showBranches: bool(stored.showBranches, DEFAULTS.showBranches),
+		smartTabLabels: bool(stored.smartTabLabels, DEFAULTS.smartTabLabels),
 		showActivity: bool(stored.showActivity, DEFAULTS.showActivity),
 		harnessIcons: bool(stored.harnessIcons, DEFAULTS.harnessIcons),
 		syntaxHighlight: bool(stored.syntaxHighlight, DEFAULTS.syntaxHighlight),

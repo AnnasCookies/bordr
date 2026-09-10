@@ -229,7 +229,7 @@
 								<span class="block truncate text-[12.5px]"
 									>{workspace.label || workspace.workspaceId}</span
 								>
-								{#if workspace.branch}
+								{#if workspace.branch && prefs.value.showBranches}
 									<span class="block truncate font-mono text-[10px] text-faint"
 										>&#xe0a0; {workspace.branch}</span
 									>
