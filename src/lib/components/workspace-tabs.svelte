@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { goto } from '$app/navigation';
 	import { resolve } from '$app/paths';
 	import { STATUS_INK, harnessIcon, harnessText } from '$lib/theme';
 	import type { WorkspaceNode } from '$lib/types';
@@ -62,6 +63,35 @@
 	/** The panes in the open tab — a tab holds one or more, split. */
 	const tabPanes = $derived(tabs.find((t) => t.tabId === currentTab)?.panes ?? []);
 
+	/**
+	 * herdr's `+`: a new tab in the open workspace, then straight into it.
+	 *
+	 * `tab.create` opens the tab with a shell already in it and returns that
+	 * pane, so there is nothing to wait for or poll.
+	 */
+	let creating = $state(false);
+
+	async function newTab() {
+		const target = workspace;
+		if (!target || creating) return;
+		creating = true;
+		try {
+			const res = await fetch('/api/tabs', {
+				method: 'POST',
+				headers: { 'content-type': 'application/json' },
+				body: JSON.stringify({ workspaceId: target.workspaceId })
+			});
+			if (!res.ok) return;
+			const { paneId } = await res.json();
+			await load();
+			if (paneId) await goto(resolve('/a/[pane]', { pane: paneId }));
+		} catch {
+			// The bar keeps working; a failed create just leaves you where you were.
+		} finally {
+			creating = false;
+		}
+	}
+
 	/** The worst status in a tab, so the bar can show what needs a human. */
 	function tone(tab: (typeof tabs)[number]) {
 		const statuses = tab.panes.map((p) => p.status);
@@ -75,10 +105,10 @@
 	The workspace's tabs, where herdr puts them: across the top of the work
 	area rather than buried in the sidebar tree.
 -->
-{#if tabs.length > 1 || tabPanes.length > 1}
-	{#if tabs.length > 1}
+{#if workspace}
+	<div class="flex items-center gap-1 border-b border-hairline px-2 py-1">
 		<div
-			class="flex gap-1 overflow-x-auto border-b border-hairline px-2 py-1"
+			class="flex min-w-0 flex-1 gap-1 overflow-x-auto"
 			role="tablist"
 			aria-label="Tabs in {workspace?.label || 'this workspace'}"
 		>
@@ -101,7 +131,18 @@
 				</a>
 			{/each}
 		</div>
-	{/if}
+
+		<button
+			type="button"
+			class="shrink-0 rounded-lg px-2 py-1 text-[13px] text-working disabled:opacity-40"
+			aria-label="New tab in {workspace?.label || 'this workspace'}"
+			title="New tab"
+			disabled={creating}
+			onclick={newTab}>＋</button
+		>
+		<!-- herdr parks the host at the right end of the tab bar; blank means this one. -->
+		<span class="shrink-0 font-mono text-[10.5px] text-faint">{workspace?.machine || 'local'}</span>
+	</div>
 
 	<!--
 		The panes inside the open tab. A tab is one or more panes split

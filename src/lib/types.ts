@@ -106,6 +106,8 @@ export interface WorkspaceNode {
 	label: string;
 	number: number;
 	focused: boolean;
+	/** The git branch of the workspace's directory, as herdr shows it. Empty outside a repo. */
+	branch: string;
 	tabs: TabNode[];
 }
 

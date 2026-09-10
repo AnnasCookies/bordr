@@ -342,7 +342,7 @@ export function runOn(
  * be enormous.
  */
 /** Wrap for one pass through a POSIX shell, with no expansion at all. */
-function shellQuote(value: string): string {
+export function shellQuote(value: string): string {
 	return `'${value.split("'").join(`'\\''`)}'`;
 }
 

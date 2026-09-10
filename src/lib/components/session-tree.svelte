@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { resolve } from '$app/paths';
+	import { SvelteSet } from 'svelte/reactivity';
 	import { prefs, type AgentOrder } from '$lib/prefs.svelte';
 	import { STATUS_INK, harnessIcon, harnessText } from '$lib/theme';
 	import type { MachineStatus, PaneNode, WorkspaceNode } from '$lib/types';
@@ -55,16 +56,16 @@
 	/**
 	 * The agent section.
 	 *
-	 * Everything, ordered by whichever rule is chosen. The workspace section
+	 * Everything, ordered by whichever rule is chosen. The machines section
 	 * above navigates rather than filters, so this stays the one place every
 	 * agent can be seen at once.
 	 */
 	const agentRows = $derived.by(() => {
-		// Every agent, always. Scoping this to the selected workspace hid the
-		// ones you were not looking at, which is the opposite of what a list of
-		// things that might need you is for.
-		const rows = allPanes.filter((p) => prefs.value.treeScope === 'all' || p.hasAgent);
-		return [...rows].sort((a, b) => {
+		// Every pane, always. Scoping this hid the ones you were not looking
+		// at, which is the opposite of what a list of things that might need
+		// you is for — and the machines section above already reaches a
+		// specific shell, so a filter here only took choices away.
+		return [...allPanes].sort((a, b) => {
 			// Terminals below agents either way: a shell is a place you go, an
 			// agent is something that might need you.
 			if (a.hasAgent !== b.hasAgent) return a.hasAgent ? -1 : 1;
@@ -75,24 +76,45 @@
 		});
 	});
 
-	/** Workspaces grouped by machine, this host first and unlabelled. */
-	const grouped = $derived.by((): { machine: string; workspaces: WorkspaceNode[] }[] => {
-		const groups: { machine: string; workspaces: WorkspaceNode[] }[] = [];
-		for (const workspace of workspaces) {
-			const machine = workspace.machine ?? '';
-			const found = groups.find((g) => g.machine === machine);
-			if (found) found.workspaces.push(workspace);
-			else groups.push({ machine, workspaces: [workspace] });
-		}
-		return groups.sort((a, b) =>
-			a.machine === '' ? -1 : b.machine === '' ? 1 : a.machine.localeCompare(b.machine)
-		);
+	/**
+	 * The machines section: one collapsible group per machine, this host first.
+	 *
+	 * A machine that is connecting or unreachable still gets its group, so it
+	 * keeps its place in the list and says what it is doing — it used to drop
+	 * out of the tree entirely and reappear at the bottom as a stray row.
+	 */
+	interface MachineGroup {
+		key: string;
+		label: string;
+		state: MachineStatus['state'] | 'local';
+		error: string;
+		workspaces: WorkspaceNode[];
+	}
+
+	const groups = $derived.by((): MachineGroup[] => {
+		const local: MachineGroup = {
+			key: '',
+			label: 'Local',
+			state: 'local',
+			error: '',
+			workspaces: workspaces.filter((w) => !w.machine)
+		};
+		const remote = machines.map((m) => ({
+			key: m.machine.label,
+			label: m.machine.label,
+			state: m.state,
+			error: m.error ?? '',
+			workspaces: workspaces.filter((w) => w.machine === m.machine.label)
+		}));
+		return [local, ...remote.sort((a, b) => a.label.localeCompare(b.label))];
 	});
 
-	/** Machines with no panes in the tree yet, and what they are doing. */
-	const pending = $derived(
-		machines.filter((m) => !workspaces.some((w) => w.machine === m.machine.label))
-	);
+	/** Groups the user has folded away. Collapsed is the exception, so a set of keys. */
+	const collapsed = new SvelteSet<string>();
+
+	function toggle(key: string) {
+		if (!collapsed.delete(key)) collapsed.add(key);
+	}
 
 	function counts(workspace: WorkspaceNode) {
 		const panes = workspace.tabs.flatMap((t) => t.panes);
@@ -151,86 +173,85 @@
 	class="flex h-full flex-col border-r border-hairline bg-card"
 	aria-label="Session"
 >
-	<div class="flex items-center gap-1 border-b border-hairline px-2 py-1.5">
-		<div class="flex flex-1 gap-0.5 rounded-lg bg-chip p-[2px]">
-			{#each [{ v: 'all', l: 'All panes' }, { v: 'agents', l: 'Agents' }] as option (option.v)}
+	<!--
+		Machines on top, agents underneath — herdr's own shape. The top section
+		chooses what the bottom one is about, which is what stops them being two
+		views of the same list.
+	-->
+	<div class="flex min-h-0 flex-col" style="height: {prefs.value.sidebarSplit * 100}%; flex: none">
+		<div class="min-h-0 flex-1 overflow-y-auto py-1">
+			<p class="px-2 py-0.5 font-mono text-[10.5px] text-muted">machines</p>
+
+			{#each groups as group (group.key)}
+				{@const folded = collapsed.has(group.key)}
 				<button
-					class="flex-1 rounded-md px-2 py-1 text-[11.5px] {prefs.value.treeScope === option.v
-						? 'bg-card text-ink shadow-[0_1px_2px_rgba(0,0,0,.08)]'
-						: 'text-muted'}"
-					aria-pressed={prefs.value.treeScope === option.v}
-					onclick={() => prefs.set('treeScope', option.v as 'all' | 'agents')}>{option.l}</button
+					type="button"
+					class="flex w-full items-center gap-1.5 px-2 py-1 text-left"
+					aria-expanded={!folded}
+					onclick={() => toggle(group.key)}
 				>
+					<span class="w-2 shrink-0 font-mono text-[9px] text-faint" aria-hidden="true"
+						>{folded ? '▶' : '▼'}</span
+					>
+					<span class="min-w-0 flex-1 truncate font-mono text-[11px] text-working"
+						>{group.label}</span
+					>
+					{#if group.state === 'unreachable'}
+						<span class="shrink-0 font-mono text-[10px] text-faint" title={group.error}
+							>no answer</span
+						>
+					{:else if group.state === 'connecting'}
+						<span class="shrink-0 font-mono text-[10px] text-faint">connecting…</span>
+					{:else}
+						<span class="shrink-0 font-mono text-[10px] text-faint">{group.workspaces.length}</span>
+					{/if}
+				</button>
+
+				{#if !folded}
+					{#each group.workspaces as workspace (workspace.workspaceId)}
+						{@const c = counts(workspace)}
+						<a
+							href={paneHref(workspaceTarget(workspace))}
+							class="flex w-full items-center gap-2 py-1 pr-2 pl-4 text-left {workspace.workspaceId ===
+							currentWorkspace
+								? 'bg-chip'
+								: ''}"
+							aria-current={workspace.workspaceId === currentWorkspace ? 'true' : undefined}
+						>
+							<span
+								class="h-1.5 w-1.5 shrink-0 rounded-full {c.blocked > 0
+									? 'bg-blocked'
+									: 'bg-idle-rail'}"
+								aria-hidden="true"
+							></span>
+							<span class="min-w-0 flex-1">
+								<span class="block truncate text-[12.5px]"
+									>{workspace.label || workspace.workspaceId}</span
+								>
+								{#if workspace.branch}
+									<span class="block truncate font-mono text-[10px] text-faint"
+										>&#xe0a0; {workspace.branch}</span
+									>
+								{/if}
+							</span>
+							<span class="shrink-0 font-mono text-[10px] text-faint">{c.agents}</span>
+						</a>
+					{/each}
+				{/if}
 			{/each}
 		</div>
-		<button
-			class="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg text-working"
-			aria-label="New agent"
-			title="New agent"
-			onclick={onnew}>＋</button
-		>
-		<a
-			href={resolve('/settings')}
-			class="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg text-muted"
-			aria-label="Settings"
-			title="Settings">☰</a
-		>
-	</div>
 
-	<!--
-		Workspaces on top, agents underneath — herdr's own shape. The top
-		section chooses what the bottom one is about, which is what stops them
-		being two views of the same list.
-	-->
-	<div
-		class="min-h-0 overflow-y-auto py-1"
-		style="height: {prefs.value.sidebarSplit * 100}%; flex: none"
-	>
-		<p class="px-2 py-0.5 font-mono text-[10.5px] text-muted">workspaces</p>
-
-		{#each grouped as group (group.machine)}
-			{#if group.machine}
-				<p class="px-2 pt-1 font-mono text-[10.5px] text-working">{group.machine}</p>
-			{/if}
-			{#each group.workspaces as workspace (workspace.workspaceId)}
-				{@const c = counts(workspace)}
-				{@const landing = workspaceTarget(workspace)}
-				<a
-					href={paneHref(landing)}
-					class="flex w-full items-center gap-2 px-2 py-1 text-left {workspace.workspaceId ===
-					currentWorkspace
-						? 'bg-chip'
-						: ''}"
-					aria-current={workspace.workspaceId === currentWorkspace ? 'true' : undefined}
-				>
-					<span
-						class="h-1.5 w-1.5 shrink-0 rounded-full {c.blocked > 0
-							? 'bg-blocked'
-							: 'bg-idle-rail'}"
-						aria-hidden="true"
-					></span>
-					<span class="min-w-0 flex-1 truncate text-[12.5px]"
-						>{workspace.label || workspace.workspaceId}</span
-					>
-					<span class="shrink-0 font-mono text-[10px] text-faint">{c.agents}</span>
-				</a>
-			{/each}
-		{/each}
-
-		{#each pending as status (status.machine.id)}
-			<div class="flex items-center gap-2 px-2 py-1 opacity-60">
-				<span
-					class="h-1.5 w-1.5 shrink-0 rounded-full {status.state === 'unreachable'
-						? 'bg-idle-rail'
-						: 'bg-working'}"
-					aria-hidden="true"
-				></span>
-				<span class="min-w-0 flex-1 truncate font-mono text-[11px]">{status.machine.label}</span>
-				<span class="shrink-0 font-mono text-[10px] text-faint" title={status.error ?? ''}
-					>{status.state === 'unreachable' ? 'no answer' : 'connecting…'}</span
-				>
-			</div>
-		{/each}
+		<!-- herdr keeps new and menu at the foot of its machines pane, not in a title bar. -->
+		<div class="flex shrink-0 items-center gap-1 border-t border-hairline px-2 py-1">
+			<button
+				class="flex-1 rounded px-1.5 py-0.5 text-left font-mono text-[10.5px] text-working"
+				onclick={onnew}>new · Local</button
+			>
+			<a
+				href={resolve('/settings')}
+				class="rounded px-1.5 py-0.5 font-mono text-[10.5px] text-muted">menu</a
+			>
+		</div>
 	</div>
 
 	<!--
@@ -244,7 +265,7 @@
 	-->
 	<button
 		type="button"
-		aria-label="Resize the workspaces section, currently {Math.round(
+		aria-label="Resize the machines section, currently {Math.round(
 			prefs.value.sidebarSplit * 100
 		)}% — arrow keys adjust"
 		class="group relative h-1.5 w-full shrink-0 cursor-row-resize border-y border-hairline bg-card"
@@ -294,11 +315,15 @@
 				></span>
 				<span class="min-w-0 flex-1">
 					<span class="block truncate text-[12.5px]">{pane.title || pane.paneId}</span>
-					{#if prefs.value.agentOrder === 'workspace'}
-						<span class="block truncate font-mono text-[10px] text-faint"
-							>{pane.workspaceLabel}</span
-						>
-					{/if}
+					<!--
+						Where the agent is, always — herdr's own list carries the
+						workspace on every row. Showing it only under one sort order
+						meant the priority list, the one you look at when something
+						needs you, was the one that would not say where to go.
+					-->
+					<span class="block truncate font-mono text-[10px] text-faint"
+						>{pane.machine ? `${pane.machine} · ` : ''}{pane.workspaceLabel}</span
+					>
 				</span>
 				<span
 					class="shrink-0 font-mono text-[12px] {harnessText(pane.agent)}"
