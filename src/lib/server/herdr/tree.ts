@@ -13,22 +13,60 @@ import type { PaneNode, TabNode, WorkspaceNode } from '$lib/types';
  * them agents). `pane.list` returns every pane and already carries the agent
  * fields where there is one, so a single call answers both questions.
  */
-export async function paneTree(): Promise<WorkspaceNode[]> {
-	const local = await treeFor(getClient(), '', '');
-	// Each machine's own herdr server, reached over its SSH forward. A machine
-	// that is down contributes nothing rather than failing the whole tree.
-	const connections = await activeConnections();
-	const remote = await Promise.all(
-		connections.map((c) =>
-			treeFor(c.client, c.machine.id, c.machine.label).catch((e) => {
-				// Named, not swallowed: a machine that answers the forward but
-				// not the protocol is a different problem from one that is off.
-				console.error(`bordr: machine ${c.machine.label} tree failed —`, String(e));
-				return [] as WorkspaceNode[];
+/**
+ * Per-machine trees, last known good.
+ *
+ * A machine's tree is served from here and refreshed in the BACKGROUND. The
+ * request never waits on ssh: a machine that is down took an 8s connect
+ * timeout with it, on a tree that polls every five seconds, which made the
+ * whole sidebar crawl whenever anything was unreachable.
+ */
+const cached = new Map<string, { at: number; workspaces: WorkspaceNode[] }>();
+const refreshing = new Set<string>();
+/** How stale a machine's tree may get before a refresh is kicked off. */
+const REFRESH_MS = 4000;
+
+function refreshMachines(): void {
+	void (async () => {
+		let connections: Awaited<ReturnType<typeof activeConnections>>;
+		try {
+			connections = await activeConnections();
+		} catch {
+			return;
+		}
+		const live = new Set(connections.map((c) => c.machine.id));
+		// Forget a machine that has gone away, so its panes stop being listed.
+		for (const id of [...cached.keys()]) if (!live.has(id)) cached.delete(id);
+
+		await Promise.all(
+			connections.map(async (c) => {
+				const entry = cached.get(c.machine.id);
+				if (entry && Date.now() - entry.at < REFRESH_MS) return;
+				if (refreshing.has(c.machine.id)) return;
+				refreshing.add(c.machine.id);
+				try {
+					const workspaces = await treeFor(c.client, c.machine.id, c.machine.label);
+					cached.set(c.machine.id, { at: Date.now(), workspaces });
+				} catch (e) {
+					// Named, not swallowed: a machine that answers the forward
+					// but not the protocol is a different problem from one that
+					// is off. Its last good tree stands until it is gone.
+					console.error(`bordr: machine ${c.machine.label} tree failed —`, String(e));
+				} finally {
+					refreshing.delete(c.machine.id);
+				}
 			})
-		)
-	);
-	return [...local, ...remote.flat()];
+		);
+	})();
+}
+
+export async function paneTree(): Promise<WorkspaceNode[]> {
+	// This host is always read live: it is local, it is fast, and it is the
+	// one that has to be right.
+	const local = await treeFor(getClient(), '', '');
+	refreshMachines();
+	const remote = [...cached.values()].flatMap((entry) => entry.workspaces);
+	return [...local, ...remote];
 }
 
 async function treeFor(

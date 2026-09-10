@@ -3,7 +3,7 @@
 	import { resolve } from '$app/paths';
 	import { prefs } from '$lib/prefs.svelte';
 	import { STATUS_INK, harnessIcon, harnessText } from '$lib/theme';
-	import type { Machine, PaneNode, WorkspaceNode } from '$lib/types';
+	import type { MachineStatus, PaneNode, WorkspaceNode } from '$lib/types';
 
 	let {
 		current = '',
@@ -17,7 +17,7 @@
 	} = $props();
 
 	let workspaces = $state<WorkspaceNode[]>([]);
-	let machines = $state<Machine[]>([]);
+	let machines = $state<MachineStatus[]>([]);
 	/** Collapsed workspaces, by id. Everything starts open. */
 	const collapsed = new SvelteSet<string>();
 
@@ -102,9 +102,16 @@
 		);
 	});
 
-	/** Configured, enabled, and not represented in the tree. */
-	const unreachable = $derived(
-		machines.filter((m) => m.enabled && !shown.some((w) => w.machine === m.label))
+	/**
+	 * Machines that are not currently serving panes, and what they are doing.
+	 *
+	 * Taken from the server rather than inferred from the tree: a machine's
+	 * panes arrive on a background refresh, so absence right after a cold
+	 * start means "not yet", not "offline" — which is how both machines came
+	 * to be labelled offline while they were perfectly reachable.
+	 */
+	const pending = $derived(
+		machines.filter((m) => !shown.some((w) => w.machine === m.machine.label))
 	);
 
 	function toggle(id: string) {
@@ -159,17 +166,24 @@
 	</div>
 
 	<div class="min-h-0 flex-1 overflow-y-auto py-1">
-		{#if unreachable.length > 0}
+		{#if pending.length > 0}
 			<!--
 				A machine that is configured and enabled but did not answer. Named
 				rather than silently missing: "where is tm-dev" is a question the
 				sidebar should be able to answer.
 			-->
-			{#each unreachable as machine (machine.id)}
+			{#each pending as status (status.machine.id)}
 				<div class="flex items-center gap-2 px-2 py-1 opacity-60">
-					<span class="h-1.5 w-1.5 shrink-0 rounded-full bg-idle-rail" aria-hidden="true"></span>
-					<span class="min-w-0 flex-1 truncate font-mono text-[11px]">{machine.label}</span>
-					<span class="shrink-0 font-mono text-[10px] text-faint">no answer</span>
+					<span
+						class="h-1.5 w-1.5 shrink-0 rounded-full {status.state === 'unreachable'
+							? 'bg-idle-rail'
+							: 'bg-working'}"
+						aria-hidden="true"
+					></span>
+					<span class="min-w-0 flex-1 truncate font-mono text-[11px]">{status.machine.label}</span>
+					<span class="shrink-0 font-mono text-[10px] text-faint" title={status.error ?? ''}
+						>{status.state === 'unreachable' ? 'no answer' : 'connecting…'}</span
+					>
 				</div>
 			{/each}
 		{/if}

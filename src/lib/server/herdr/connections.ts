@@ -36,6 +36,9 @@ function runtimeDir(): string {
 
 const connections = new Map<string, Connection>();
 const starting = new Map<string, Promise<Connection | null>>();
+const lastFailure = new Map<string, number>();
+/** How long a machine that failed to connect is left alone. */
+const RETRY_MS = 30_000;
 
 /**
  * Bring up the forward for one machine, or return the live one.
@@ -43,12 +46,26 @@ const starting = new Map<string, Promise<Connection | null>>();
  * Memoised on the in-flight promise: two requests arriving together would
  * otherwise each spawn ssh and race for the same socket path.
  */
+/**
+ * When each machine last proved itself with a real request.
+ *
+ * A socket file is not a connection — a dead forward leaves one behind — so
+ * liveness has to be proven. But proving it on every call meant a round trip
+ * per machine per poll, so a good answer is trusted for a while.
+ */
+const provenAt = new Map<string, number>();
+const PROVEN_MS = 20_000;
+
 async function alive(connection: Connection): Promise<boolean> {
 	if (!existsSync(connection.socketPath)) return false;
+	const last = provenAt.get(connection.machine.id) ?? 0;
+	if (Date.now() - last < PROVEN_MS) return true;
 	try {
 		await connection.client.request('ping', {}, 4000);
+		provenAt.set(connection.machine.id, Date.now());
 		return true;
 	} catch {
+		provenAt.delete(connection.machine.id);
 		return false;
 	}
 }
@@ -60,6 +77,12 @@ async function connect(machine: Machine): Promise<Connection | null> {
 	const pending = starting.get(machine.id);
 	if (pending) return pending;
 
+	// A machine that just failed is not retried on the next poll: the connect
+	// itself costs an ssh timeout, which is the whole reason a down machine
+	// made everything slow.
+	const failedAt = lastFailure.get(machine.id) ?? 0;
+	if (Date.now() - failedAt < RETRY_MS) return null;
+
 	const attempt = (async (): Promise<Connection | null> => {
 		const socketPath = join(runtimeDir(), `${machine.id}.sock`);
 		// A socket left by a dead forward refuses connections forever.
@@ -67,6 +90,7 @@ async function connect(machine: Machine): Promise<Connection | null> {
 
 		const home = await remoteHome(machine);
 		if (!home) {
+			lastFailure.set(machine.id, Date.now());
 			connections.set(machine.id, {
 				machine,
 				socketPath,
@@ -111,6 +135,7 @@ async function connect(machine: Machine): Promise<Connection | null> {
 		});
 
 		if (!ready || !existsSync(socketPath)) {
+			lastFailure.set(machine.id, Date.now());
 			connections.set(machine.id, {
 				machine,
 				socketPath,
@@ -127,6 +152,8 @@ async function connect(machine: Machine): Promise<Connection | null> {
 			error: null
 		};
 		connections.set(machine.id, connection);
+		lastFailure.delete(machine.id);
+		provenAt.set(machine.id, Date.now());
 		console.log(`bordr: machine ${machine.label} connected via ${machine.target}`);
 		return connection;
 	})();
@@ -209,6 +236,35 @@ export function connectionStates(): Connection[] {
 					error: null
 				}
 		);
+}
+
+export type MachineState = 'connected' | 'connecting' | 'unreachable';
+
+/**
+ * What each enabled machine is actually doing.
+ *
+ * Reported rather than inferred from whether its panes are in the tree: the
+ * tree is refreshed in the background, so a machine that is perfectly fine
+ * looks absent for the first second or two after a cold start — which read
+ * as "offline" in the sidebar.
+ */
+export function machineStates(): { machine: Machine; state: MachineState; error: string | null }[] {
+	return listMachines()
+		.filter((m) => m.enabled)
+		.map((machine) => {
+			const connection = connections.get(machine.id);
+			if (connection && !connection.error) {
+				return { machine, state: 'connected' as const, error: null };
+			}
+			if (starting.has(machine.id)) {
+				return { machine, state: 'connecting' as const, error: null };
+			}
+			if (connection?.error) {
+				return { machine, state: 'unreachable' as const, error: connection.error };
+			}
+			// Never attempted yet — the background refresh is about to.
+			return { machine, state: 'connecting' as const, error: null };
+		});
 }
 
 export function connectionFor(machineId: string): Connection | undefined {

@@ -112,3 +112,10 @@ export interface WorkspaceNode {
 export type { Activity };
 
 export type { Machine };
+
+/** A machine and what its connection is doing, for the sidebar. */
+export interface MachineStatus {
+	machine: Machine;
+	state: 'connected' | 'connecting' | 'unreachable';
+	error: string | null;
+}
