@@ -30,10 +30,12 @@ In `src/lib/harness-marks.ts`, flattened to one colour and fitted to the
 | pi | pi | https://pi.dev/logo-auto.svg |
 | omp | oh-my-pi | https://github.com/can1357/oh-my-pi/blob/master/assets/icon.svg |
 | codex | OpenAI | https://github.com/openai/openai-assistants-quickstart/blob/main/public/openai.svg |
+| grok | Grok (xAI) | https://grok.com/images/favicon.svg (the glyph inside it, without the tile and filters) |
 | agy | Google Antigravity | https://antigravity.google (the wordmark inlined in the page; the standalone logo they publish is a PNG) |
 
 OpenAI's mark is the one simple-icons removed at their request, so it is taken
 from OpenAI's own repository instead and kept in its 32-unit box. It identifies
 Codex inside bordr and nothing else; it remains OpenAI's trademark.
 
-Every other agent (grok and the rest) falls back to a Nerd Font glyph.
+Every other agent falls back to a Nerd Font glyph, scaled to sit at the same
+weight as the marks beside it.
