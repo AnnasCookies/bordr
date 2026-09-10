@@ -44,6 +44,24 @@
 	/** Whether the desktop sidebar has room. Matches Tailwind's lg breakpoint. */
 	let wideScreen = $state(false);
 
+	/**
+	 * The drawer closes once the new pane has loaded, NOT when the link is
+	 * tapped.
+	 *
+	 * Closing it in the click handler unmounted the anchor mid-gesture, and on
+	 * touch that cancelled the navigation outright — the tap did nothing at
+	 * all, while a mouse click completed and hid the bug.
+	 */
+	let drawerPane = '';
+	$effect(() => {
+		const pane = detail.paneId;
+		// Only when the pane actually CHANGES. `detail` is replaced on every
+		// refresh, so an effect that merely reads it fires every few seconds —
+		// which slammed the drawer shut the instant it was opened.
+		if (drawerPane && drawerPane !== pane) treeOpen = false;
+		drawerPane = pane;
+	});
+
 	$effect(() => {
 		const query = window.matchMedia('(min-width: 1024px)');
 		const sync = () => {
@@ -1060,7 +1078,6 @@
 						treeOpen = false;
 						showNewAgent = true;
 					}}
-					onpick={() => (treeOpen = false)}
 				/>
 			</div>
 		</div>

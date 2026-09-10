@@ -7,13 +7,10 @@
 
 	let {
 		current = '',
-		onnew = () => {},
-		onpick = () => {}
+		onnew = () => {}
 	}: {
 		current?: string;
 		onnew?: () => void;
-		/** Fired when a pane is chosen, so a drawer can close itself. */
-		onpick?: () => void;
 	} = $props();
 
 	let workspaces = $state<WorkspaceNode[]>([]);
@@ -222,7 +219,6 @@
 									? 'bg-chip'
 									: ''}"
 								aria-current={pane.paneId === current ? 'page' : undefined}
-								onclick={onpick}
 							>
 								<span
 									class="h-1.5 w-1.5 shrink-0 rounded-full {pane.hasAgent
