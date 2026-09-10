@@ -55,26 +55,23 @@
 	const RANK: Record<string, number> = { blocked: 0, working: 1, done: 2, idle: 3, unknown: 4 };
 
 	/**
-	 * The agent section.
+	 * The agent section: agents, ordered by whichever rule is chosen.
 	 *
-	 * Everything, ordered by whichever rule is chosen. The machines section
-	 * above navigates rather than filters, so this stays the one place every
-	 * agent can be seen at once.
+	 * Panes with no agent are left out. A section called "agents" is a list of
+	 * things that might need you, and a shell never does — it sat there
+	 * outnumbering them, one row per terminal, pushing the ones that do off
+	 * the screen. Shells are reached where they live: the machines section
+	 * above, and the pane strip inside their own tab.
 	 */
 	const agentRows = $derived.by(() => {
-		// Every pane, always. Scoping this hid the ones you were not looking
-		// at, which is the opposite of what a list of things that might need
-		// you is for — and the machines section above already reaches a
-		// specific shell, so a filter here only took choices away.
-		return [...allPanes].sort((a, b) => {
-			// Terminals below agents either way: a shell is a place you go, an
-			// agent is something that might need you.
-			if (a.hasAgent !== b.hasAgent) return a.hasAgent ? -1 : 1;
-			if (prefs.value.agentOrder === 'workspace') {
-				return a.workspaceLabel.localeCompare(b.workspaceLabel) || a.title.localeCompare(b.title);
-			}
-			return (RANK[a.status] ?? 9) - (RANK[b.status] ?? 9) || a.title.localeCompare(b.title);
-		});
+		return allPanes
+			.filter((p) => p.hasAgent)
+			.sort((a, b) => {
+				if (prefs.value.agentOrder === 'workspace') {
+					return a.workspaceLabel.localeCompare(b.workspaceLabel) || a.title.localeCompare(b.title);
+				}
+				return (RANK[a.status] ?? 9) - (RANK[b.status] ?? 9) || a.title.localeCompare(b.title);
+			});
 	});
 
 	/**
