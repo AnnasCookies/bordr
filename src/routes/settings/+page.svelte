@@ -404,7 +404,24 @@
 
 {#snippet paneViewPreview()}
 	<div class="rounded-lg bg-page p-2">
-		{#if prefs.value.paneView === 'terminal'}
+		{#if prefs.value.paneView === 'auto'}
+			<div class="flex gap-2 text-[11px]">
+				<div class="flex-1 rounded-md bg-card p-1.5">
+					<p class="font-mono text-[10px] text-faint">a shell</p>
+					<p class="term mt-0.5 text-[10px]">tony@tm-work ❯</p>
+					<p class="mt-1 text-working">terminal</p>
+				</div>
+				<div class="flex-1 rounded-md bg-card p-1.5">
+					<p class="font-mono text-[10px] text-faint">an agent</p>
+					<p class="mt-0.5 text-[10px]">Written and committed.</p>
+					<p class="mt-1 text-working">conversation</p>
+				</div>
+			</div>
+			<p class="mt-1 text-[11px] text-faint">
+				A shell has no transcript to render; an agent's reads back through the whole session, which
+				its screen cannot.
+			</p>
+		{:else if prefs.value.paneView === 'terminal'}
 			<div class="term rounded-md bg-card p-1.5 text-[10.5px] leading-[1.4]">
 				<div>
 					<span class="text-done">tony@tm-work</span>:<span class="text-working">~</span>$ ls
@@ -610,6 +627,7 @@
 					label="Pane view"
 					value={prefs.value.paneView}
 					options={[
+						{ v: 'auto' as PaneView, l: 'Auto' },
 						{ v: 'conversation' as PaneView, l: 'Conversation' },
 						{ v: 'terminal' as PaneView, l: 'Terminal' }
 					]}

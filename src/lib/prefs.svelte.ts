@@ -8,7 +8,7 @@ export type Theme = 'light' | 'dark' | 'system';
 export type KeyStripMode = 'always' | 'peek';
 export type HarnessAccent = 'edge' | 'tint' | 'off';
 export type ToolDetail = 'formatted' | 'json';
-export type PaneView = 'conversation' | 'terminal';
+export type PaneView = 'auto' | 'conversation' | 'terminal';
 export type TerminalFit = 'fit' | 'wrap' | 'native';
 export type TerminalDensity = 'compact' | 'comfortable';
 
@@ -52,7 +52,10 @@ export interface Prefs {
 	sidebarOpen: boolean;
 	/** Draw a tab's panes as herdr's real split, rather than one pane at a time. */
 	splitPanes: boolean;
-	/** A pane as its transcript, or as the terminal screen with a prompt line. */
+	/**
+	 * A pane as its transcript, or as the terminal screen with a prompt line.
+	 * 'auto' picks per pane: a shell has no transcript to render.
+	 */
 	paneView: PaneView;
 	/** How a screen wider than the window is made to fit it. */
 	terminalFit: TerminalFit;
@@ -120,7 +123,7 @@ export const DEFAULTS: Prefs = {
 	sidebarSplit: 0.4,
 	sidebarOpen: true,
 	splitPanes: true,
-	paneView: 'conversation',
+	paneView: 'auto',
 	terminalFit: 'fit',
 	terminalDensity: 'comfortable',
 	showBranches: true,
@@ -168,7 +171,7 @@ const TREE_SCOPES: TreeScope[] = ['all', 'agents'];
 const AGENT_ORDERS: AgentOrder[] = ['priority', 'workspace'];
 const STATUS_POSITIONS: StatusPosition[] = ['header', 'bottom'];
 const WORK_CONTROLS: WorkControl[] = ['inline', 'header'];
-const PANE_VIEWS: PaneView[] = ['conversation', 'terminal'];
+const PANE_VIEWS: PaneView[] = ['auto', 'conversation', 'terminal'];
 const TERMINAL_FITS: TerminalFit[] = ['fit', 'wrap', 'native'];
 const TERMINAL_DENSITIES: TerminalDensity[] = ['compact', 'comfortable'];
 

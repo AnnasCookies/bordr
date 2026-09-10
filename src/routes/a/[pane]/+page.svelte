@@ -159,6 +159,7 @@
 	// The bare `!` counts: the box must say what it is the moment the key is
 	// pressed, not once a command has been typed after it.
 	const isShell = $derived(draft.startsWith('!'));
+
 	let textarea = $state<HTMLTextAreaElement | undefined>();
 
 	/**
@@ -265,6 +266,27 @@
 	let flashKey = $state('');
 
 	const detail = $derived(data.detail);
+
+	/**
+	 * A pane with no agent in it.
+	 *
+	 * herdr leaves the agent field off a plain shell, which the detail turns
+	 * into 'unknown'; every real harness names itself.
+	 */
+	const shellPane = $derived(detail.agent === '' || detail.agent === 'unknown');
+
+	/**
+	 * Which view this pane gets.
+	 *
+	 * 'auto' is the default and picks per pane, because the two views are good
+	 * at different things. A shell HAS no transcript — conversation mode falls
+	 * back to a screen dump for one anyway — while an agent's transcript reads
+	 * back through the whole session, which the screen cannot: herdr keeps
+	 * about a screenful per pane and no more.
+	 */
+	const terminalView = $derived(
+		prefs.value.paneView === 'terminal' || (prefs.value.paneView === 'auto' && shellPane)
+	);
 
 	/**
 	 * The status footer with its terminal colour. `statusAnsi` carries the
@@ -1230,7 +1252,7 @@
 				Terminal mode lifts the footer off the screen itself, so the page's
 				own copy would be the same rows twice.
 			-->
-			{#if detail.statusLines.length > 0 && prefs.value.statusPosition === 'header' && prefs.value.paneView !== 'terminal'}
+			{#if detail.statusLines.length > 0 && prefs.value.statusPosition === 'header' && !terminalView}
 				<StatusBlock
 					rows={statusRows}
 					agent={detail.agent}
@@ -1240,7 +1262,7 @@
 			{/if}
 		</header>
 
-		{#if prefs.value.paneView === 'terminal'}
+		{#if terminalView}
 			<!--
 				Terminal mode: the pane exactly as the machine draws it, with a
 				prompt line under it. The transcript view is the one that
