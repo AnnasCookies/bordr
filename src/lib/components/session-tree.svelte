@@ -3,11 +3,21 @@
 	import { resolve } from '$app/paths';
 	import { prefs } from '$lib/prefs.svelte';
 	import { STATUS_INK, harnessIcon, harnessText } from '$lib/theme';
-	import type { PaneNode, WorkspaceNode } from '$lib/types';
+	import type { Machine, PaneNode, WorkspaceNode } from '$lib/types';
 
-	let { current = '', onnew = () => {} }: { current?: string; onnew?: () => void } = $props();
+	let {
+		current = '',
+		onnew = () => {},
+		onpick = () => {}
+	}: {
+		current?: string;
+		onnew?: () => void;
+		/** Fired when a pane is chosen, so a drawer can close itself. */
+		onpick?: () => void;
+	} = $props();
 
 	let workspaces = $state<WorkspaceNode[]>([]);
+	let machines = $state<Machine[]>([]);
 	let failed = $state(false);
 	/** Collapsed workspaces, by id. Everything starts open. */
 	const collapsed = new SvelteSet<string>();
@@ -16,7 +26,9 @@
 		try {
 			const res = await fetch('/api/panes');
 			if (!res.ok) throw new Error(String(res.status));
-			workspaces = (await res.json()).workspaces ?? [];
+			const body = await res.json();
+			workspaces = body.workspaces ?? [];
+			machines = body.machines ?? [];
 			failed = false;
 		} catch {
 			failed = true;
@@ -124,6 +136,34 @@
 	</div>
 
 	<div class="min-h-0 flex-1 overflow-y-auto py-1">
+		{#if machines.length > 0}
+			<!--
+				herdr's SSH machines, named but not served. Its socket has no
+				machine concept at all, so bordr shows this host's panes and can
+				only tell you the others exist — saying so beats a sidebar that
+				is silent about them.
+			-->
+			<p class="px-2 py-1 font-mono text-[11px] text-muted">machines</p>
+			<div class="flex items-center gap-2 py-1 pr-2 pl-6">
+				<span class="h-1.5 w-1.5 shrink-0 rounded-full bg-done" aria-hidden="true"></span>
+				<span class="min-w-0 flex-1 truncate text-[12.5px]">this machine</span>
+				<span class="shrink-0 font-mono text-[10px] text-faint">served</span>
+			</div>
+			{#each machines as machine (machine.id)}
+				<div class="flex items-center gap-2 py-1 pr-2 pl-6 opacity-60">
+					<span class="h-1.5 w-1.5 shrink-0 rounded-full bg-idle-rail" aria-hidden="true"></span>
+					<span class="min-w-0 flex-1 truncate text-[12.5px]">{machine.label}</span>
+					<span class="shrink-0 font-mono text-[10px] text-faint"
+						>{machine.enabled ? 'ssh' : 'off'}</span
+					>
+				</div>
+			{/each}
+			<p class="px-2 pt-0.5 pb-1.5 pl-6 text-[10.5px] text-faint">
+				Run bordr on a machine to reach its panes.
+			</p>
+			<div class="mx-2 my-1 border-t border-hairline"></div>
+		{/if}
+
 		{#if failed}
 			<p class="px-3 py-2 text-[12px] text-muted">herdr is not reachable.</p>
 		{:else if shown.length === 0}
@@ -160,6 +200,7 @@
 								? 'bg-chip'
 								: ''}"
 							aria-current={pane.paneId === current ? 'page' : undefined}
+							onclick={onpick}
 						>
 							<span
 								class="h-1.5 w-1.5 shrink-0 rounded-full {pane.hasAgent

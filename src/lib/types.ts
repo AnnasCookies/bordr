@@ -1,4 +1,5 @@
 import type { Activity } from './server/activity';
+import type { Machine } from './server/herdr/machines';
 
 import type { Message } from './server/transcript/types';
 import type { Picker } from './server/picker';
@@ -107,3 +108,5 @@ export interface WorkspaceNode {
 }
 
 export type { Activity };
+
+export type { Machine };
