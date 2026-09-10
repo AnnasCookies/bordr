@@ -1215,6 +1215,7 @@
 				paneId={detail.paneId}
 				agent={detail.agent}
 				ask={detail.picker && detail.picker.options.length > 0 ? pickerCard : undefined}
+				suggestion={detail.suggestion ?? ''}
 				bind:draft
 				mono={prefs.value.monoSize}
 				{dictating}

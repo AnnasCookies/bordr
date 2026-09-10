@@ -21,6 +21,7 @@
 		agent = '',
 		draft = $bindable(''),
 		ask,
+		suggestion = '',
 		lines = 200,
 		mono = 12,
 		dictating = false,
@@ -35,6 +36,8 @@
 		draft?: string;
 		/** The harness's question, when it has one — shown above the prompt. */
 		ask?: Snippet;
+		/** The harness's own ghost prompt, offered above the input. */
+		suggestion?: string;
 		lines?: number;
 		mono?: number;
 		dictating?: boolean;
@@ -330,6 +333,24 @@
 				ontoggle={() => (statusOpen = !statusOpen)}
 			/>
 		</div>
+	{/if}
+
+	<!--
+		The harness's own suggested prompt. Offered rather than sent: on a phone
+		you cannot see what you are about to commit to the way you can in a
+		terminal, and it is usually a starting point worth editing.
+	-->
+	{#if prefs.value.showSuggestions && suggestion && draft.trim() === ''}
+		<button
+			class="flex shrink-0 items-center gap-2 border-t border-hairline bg-card px-3 py-2 text-left"
+			onclick={() => {
+				draft = suggestion;
+				input?.focus();
+			}}
+		>
+			<span class="shrink-0 font-mono text-[12px] text-faint" aria-hidden="true">&rarr;</span>
+			<span class="min-w-0 flex-1 truncate text-[13px] text-muted">{suggestion}</span>
+		</button>
 	{/if}
 
 	<!--

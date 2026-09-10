@@ -251,3 +251,44 @@ body {
 		transition-duration: 0.01ms !important;
 	}
 }
+
+/*
+ * Scrollbars, thinner and out of the way.
+ *
+ * The platform default is a wide grey bar that draws the eye to the edge of
+ * every scrolling box — and bordr is mostly scrolling boxes: a transcript, a
+ * terminal, a tree, a pane strip. Firefox gets `thin`; Chromium and Safari
+ * need the WebKit pseudo-elements, which override `scrollbar-width` where
+ * both are understood.
+ *
+ * Colour comes from the theme tokens, so the thumb follows light and dark
+ * without a second set of rules, and the track stays transparent so a
+ * scrollbar over a card does not paint a stripe down it.
+ */
+* {
+	scrollbar-width: thin;
+	scrollbar-color: var(--edge) transparent;
+}
+
+::-webkit-scrollbar {
+	width: 7px;
+	height: 7px;
+}
+
+::-webkit-scrollbar-track {
+	background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+	background: var(--edge);
+	border-radius: 999px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+	background: var(--idle-rail);
+}
+
+/* The square where the two bars meet is the default grey otherwise. */
+::-webkit-scrollbar-corner {
+	background: transparent;
+}
