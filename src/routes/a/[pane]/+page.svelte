@@ -959,6 +959,10 @@
 	const KEY_STRIP: Array<{ k: string; l: string }> = [
 		{ k: 'esc', l: 'esc' },
 		{ k: 'tab', l: 'tab' },
+		// The harness's own mode switch. Claude Code cycles auto-accept and
+		// plan behind Shift+Tab and says so in its status line; there was no
+		// way to reach it from a phone at all.
+		{ k: 'shift+tab', l: '⇧⇥' },
 		{ k: 'up', l: '↑' },
 		{ k: 'down', l: '↓' },
 		{ k: 'left', l: '←' },
@@ -1762,7 +1766,7 @@
 					{/if}
 
 					{#if showControls}
-						<div class="mt-2 grid grid-cols-8 gap-[5px]">
+						<div class="mt-2 grid grid-cols-9 gap-[5px]">
 							{#each KEY_STRIP as key (key.k)}
 								<button
 									class="min-h-11 rounded-md py-2.5 font-mono text-[12px] {flashKey === key.k

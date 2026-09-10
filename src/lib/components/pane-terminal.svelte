@@ -259,7 +259,9 @@
 			Tab: 'tab',
 			Escape: 'esc'
 		};
-		const key = passthrough[event.key];
+		// Shift+Tab is a different key from Tab, and the one a harness cycles
+		// its mode with — sending plain `tab` for it would complete instead.
+		const key = event.key === 'Tab' && event.shiftKey ? 'shift+tab' : passthrough[event.key];
 		if (!key) return;
 		event.preventDefault();
 		// Completion and history act on the pane's line, so it has to be the
@@ -360,9 +362,11 @@
 			autocorrect="off"
 			spellcheck="false"
 		/>
-		{#each [{ k: 'esc', l: 'esc' }, { k: 'tab', l: 'tab' }] as key (key.k)}
+		{#each [{ k: 'esc', l: 'esc' }, { k: 'tab', l: 'tab' }, { k: 'shift+tab', l: '⇧⇥' }] as key (key.k)}
 			<button
 				class="shrink-0 rounded-md border border-hairline px-1.5 py-0.5 font-mono text-[11px] text-muted"
+				title={key.k === 'shift+tab' ? 'Cycle the harness mode (Shift+Tab)' : key.k}
+				aria-label={key.k === 'shift+tab' ? 'Cycle the harness mode' : key.k}
 				onclick={() => onkeys([key.k])}>{key.l}</button
 			>
 		{/each}
