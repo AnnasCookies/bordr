@@ -108,7 +108,7 @@
 		commandsPane = pane;
 		commandsLoading = true;
 		commandList = null;
-		fetch(`/api/agents/${pane}/commands`)
+		fetch(`/api/agents/${encodeURIComponent(pane)}/commands`)
 			.then((r) => (r.ok ? r.json() : null))
 			.then((body: { commands?: SlashCommand[] } | null) => {
 				commandList = body?.commands ?? [];
@@ -573,7 +573,7 @@
 	}
 
 	async function toggleWatch() {
-		const response = await fetch(`/api/agents/${detail.paneId}/watch`, {
+		const response = await fetch(`/api/agents/${encodeURIComponent(detail.paneId)}/watch`, {
 			method: 'POST',
 			headers: { 'content-type': 'application/json' },
 			body: JSON.stringify({ watched: !watched })
@@ -792,7 +792,9 @@
 		loadingBack = true;
 		scrollbackError = null;
 		try {
-			const r = await fetch(`/api/agents/${detail.paneId}/read?lines=${lines}&ansi=1`);
+			const r = await fetch(
+				`/api/agents/${encodeURIComponent(detail.paneId)}/read?lines=${lines}&ansi=1`
+			);
 			if (!r.ok) throw await failure(r, 'read');
 			const body: unknown = await r.json();
 			const text =
@@ -820,7 +822,7 @@
 		busy = true;
 		uncertain = null;
 		try {
-			const r = await fetch(`/api/agents/${detail.paneId}/answer`, {
+			const r = await fetch(`/api/agents/${encodeURIComponent(detail.paneId)}/answer`, {
 				method: 'POST',
 				headers: { 'content-type': 'application/json' },
 				body: JSON.stringify({ index })
@@ -851,7 +853,7 @@
 	async function sendKeys(keys: string[]): Promise<boolean> {
 		sendError = null;
 		try {
-			const r = await fetch(`/api/agents/${detail.paneId}/keys`, {
+			const r = await fetch(`/api/agents/${encodeURIComponent(detail.paneId)}/keys`, {
 				method: 'POST',
 				headers: { 'content-type': 'application/json' },
 				body: JSON.stringify({ keys })
@@ -904,7 +906,10 @@
 				form.append('text', draft);
 				let sent: Response;
 				try {
-					sent = await fetch(`/api/agents/${detail.paneId}/image`, { method: 'POST', body: form });
+					sent = await fetch(`/api/agents/${encodeURIComponent(detail.paneId)}/image`, {
+						method: 'POST',
+						body: form
+					});
 				} catch {
 					// The adapter drops an oversize body before SvelteKit runs, which
 					// the browser reports as a failed fetch rather than a status. A
@@ -920,7 +925,7 @@
 				if (!sent.ok) throw await failure(sent, 'upload');
 				clearAttachments();
 			} else {
-				const sent = await fetch(`/api/agents/${detail.paneId}/prompt`, {
+				const sent = await fetch(`/api/agents/${encodeURIComponent(detail.paneId)}/prompt`, {
 					method: 'POST',
 					headers: { 'content-type': 'application/json' },
 					body: JSON.stringify({ text: draft })

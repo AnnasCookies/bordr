@@ -76,7 +76,7 @@
 	async function answer(agent: AgentSummary, index: number) {
 		answering = agent.paneId;
 		try {
-			const response = await fetch(`/api/agents/${agent.paneId}/answer`, {
+			const response = await fetch(`/api/agents/${encodeURIComponent(agent.paneId)}/answer`, {
 				method: 'POST',
 				headers: { 'content-type': 'application/json' },
 				body: JSON.stringify({ index })

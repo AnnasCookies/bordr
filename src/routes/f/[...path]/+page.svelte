@@ -105,7 +105,7 @@
 	async function sendPath(paneId: string, path: string) {
 		sendResult = null;
 		try {
-			const response = await fetch(`/api/agents/${paneId}/prompt`, {
+			const response = await fetch(`/api/agents/${encodeURIComponent(paneId)}/prompt`, {
 				method: 'POST',
 				headers: { 'content-type': 'application/json' },
 				body: JSON.stringify({ text: path })

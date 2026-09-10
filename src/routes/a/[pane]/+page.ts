@@ -40,8 +40,8 @@ export const load: PageLoad = async ({ params, url, fetch }) => {
 	// without it the bell renders 🔕 for a pane the server is really watching,
 	// and the first tap then re-arms an existing watch instead of clearing it.
 	const [detail, watch] = await Promise.all([
-		fetch(`/api/agents/${params.pane}?bytes=${megabytes * 1024 * 1024}`),
-		fetch(`/api/agents/${params.pane}/watch`)
+		fetch(`/api/agents/${encodeURIComponent(params.pane)}?bytes=${megabytes * 1024 * 1024}`),
+		fetch(`/api/agents/${encodeURIComponent(params.pane)}/watch`)
 	]);
 	if (!detail.ok) throw error(detail.status, await failureMessage(detail));
 	// A failed watch lookup must not block the transcript; default to off and let
