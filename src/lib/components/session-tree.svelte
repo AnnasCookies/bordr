@@ -269,7 +269,7 @@
 		aria-label="Resize the machines section, currently {Math.round(
 			prefs.value.sidebarSplit * 100
 		)}% — arrow keys adjust"
-		class="group relative h-1.5 w-full shrink-0 cursor-row-resize border-y border-hairline bg-card"
+		class="group relative h-1.5 w-full shrink-0 cursor-row-resize border-y border-hairline bg-card before:absolute before:inset-x-0 before:-inset-y-2 before:content-['']"
 		onpointerdown={startDrag}
 		onkeydown={(e) => {
 			// Keyboard-resizable too, in 5% steps.

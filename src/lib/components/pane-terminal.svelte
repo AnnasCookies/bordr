@@ -359,7 +359,7 @@
 		spot without a round trip per character.
 	-->
 	<div
-		class="flex shrink-0 items-center gap-1 border-t border-hairline bg-card px-2 py-1.5"
+		class="flex shrink-0 flex-wrap items-center gap-1 border-t border-hairline bg-card px-2 py-1.5"
 		style="padding-bottom: {footer.length > 0 && prefs.value.statusPosition === 'bottom'
 			? '0.375rem'
 			: 'max(0.375rem, env(safe-area-inset-bottom))'}"
@@ -372,7 +372,7 @@
 			oncompositionend={() => (composing = false)}
 			onkeydown={onKeydown}
 			disabled={busy}
-			class="min-w-0 flex-1 bg-transparent font-mono text-[13px] outline-none disabled:opacity-50"
+			class="min-w-[9rem] flex-1 bg-transparent font-mono text-[13px] outline-none disabled:opacity-50"
 			style="font-size: {mono + 1}px"
 			placeholder={failed
 				? 'could not reach the pane — press enter to retry'
