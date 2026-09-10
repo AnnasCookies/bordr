@@ -1,9 +1,26 @@
+import { createHash } from 'node:crypto';
+import { readFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import tailwindcss from '@tailwindcss/vite';
 import { defineConfig } from 'vitest/config';
 import adapter from 'svelte-adapter-bun';
 import { sveltekit } from '@sveltejs/kit/vite';
+
+/**
+ * The hash of the theme script in app.html.
+ *
+ * SvelteKit's `mode: 'hash'` covers the scripts IT injects; one written into
+ * app.html by hand is not among them, so the CSP blocked it silently — the
+ * page kept painting light before hydration and nothing said why. Computed
+ * from the file rather than pasted, so editing the script cannot leave a stale
+ * hash behind and re-break it.
+ */
+function inlineScriptHash(): string {
+	const html = readFileSync('src/app.html', 'utf8');
+	const body = html.match(/<script>([\s\S]*?)<\/script>/)?.[1] ?? '';
+	return `sha256-${createHash('sha256').update(body).digest('base64')}`;
+}
 
 export default defineConfig({
 	plugins: [
@@ -18,7 +35,7 @@ export default defineConfig({
 					'default-src': ['self'],
 					'img-src': ['self', 'data:', 'blob:'],
 					'style-src': ['self', 'unsafe-inline'],
-					'script-src': ['self'],
+					'script-src': ['self', inlineScriptHash()],
 					'connect-src': ['self'],
 					'frame-ancestors': ['none'],
 					'object-src': ['none'],
