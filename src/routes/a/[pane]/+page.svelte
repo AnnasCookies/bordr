@@ -1434,238 +1434,240 @@
 			{/if}
 		</main>
 
-		<!--
-			Only while scrolled away from the end. Placed just above the
-			composer so a thumb reaches it, and it never covers the last
-			message because the composer is already reserving that space.
-		-->
-		{#if !following}
-			<div class="pointer-events-none sticky bottom-0 z-20 flex justify-center pb-1">
-				<button
-					class="pointer-events-auto flex items-center gap-1 rounded-full border border-hairline bg-card px-3 py-1.5 text-[12.5px] text-working shadow-[0_2px_8px_rgba(0,0,0,.12)]"
-					onclick={() => scrollBottom()}
-				>
-					<span aria-hidden="true">↓</span> Latest
-				</button>
-			</div>
-		{/if}
-
-		<div
-			class="sticky bottom-0 z-10 border-t border-hairline bg-page px-3 py-2.5"
-			style="padding-bottom: max(0.625rem, env(safe-area-inset-bottom))"
-		>
+		<div class="sticky bottom-0 z-10">
 			<!--
+				Above the whole composer stack, never on it: the suggestion chip
+				and the input are the two things you are reaching for, and a pill
+				parked over either is worse than no pill. Absolute inside the
+				sticky wrapper, so it overlays the transcript only.
+			-->
+			{#if !following}
+				<div class="pointer-events-none absolute -top-9 right-0 left-0 flex justify-center">
+					<button
+						class="pointer-events-auto flex items-center gap-1 rounded-full border border-hairline bg-card px-3 py-1.5 text-[12.5px] text-working shadow-[0_2px_8px_rgba(0,0,0,.18)]"
+						onclick={() => scrollBottom()}
+					>
+						<span aria-hidden="true">↓</span> Latest
+					</button>
+				</div>
+			{/if}
+			<div
+				class="border-t border-hairline bg-page px-3 py-2.5"
+				style="padding-bottom: max(0.625rem, env(safe-area-inset-bottom))"
+			>
+				<!--
 			The harness's own ghost prompt. Tapping fills the box rather than
 			sending: on a phone you cannot see what you are about to commit to
 			the way you can in a terminal, and it is usually a starting point
 			worth editing. Hidden the moment you type anything of your own.
 		-->
-			{#if detail.suggestion && draft.trim() === ''}
-				<button
-					class="mb-2 flex w-full items-center gap-2 rounded-xl border border-hairline bg-card px-3 py-2 text-left"
-					onclick={() => {
-						draft = detail.suggestion ?? '';
-						textarea?.focus();
-					}}
-				>
-					<span class="shrink-0 text-[13px] text-faint" aria-hidden="true">&rarr;</span>
-					<span class="min-w-0 flex-1 truncate text-[14px] text-muted">{detail.suggestion}</span>
-				</button>
-			{/if}
+				{#if detail.suggestion && draft.trim() === ''}
+					<button
+						class="mb-2 flex w-full items-center gap-2 rounded-xl border border-hairline bg-card px-3 py-2 text-left"
+						onclick={() => {
+							draft = detail.suggestion ?? '';
+							textarea?.focus();
+						}}
+					>
+						<span class="shrink-0 text-[13px] text-faint" aria-hidden="true">&rarr;</span>
+						<span class="min-w-0 flex-1 truncate text-[14px] text-muted">{detail.suggestion}</span>
+					</button>
+				{/if}
 
-			{#if previews.length > 0 || preparing > 0}
-				<div class="mb-2 flex items-center gap-2 overflow-x-auto">
-					{#each previews as src, i (src)}
-						<span class="relative shrink-0">
-							<img
-								{src}
-								alt=""
-								class="h-16 w-16 rounded-[10px] border border-hairline object-cover"
-							/>
-							<button
-								class="absolute -top-1.5 -right-1.5 flex h-[22px] w-[22px] items-center justify-center rounded-full bg-ink text-[11px] text-card"
-								aria-label="Remove image"
-								onclick={() => removeAt(i)}>✕</button
-							>
-						</span>
-					{/each}
-					{#if preparing > 0}
-						<span
-							class="flex h-16 w-16 shrink-0 items-center justify-center rounded-[10px] border border-dashed border-hairline font-mono text-[11px] text-faint"
-							role="status"
-							aria-live="polite"
-						>
-							{preparing > 1 ? `${preparing} more…` : 'shrinking…'}
-						</span>
-					{/if}
-					<span class="shrink-0 font-mono text-[11px] text-faint">{attachments.length} / 6</span>
-				</div>
-			{/if}
-
-			{#if slashQuery}
-				<div
-					class="mb-2 max-h-[45vh] overflow-y-auto rounded-xl border border-edge bg-card"
-					role="listbox"
-					aria-label="Slash commands"
-				>
-					{#if commandList === null}
-						<p class="px-3 py-2 text-[12.5px] text-muted">Loading commands…</p>
-					{:else if suggestions.length === 0}
-						<p class="px-3 py-2 text-[12.5px] text-muted">Nothing matches {draft}.</p>
-					{:else}
-						{#each suggestions as command (command.name)}
-							<button
-								type="button"
-								role="option"
-								aria-selected="false"
-								class="flex w-full items-baseline gap-2 border-b border-hairline px-3 py-2 text-left last:border-b-0"
-								onclick={() => pickCommand(command)}
-							>
-								<span class="shrink-0 font-mono text-[13px] text-working">/{command.name}</span>
-								<span class="min-w-0 flex-1 truncate text-[12.5px] text-muted"
-									>{command.description}</span
+				{#if previews.length > 0 || preparing > 0}
+					<div class="mb-2 flex items-center gap-2 overflow-x-auto">
+						{#each previews as src, i (src)}
+							<span class="relative shrink-0">
+								<img
+									{src}
+									alt=""
+									class="h-16 w-16 rounded-[10px] border border-hairline object-cover"
+								/>
+								<button
+									class="absolute -top-1.5 -right-1.5 flex h-[22px] w-[22px] items-center justify-center rounded-full bg-ink text-[11px] text-card"
+									aria-label="Remove image"
+									onclick={() => removeAt(i)}>✕</button
 								>
-								{#if command.source !== 'builtin'}
-									<span class="shrink-0 font-mono text-[10px] text-faint">{command.source}</span>
-								{/if}
-							</button>
+							</span>
 						{/each}
-					{/if}
-				</div>
-			{/if}
+						{#if preparing > 0}
+							<span
+								class="flex h-16 w-16 shrink-0 items-center justify-center rounded-[10px] border border-dashed border-hairline font-mono text-[11px] text-faint"
+								role="status"
+								aria-live="polite"
+							>
+								{preparing > 1 ? `${preparing} more…` : 'shrinking…'}
+							</span>
+						{/if}
+						<span class="shrink-0 font-mono text-[11px] text-faint">{attachments.length} / 6</span>
+					</div>
+				{/if}
 
-			{#if sendError}
-				<p
-					role="status"
-					class="mb-2 rounded-[10px] bg-danger-bg px-3 py-2 text-[12.5px] text-danger-ink"
-				>
-					{sendError}
-				</p>
-			{/if}
+				{#if slashQuery}
+					<div
+						class="mb-2 max-h-[45vh] overflow-y-auto rounded-xl border border-edge bg-card"
+						role="listbox"
+						aria-label="Slash commands"
+					>
+						{#if commandList === null}
+							<p class="px-3 py-2 text-[12.5px] text-muted">Loading commands…</p>
+						{:else if suggestions.length === 0}
+							<p class="px-3 py-2 text-[12.5px] text-muted">Nothing matches {draft}.</p>
+						{:else}
+							{#each suggestions as command (command.name)}
+								<button
+									type="button"
+									role="option"
+									aria-selected="false"
+									class="flex w-full items-baseline gap-2 border-b border-hairline px-3 py-2 text-left last:border-b-0"
+									onclick={() => pickCommand(command)}
+								>
+									<span class="shrink-0 font-mono text-[13px] text-working">/{command.name}</span>
+									<span class="min-w-0 flex-1 truncate text-[12.5px] text-muted"
+										>{command.description}</span
+									>
+									{#if command.source !== 'builtin'}
+										<span class="shrink-0 font-mono text-[10px] text-faint">{command.source}</span>
+									{/if}
+								</button>
+							{/each}
+						{/if}
+					</div>
+				{/if}
 
-			<!--
+				{#if sendError}
+					<p
+						role="status"
+						class="mb-2 rounded-[10px] bg-danger-bg px-3 py-2 text-[12.5px] text-danger-ink"
+					>
+						{sendError}
+					</p>
+				{/if}
+
+				<!--
 			A `!` draft is a SHELL command, not a message to the agent — it runs
 			on the host. The box says so before you send it, because the two are
 			one keystroke apart and only one of them is undoable.
 		-->
-			<div
-				class="flex items-end gap-1.5 rounded-xl border p-2 {isShell
-					? 'border-working bg-working-bg'
-					: 'border-edge bg-card'}"
-			>
-				<button
-					class="flex h-[34px] w-[34px] shrink-0 items-center justify-center rounded-lg {showControls
-						? 'bg-working-bg text-working'
-						: 'text-muted'}"
-					aria-label="Manual controls"
-					aria-pressed={showControls}
-					onclick={() => {
-						showControls = !showControls;
-						// Remembered, not just for this conversation: the keyboard
-						// button is the only place most people will ever change
-						// this, and it used to reset on every open.
-						prefs.set('keyStrip', showControls ? 'always' : 'peek');
-					}}
+				<div
+					class="flex items-end gap-1.5 rounded-xl border p-2 {isShell
+						? 'border-working bg-working-bg'
+						: 'border-edge bg-card'}"
 				>
-					<Icon name="keyboard" size={19} />
-				</button>
-				<button
-					class="flex h-[34px] w-[34px] shrink-0 items-center justify-center rounded-lg text-muted"
-					aria-label="Attach a photo"
-					onclick={() => fileInput?.click()}
-				>
-					<Icon name="camera" size={19} />
-				</button>
-				<input
-					bind:this={fileInput}
-					type="file"
-					accept="image/*"
-					multiple
-					class="hidden"
-					onchange={(e) => void addFiles(e.currentTarget)}
-				/>
-				<textarea
-					bind:this={textarea}
-					bind:value={draft}
-					onkeydown={onKeydown}
-					onpaste={onPaste}
-					rows="1"
-					placeholder={isShell
-						? 'Runs on the host…'
-						: detail.picker
-							? 'Or type a reply…'
-							: 'Type a reply…'}
-					class="[field-sizing:content] max-h-[min(10rem,22dvh)] min-w-0 flex-1 resize-none bg-transparent py-1.5 text-[16px] placeholder:text-faint focus:outline-none"
-				></textarea>
-				{#if speechSupported}
-					{#if dictating}
-						<button
-							class="flex h-[34px] shrink-0 items-center gap-1.5 rounded-full bg-danger-bg px-2.5"
-							aria-label="Stop dictation"
-							onclick={toggleDictation}
-						>
-							<span class="h-2.5 w-2.5 rounded-[2px] bg-danger" aria-hidden="true"></span>
-							<span class="flex items-end gap-px" aria-hidden="true">
-								{#each [3, 6, 4, 8, 5, 9, 4, 7, 3, 6] as h, n (n)}
-									<span
-										class="w-px bg-danger motion-safe:animate-[bordr-pulse_1s_ease-in-out_infinite]"
-										style="height: {h}px; animation-delay: {n * 0.08}s"
-									></span>
-								{/each}
-							</span>
-							<span class="font-mono text-[11px] text-danger-ink">stop</span>
-						</button>
-					{:else}
-						<button
-							class="flex h-[34px] w-[34px] shrink-0 items-center justify-center rounded-lg text-muted"
-							aria-label="Dictate"
-							onclick={toggleDictation}
-						>
-							<Icon name="mic" size={19} />
-						</button>
+					<button
+						class="flex h-[34px] w-[34px] shrink-0 items-center justify-center rounded-lg {showControls
+							? 'bg-working-bg text-working'
+							: 'text-muted'}"
+						aria-label="Manual controls"
+						aria-pressed={showControls}
+						onclick={() => {
+							showControls = !showControls;
+							// Remembered, not just for this conversation: the keyboard
+							// button is the only place most people will ever change
+							// this, and it used to reset on every open.
+							prefs.set('keyStrip', showControls ? 'always' : 'peek');
+						}}
+					>
+						<Icon name="keyboard" size={19} />
+					</button>
+					<button
+						class="flex h-[34px] w-[34px] shrink-0 items-center justify-center rounded-lg text-muted"
+						aria-label="Attach a photo"
+						onclick={() => fileInput?.click()}
+					>
+						<Icon name="camera" size={19} />
+					</button>
+					<input
+						bind:this={fileInput}
+						type="file"
+						accept="image/*"
+						multiple
+						class="hidden"
+						onchange={(e) => void addFiles(e.currentTarget)}
+					/>
+					<textarea
+						bind:this={textarea}
+						bind:value={draft}
+						onkeydown={onKeydown}
+						onpaste={onPaste}
+						rows="1"
+						placeholder={isShell
+							? 'Runs on the host…'
+							: detail.picker
+								? 'Or type a reply…'
+								: 'Type a reply…'}
+						class="[field-sizing:content] max-h-[min(10rem,22dvh)] min-w-0 flex-1 resize-none bg-transparent py-1.5 text-[16px] placeholder:text-faint focus:outline-none"
+					></textarea>
+					{#if speechSupported}
+						{#if dictating}
+							<button
+								class="flex h-[34px] shrink-0 items-center gap-1.5 rounded-full bg-danger-bg px-2.5"
+								aria-label="Stop dictation"
+								onclick={toggleDictation}
+							>
+								<span class="h-2.5 w-2.5 rounded-[2px] bg-danger" aria-hidden="true"></span>
+								<span class="flex items-end gap-px" aria-hidden="true">
+									{#each [3, 6, 4, 8, 5, 9, 4, 7, 3, 6] as h, n (n)}
+										<span
+											class="w-px bg-danger motion-safe:animate-[bordr-pulse_1s_ease-in-out_infinite]"
+											style="height: {h}px; animation-delay: {n * 0.08}s"
+										></span>
+									{/each}
+								</span>
+								<span class="font-mono text-[11px] text-danger-ink">stop</span>
+							</button>
+						{:else}
+							<button
+								class="flex h-[34px] w-[34px] shrink-0 items-center justify-center rounded-lg text-muted"
+								aria-label="Dictate"
+								onclick={toggleDictation}
+							>
+								<Icon name="mic" size={19} />
+							</button>
+						{/if}
 					{/if}
-				{/if}
-				<button
-					class="flex h-[34px] w-[34px] shrink-0 items-center justify-center rounded-lg text-white {draft.trim() ||
-					attachments.length > 0
-						? 'bg-working'
-						: 'bg-idle-rail'}"
-					aria-label="Send"
-					disabled={busy || preparing > 0}
-					onclick={send}
-				>
-					<Icon name="arrow-up" size={19} />
-				</button>
-			</div>
-
-			{#if dictating}
-				<p class="mt-1.5 text-center text-[11px] text-faint" role="status">
-					{#if interim}
-						<span class="italic">{interim}</span>
-					{:else}
-						Web Speech · {prefs.value.dictationLang} ·
-						{prefs.value.dictationHold ? 'until you tap stop' : 'stops at a pause'}
-						{screenHeld ? '· screen stays on' : ''} ·
-						{prefs.value.enterSends ? '⏎ sends' : '⌘⏎ sends, ⏎ is a newline'}
-					{/if}
-				</p>
-			{/if}
-
-			{#if showControls}
-				<div class="mt-2 grid grid-cols-8 gap-[5px]">
-					{#each KEY_STRIP as key (key.k)}
-						<button
-							class="min-h-11 rounded-md py-2.5 font-mono text-[12px] {flashKey === key.k
-								? 'bg-working text-white'
-								: 'bg-key text-key-ink'}"
-							aria-label={key.k}
-							onclick={() => tapKey(key.k)}
-						>
-							{key.l}
-						</button>
-					{/each}
+					<button
+						class="flex h-[34px] w-[34px] shrink-0 items-center justify-center rounded-lg text-white {draft.trim() ||
+						attachments.length > 0
+							? 'bg-working'
+							: 'bg-idle-rail'}"
+						aria-label="Send"
+						disabled={busy || preparing > 0}
+						onclick={send}
+					>
+						<Icon name="arrow-up" size={19} />
+					</button>
 				</div>
-			{/if}
+
+				{#if dictating}
+					<p class="mt-1.5 text-center text-[11px] text-faint" role="status">
+						{#if interim}
+							<span class="italic">{interim}</span>
+						{:else}
+							Web Speech · {prefs.value.dictationLang} ·
+							{prefs.value.dictationHold ? 'until you tap stop' : 'stops at a pause'}
+							{screenHeld ? '· screen stays on' : ''} ·
+							{prefs.value.enterSends ? '⏎ sends' : '⌘⏎ sends, ⏎ is a newline'}
+						{/if}
+					</p>
+				{/if}
+
+				{#if showControls}
+					<div class="mt-2 grid grid-cols-8 gap-[5px]">
+						{#each KEY_STRIP as key (key.k)}
+							<button
+								class="min-h-11 rounded-md py-2.5 font-mono text-[12px] {flashKey === key.k
+									? 'bg-working text-white'
+									: 'bg-key text-key-ink'}"
+								aria-label={key.k}
+								onclick={() => tapKey(key.k)}
+							>
+								{key.l}
+							</button>
+						{/each}
+					</div>
+				{/if}
+			</div>
 		</div>
 	</div>
 	<NewAgentSheet open={showNewAgent} onclose={() => (showNewAgent = false)} />
