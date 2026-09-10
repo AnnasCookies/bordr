@@ -1187,7 +1187,11 @@
 			-->
 			<WorkspaceTabs current={detail.paneId} panes={!(wideScreen && splitLayout)} />
 
-			{#if detail.statusLines.length > 0 && prefs.value.statusPosition === 'header'}
+			<!--
+				Terminal mode lifts the footer off the screen itself, so the page's
+				own copy would be the same rows twice.
+			-->
+			{#if detail.statusLines.length > 0 && prefs.value.statusPosition === 'header' && prefs.value.paneView !== 'terminal'}
 				<StatusBlock
 					rows={statusRows}
 					agent={detail.agent}
@@ -1205,6 +1209,7 @@
 			-->
 			<PaneTerminal
 				paneId={detail.paneId}
+				agent={detail.agent}
 				bind:draft
 				mono={prefs.value.monoSize}
 				{dictating}

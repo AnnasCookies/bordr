@@ -1,7 +1,10 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
 	import { ansiToHtml } from '$lib/ansi';
+	import { prefs } from '$lib/prefs.svelte';
+	import { promptMark, splitAtPrompt } from '$lib/screen-split';
 	import Icon from './icon.svelte';
+	import StatusBlock from './status-block.svelte';
 
 	/**
 	 * The pane as the terminal draws it, with a prompt line under it.
@@ -15,6 +18,7 @@
 	 */
 	let {
 		paneId,
+		agent = '',
 		draft = $bindable(''),
 		lines = 200,
 		mono = 12,
@@ -24,6 +28,8 @@
 		busy = false
 	}: {
 		paneId: string;
+		/** Which harness, so the status block remembers the row per harness. */
+		agent?: string;
 		/** Bound, so dictation writes into this line the way it does the composer. */
 		draft?: string;
 		lines?: number;
@@ -77,6 +83,12 @@
 		return () => clearInterval(timer);
 	});
 
+	const parts = $derived(splitAtPrompt(text));
+	const mark = $derived(parts.prompt ? promptMark(parts.prompt) : '\u203a');
+	/** The harness's own footer, handed to the block that knows how to park it. */
+	const footer = $derived(parts.below.filter((l) => l.trim() !== ''));
+	let statusOpen = $state(false);
+
 	// The screen follows its own bottom, the way a terminal does, unless you
 	// have scrolled up to read something.
 	$effect(() => {
@@ -120,27 +132,32 @@
 		}
 	}
 
-	function onInput() {
-		// Mid-composition (IME, or a phone's autocorrect mid-word) the value is
-		// not yet what anyone meant to type.
-		if (composing || !draft) return;
+	/**
+	 * Put what has been typed into the pane, once.
+	 *
+	 * Typing used to go through a character at a time so it appeared in the
+	 * harness's own box. It did — and every keystroke waited on a round trip,
+	 * which is unusable on a phone. The box now sits WHERE that line is drawn
+	 * instead, so the text is already in the right place on screen and only
+	 * has to reach the pane when the pane needs it: on Enter, and before Tab
+	 * or history, which cannot work on text the pane has never seen.
+	 */
+	async function flush(): Promise<boolean> {
+		if (composing || !draft) return true;
 		const chunk = draft;
 		draft = '';
-		void enqueue(async () => {
-			const ok = await type(chunk);
-			// Put it back rather than losing it, and stop typing through until
-			// the next keystroke proves the channel is up again.
+		let ok = true;
+		await enqueue(async () => {
+			ok = await type(chunk);
+			// Back in the box rather than lost.
 			if (!ok) draft = chunk + draft;
 			return ok;
 		});
+		return ok;
 	}
 
 	async function submit() {
-		// Anything still in the field has not reached the pane yet — a failed
-		// send, or a composition that never fired input.
-		const rest = draft;
-		draft = '';
-		if (rest) await enqueue(() => type(rest));
+		if (!(await flush())) return;
 		await onkeys(['enter']);
 		input?.focus();
 	}
@@ -151,8 +168,8 @@
 			void submit();
 			return;
 		}
-		// Backspace unsays a character in the PANE, since that is where the
-		// characters went; the field behind it is already empty.
+		// With an empty box there is nothing here to erase, so the backspace is
+		// meant for whatever the pane already has on its line.
 		if (event.key === 'Backspace' && !draft) {
 			event.preventDefault();
 			void onkeys(['backspace']);
@@ -169,7 +186,12 @@
 		const key = passthrough[event.key];
 		if (!key) return;
 		event.preventDefault();
-		void onkeys([key]);
+		// Completion and history act on the pane's line, so it has to be the
+		// pane's line first.
+		void (async () => {
+			if (key === 'tab' || key === 'up' || key === 'down') await flush();
+			await onkeys([key]);
+		})();
 	}
 
 	/**
@@ -200,23 +222,37 @@
 		style="font-size: {mono}px"
 	>
 		<!-- eslint-disable-next-line svelte/no-at-html-tags -- ansiToHtml escapes its input -->
-		<pre class="whitespace-pre">{@html ansiToHtml(text, true)}</pre>
+		<pre class="whitespace-pre">{@html ansiToHtml(parts.above.join('\n'), true)}</pre>
 	</div>
 
+	{#if footer.length > 0 && prefs.value.statusPosition === 'header'}
+		<div class="shrink-0 border-t border-hairline">
+			<StatusBlock
+				rows={footer}
+				{agent}
+				open={statusOpen}
+				ontoggle={() => (statusOpen = !statusOpen)}
+			/>
+		</div>
+	{/if}
+
+	<!--
+		Where the harness draws its prompt, this is the prompt: same marker,
+		same place on the screen, and the text you type is already in the right
+		spot without a round trip per character.
+	-->
 	<div
 		class="flex shrink-0 items-center gap-1 border-t border-hairline bg-card px-2 py-1.5"
-		style="padding-bottom: max(0.375rem, env(safe-area-inset-bottom))"
+		style="padding-bottom: {footer.length > 0 && prefs.value.statusPosition === 'bottom'
+			? '0.375rem'
+			: 'max(0.375rem, env(safe-area-inset-bottom))'}"
 	>
-		<span class="shrink-0 font-mono text-[13px] text-working" aria-hidden="true">&rsaquo;</span>
+		<span class="shrink-0 font-mono text-[13px] text-working" aria-hidden="true">{mark}</span>
 		<input
 			bind:this={input}
 			bind:value={draft}
-			oninput={onInput}
 			oncompositionstart={() => (composing = true)}
-			oncompositionend={() => {
-				composing = false;
-				onInput();
-			}}
+			oncompositionend={() => (composing = false)}
 			onkeydown={onKeydown}
 			disabled={busy}
 			class="min-w-0 flex-1 bg-transparent font-mono text-[13px] outline-none disabled:opacity-50"
@@ -255,4 +291,15 @@
 			disabled={busy}>enter</button
 		>
 	</div>
+
+	{#if footer.length > 0 && prefs.value.statusPosition === 'bottom'}
+		<div class="shrink-0 border-t border-hairline bg-page pt-1.5">
+			<StatusBlock
+				rows={footer}
+				{agent}
+				open={statusOpen}
+				ontoggle={() => (statusOpen = !statusOpen)}
+			/>
+		</div>
+	{/if}
 </div>
