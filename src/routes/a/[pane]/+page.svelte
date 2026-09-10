@@ -681,6 +681,41 @@
 	}
 
 	/**
+	 * Reaching the top loads more, rather than asking you to find a button.
+	 *
+	 * Watched with an IntersectionObserver against whatever is actually
+	 * scrolling — the window on a phone, the column on the desktop — and with
+	 * a margin, so the read starts before the reader hits the end rather than
+	 * after. showEarlier anchors the scroll from the BOTTOM, so each load
+	 * leaves the sentinel off screen again; it cannot run away with itself.
+	 */
+	// The parameter is the breakpoint, taken only so Svelte calls `update` when
+	// it changes; the observer reads the new root itself.
+	// eslint-disable-next-line @typescript-eslint/no-unused-vars
+	function autoEarlier(node: HTMLElement, wide?: boolean) {
+		let observer: IntersectionObserver | null = null;
+		const attach = () => {
+			observer?.disconnect();
+			observer = new IntersectionObserver(
+				(entries) => {
+					if (!entries.some((e) => e.isIntersecting)) return;
+					if (loadingEarlier || !canShowEarlier) return;
+					void showEarlier();
+				},
+				{ root: scrollHost(), rootMargin: '600px 0px 0px 0px' }
+			);
+			observer.observe(node);
+		};
+		attach();
+		return {
+			// The scroll root changes when the window crosses the breakpoint, and
+			// an observer keeps the root it was made with.
+			update: attach,
+			destroy: () => observer?.disconnect()
+		};
+	}
+
+	/**
 	 * Whatever is actually scrolling.
 	 *
 	 * On the phone that is the window. On desktop the conversation column
@@ -1265,7 +1300,7 @@
 				{/if}
 
 				{#if canShowEarlier}
-					<div class="mb-3 flex justify-center">
+					<div use:autoEarlier={wideScreen} class="mb-3 flex justify-center">
 						<button
 							class="rounded-full border border-edge px-3 py-1.5 text-[11.5px] text-muted disabled:opacity-50"
 							disabled={loadingEarlier}
