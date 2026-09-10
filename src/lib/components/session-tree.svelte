@@ -50,22 +50,20 @@
 	/** The workspace the open pane belongs to, so the list can mark it. */
 	const currentWorkspace = $derived(allPanes.find((p) => p.paneId === current)?.workspaceId ?? '');
 
-	/** Focus follows the open pane until you pick a workspace yourself. */
-	const focus = $derived(prefs.value.workspaceFocus || currentWorkspace);
-
 	const RANK: Record<string, number> = { blocked: 0, working: 1, done: 2, idle: 3, unknown: 4 };
 
 	/**
 	 * The agent section.
 	 *
-	 * Scoped to the focused workspace, because that is what makes the two
-	 * sections a pair rather than two lists of the same thing — picking a
-	 * workspace above changes what is below it, as it does in herdr.
+	 * Everything, ordered by whichever rule is chosen. The workspace section
+	 * above navigates rather than filters, so this stays the one place every
+	 * agent can be seen at once.
 	 */
 	const agentRows = $derived.by(() => {
-		const rows = allPanes.filter(
-			(p) => (prefs.value.treeScope === 'all' || p.hasAgent) && (!focus || p.workspaceId === focus)
-		);
+		// Every agent, always. Scoping this to the selected workspace hid the
+		// ones you were not looking at, which is the opposite of what a list of
+		// things that might need you is for.
+		const rows = allPanes.filter((p) => prefs.value.treeScope === 'all' || p.hasAgent);
 		return [...rows].sort((a, b) => {
 			// Terminals below agents either way: a shell is a place you go, an
 			// agent is something that might need you.
@@ -104,12 +102,55 @@
 		};
 	}
 
+	/**
+	 * Where a workspace row goes: its first agent, or its first pane. Opening
+	 * a shell when the workspace has an agent in it is the wrong landing.
+	 */
+	function workspaceTarget(workspace: WorkspaceNode): string {
+		const panes = workspace.tabs.flatMap((t) => t.panes);
+		return (panes.find((p) => p.hasAgent) ?? panes[0])?.paneId ?? '';
+	}
+
+	/**
+	 * The divider between the sections.
+	 *
+	 * Pointer events rather than mouse ones, so a finger drags it too, and
+	 * capture so the drag survives the pointer leaving the 6px handle. The
+	 * fraction is clamped in prefs on the way in and out, so neither section
+	 * can be dragged to nothing.
+	 */
+	let shell = $state<HTMLElement | undefined>();
+
+	function startDrag(event: PointerEvent) {
+		const host = shell;
+		if (!host) return;
+		event.preventDefault();
+		(event.target as HTMLElement).setPointerCapture(event.pointerId);
+		const box = host.getBoundingClientRect();
+
+		const move = (e: PointerEvent) => {
+			const fraction = (e.clientY - box.top) / box.height;
+			prefs.set('sidebarSplit', Math.min(Math.max(fraction, 0.15), 0.75));
+		};
+		const stop = (e: PointerEvent) => {
+			(event.target as HTMLElement).releasePointerCapture(e.pointerId);
+			window.removeEventListener('pointermove', move);
+			window.removeEventListener('pointerup', stop);
+		};
+		window.addEventListener('pointermove', move);
+		window.addEventListener('pointerup', stop);
+	}
+
 	function paneHref(paneId: string) {
 		return resolve('/a/[pane]', { pane: paneId });
 	}
 </script>
 
-<nav class="flex h-full flex-col border-r border-hairline bg-card" aria-label="Session">
+<nav
+	bind:this={shell}
+	class="flex h-full flex-col border-r border-hairline bg-card"
+	aria-label="Session"
+>
 	<div class="flex items-center gap-1 border-b border-hairline px-2 py-1.5">
 		<div class="flex flex-1 gap-0.5 rounded-lg bg-chip p-[2px]">
 			{#each [{ v: 'all', l: 'All panes' }, { v: 'agents', l: 'Agents' }] as option (option.v)}
@@ -141,16 +182,11 @@
 		section chooses what the bottom one is about, which is what stops them
 		being two views of the same list.
 	-->
-	<div class="max-h-[45%] min-h-0 overflow-y-auto border-b border-hairline py-1">
-		<div class="flex items-center justify-between px-2 py-0.5">
-			<span class="font-mono text-[10.5px] text-muted">workspaces</span>
-			{#if prefs.value.workspaceFocus}
-				<button
-					class="font-mono text-[10.5px] text-working"
-					onclick={() => prefs.set('workspaceFocus', '')}>show all</button
-				>
-			{/if}
-		</div>
+	<div
+		class="min-h-0 overflow-y-auto py-1"
+		style="height: {prefs.value.sidebarSplit * 100}%; flex: none"
+	>
+		<p class="px-2 py-0.5 font-mono text-[10.5px] text-muted">workspaces</p>
 
 		{#each grouped as group (group.machine)}
 			{#if group.machine}
@@ -158,16 +194,14 @@
 			{/if}
 			{#each group.workspaces as workspace (workspace.workspaceId)}
 				{@const c = counts(workspace)}
-				<button
-					class="flex w-full items-center gap-2 px-2 py-1 text-left {workspace.workspaceId === focus
+				{@const landing = workspaceTarget(workspace)}
+				<a
+					href={paneHref(landing)}
+					class="flex w-full items-center gap-2 px-2 py-1 text-left {workspace.workspaceId ===
+					currentWorkspace
 						? 'bg-chip'
 						: ''}"
-					aria-pressed={workspace.workspaceId === focus}
-					onclick={() =>
-						prefs.set(
-							'workspaceFocus',
-							prefs.value.workspaceFocus === workspace.workspaceId ? '' : workspace.workspaceId
-						)}
+					aria-current={workspace.workspaceId === currentWorkspace ? 'true' : undefined}
 				>
 					<span
 						class="h-1.5 w-1.5 shrink-0 rounded-full {c.blocked > 0
@@ -179,7 +213,7 @@
 						>{workspace.label || workspace.workspaceId}</span
 					>
 					<span class="shrink-0 font-mono text-[10px] text-faint">{c.agents}</span>
-				</button>
+				</a>
 			{/each}
 		{/each}
 
@@ -198,6 +232,35 @@
 			</div>
 		{/each}
 	</div>
+
+	<!--
+		The handle between the sections.
+
+		A button rather than a `role="separator"`: a focusable separator with
+		aria-valuenow is the correct window-splitter pattern, but svelte-check
+		treats every separator as decorative and warns either way. A button is
+		announced as the control it is, keeps the keyboard, and leaves the
+		build clean — the value is in the label instead of aria-valuenow.
+	-->
+	<button
+		type="button"
+		aria-label="Resize the workspaces section, currently {Math.round(
+			prefs.value.sidebarSplit * 100
+		)}% — arrow keys adjust"
+		class="group relative h-1.5 w-full shrink-0 cursor-row-resize border-y border-hairline bg-card"
+		onpointerdown={startDrag}
+		onkeydown={(e) => {
+			// Keyboard-resizable too, in 5% steps.
+			if (e.key !== 'ArrowUp' && e.key !== 'ArrowDown') return;
+			e.preventDefault();
+			const next = prefs.value.sidebarSplit + (e.key === 'ArrowDown' ? 0.05 : -0.05);
+			prefs.set('sidebarSplit', Math.min(Math.max(next, 0.15), 0.75));
+		}}
+	>
+		<span
+			class="pointer-events-none absolute inset-x-0 top-1/2 mx-auto h-[2px] w-8 -translate-y-1/2 rounded-full bg-edge group-hover:bg-working"
+		></span>
+	</button>
 
 	<div class="min-h-0 flex-1 overflow-y-auto py-1">
 		<div class="flex items-center gap-1 px-2 py-0.5">
@@ -231,7 +294,7 @@
 				></span>
 				<span class="min-w-0 flex-1">
 					<span class="block truncate text-[12.5px]">{pane.title || pane.paneId}</span>
-					{#if prefs.value.agentOrder === 'workspace' || !focus}
+					{#if prefs.value.agentOrder === 'workspace'}
 						<span class="block truncate font-mono text-[10px] text-faint"
 							>{pane.workspaceLabel}</span
 						>

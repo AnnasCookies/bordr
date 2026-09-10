@@ -39,8 +39,11 @@ export interface Prefs {
 	treeScope: TreeScope;
 	/** How the sidebar's agent section is ordered: by urgency, or by workspace. */
 	agentOrder: AgentOrder;
-	/** The workspace whose agents and tabs are in focus; empty means all. */
-	workspaceFocus: string;
+	/**
+	 * How much of the sidebar the workspaces section takes, 0.15 to 0.75.
+	 * Dragged by the divider between the two sections.
+	 */
+	sidebarSplit: number;
 	/** Render the harness's live verb, elapsed time and tokens while it works. */
 	showActivity: boolean;
 	/** A glyph beside each harness name. */
@@ -96,7 +99,7 @@ export const DEFAULTS: Prefs = {
 	toolDetail: 'formatted',
 	treeScope: 'all',
 	agentOrder: 'priority',
-	workspaceFocus: '',
+	sidebarSplit: 0.4,
 	showActivity: true,
 	harnessIcons: true,
 	syntaxHighlight: true,
@@ -191,8 +194,12 @@ export function normalisePrefs(raw: unknown): Prefs {
 		toolDetail: pick(stored.toolDetail, TOOL_DETAILS, DEFAULTS.toolDetail),
 		treeScope: pick(stored.treeScope, TREE_SCOPES, DEFAULTS.treeScope),
 		agentOrder: pick(stored.agentOrder, AGENT_ORDERS, DEFAULTS.agentOrder),
-		workspaceFocus:
-			typeof stored.workspaceFocus === 'string' ? stored.workspaceFocus : DEFAULTS.workspaceFocus,
+		// Clamped on read: it comes from storage a person can hand-edit, and a
+		// value outside this range collapses one section to nothing.
+		sidebarSplit:
+			typeof stored.sidebarSplit === 'number' && Number.isFinite(stored.sidebarSplit)
+				? Math.min(Math.max(stored.sidebarSplit, 0.15), 0.75)
+				: DEFAULTS.sidebarSplit,
 		showActivity: bool(stored.showActivity, DEFAULTS.showActivity),
 		harnessIcons: bool(stored.harnessIcons, DEFAULTS.harnessIcons),
 		syntaxHighlight: bool(stored.syntaxHighlight, DEFAULTS.syntaxHighlight),
