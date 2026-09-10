@@ -9,11 +9,23 @@ describe('pane addresses', () => {
 		expect(isRemote('w3:p1')).toBe(false);
 	});
 
-	it('splits a remote pane on the first slash', () => {
-		// herdr pane ids never contain a slash, so this cannot be ambiguous.
-		expect(parsePane('tm-dev/w8:p1')).toEqual({ machineId: 'tm-dev', paneId: 'w8:p1' });
-		expect(formatPane('tm-dev', 'w8:p1')).toBe('tm-dev/w8:p1');
-		expect(isRemote('tm-dev/w8:p1')).toBe(true);
+	it('splits a remote pane on the first separator', () => {
+		// `~` and not `/`: resolve() does not escape a slash, so a slash here
+		// produced `/a/<machine>/<pane>` — two path segments and a 404 on tap.
+		expect(parsePane('tm-dev~w8:p1')).toEqual({ machineId: 'tm-dev', paneId: 'w8:p1' });
+		expect(formatPane('tm-dev', 'w8:p1')).toBe('tm-dev~w8:p1');
+		expect(isRemote('tm-dev~w8:p1')).toBe(true);
+	});
+
+	it('separates with a character a URL path leaves alone', () => {
+		// The colon is escaped by encodeURIComponent and always was — a local
+		// `w3:p1` has one and its links work. What matters is that the
+		// separator itself survives a path segment untouched, which `/` does
+		// not: it becomes another segment and the route stops matching.
+		const address = formatPane('tm-dev', 'w8:p1');
+		expect(address).toContain('~');
+		expect(encodeURIComponent('~')).toBe('~');
+		expect(new URL(`http://x/a/${address}`).pathname.split('/')).toHaveLength(3);
 	});
 
 	it('round-trips a machine id that looks like a pane id', () => {
