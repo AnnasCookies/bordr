@@ -16,7 +16,7 @@ import { sveltekit } from '@sveltejs/kit/vite';
  * from the file rather than pasted, so editing the script cannot leave a stale
  * hash behind and re-break it.
  */
-function inlineScriptHash(): string {
+function inlineScriptHash(): `sha256-${string}` {
 	const html = readFileSync('src/app.html', 'utf8');
 	const body = html.match(/<script>([\s\S]*?)<\/script>/)?.[1] ?? '';
 	return `sha256-${createHash('sha256').update(body).digest('base64')}`;
