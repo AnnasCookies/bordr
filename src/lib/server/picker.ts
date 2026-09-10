@@ -165,7 +165,26 @@ export function parsePicker(visible: string): Picker | null {
 
 	// The footer is what distinguishes a live picker from an ordinary
 	// numbered list in agent prose.
-	if (options.length === 0 || !sawFooter) return parseSlider(lines) ?? parseUnnumbered(lines);
+	/**
+	 * A footer is the usual proof that a numbered list is a live dialog rather
+	 * than prose that happens to be numbered — but it is not the only one.
+	 *
+	 * Claude Code's multi-question form ends on a review stage that draws no
+	 * footer at all:
+	 *
+	 *     Ready to submit your answers?
+	 *
+	 *     ❯ 1. Submit answers
+	 *       2. Cancel
+	 *
+	 * and the whole form was unanswerable from a phone because of it — the
+	 * options showed as text with nothing to tap. A caret on one of the
+	 * options is proof of its own: prose does not mark which line is selected.
+	 */
+	const selected = options.some((o) => o.selected);
+	if (options.length === 0 || (!sawFooter && !selected)) {
+		return parseSlider(lines) ?? parseUnnumbered(lines);
+	}
 
 	return {
 		question: findQuestion(lines, firstOptionLine),

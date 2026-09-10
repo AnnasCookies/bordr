@@ -516,4 +516,19 @@ describe('suggestionFrom', () => {
 		// A restyled hint yields no suggestion rather than a wrong one.
 		expect(suggestionFrom(`\u276f ${E}[38;5;240msome new styling${E}[0m`)).toBeNull();
 	});
+
+	/**
+	 * Claude Code's multi-question form, on its review stage. Captured off a
+	 * real pane while the form was up: no footer anywhere on the screen, and
+	 * the whole form was unanswerable from a phone because of it.
+	 */
+	it('reads a caret-marked list with no footer at all', () => {
+		const screen =
+			'\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\n\u2190  \u2612 Polish  \u2612 Severity  \u2714 Submit  \u2192\n\nReview your answers\n\n \u25cf Reproducing the submit bug \u2014 which polish first?\n   \u2192 Terminal mode\n \u25cf And how blocking is the submit problem?\n   \u2192 Fix it first\n\nReady to submit your answers?\n\n\u276f 1. Submit answers\n  2. Cancel';
+		const picker = parsePicker(screen);
+		expect(picker).not.toBeNull();
+		expect(picker?.options.map((o) => o.label)).toEqual(['Submit answers', 'Cancel']);
+		expect(picker?.options[0].selected).toBe(true);
+		expect(picker?.question).toBe('Ready to submit your answers?');
+	});
 });
