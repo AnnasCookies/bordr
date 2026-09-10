@@ -19,7 +19,6 @@
 		lines = 200,
 		mono = 12,
 		dictating = false,
-		onsend,
 		onkeys,
 		onmic,
 		busy = false
@@ -30,7 +29,6 @@
 		lines?: number;
 		mono?: number;
 		dictating?: boolean;
-		onsend: (text: string) => Promise<void> | void;
 		onkeys: (keys: string[]) => Promise<void> | void;
 		onmic?: () => void;
 		busy?: boolean;
@@ -41,12 +39,30 @@
 	let input = $state<HTMLInputElement | undefined>();
 	let stuck = $state(true);
 
+	/** The pane the screen on show belongs to. */
+	let shownFor = '';
+
 	async function load(id: string) {
+		// Clearing here rather than in the effect: an effect that WRITES the
+		// state it owns re-runs itself, so `text = ''` there blanked and
+		// refetched the screen every single poll — which is what the flicker
+		// was. Measured: seven blank-then-refill cycles in nine seconds on a
+		// pane whose text never changed.
+		if (id !== shownFor) {
+			shownFor = id;
+			text = '';
+		}
 		try {
 			const res = await fetch(
 				`/api/agents/${encodeURIComponent(id)}/read?lines=${lines}&ansi=1&source=visible`
 			);
-			if (res.ok) text = (await res.json()).text ?? '';
+			if (!res.ok) return;
+			const next = (await res.json()).text ?? '';
+			// Only when it CHANGED. Reassigning the same screen every second
+			// rebuilt the whole block of markup for nothing, and that rebuild is
+			// what the flicker was — an idle pane was being repainted once a
+			// second with identical content.
+			if (next !== text) text = next;
 		} catch {
 			// A dropped poll leaves the last screen up rather than blanking it.
 		}
@@ -54,7 +70,6 @@
 
 	$effect(() => {
 		const id = paneId;
-		text = '';
 		void load(id);
 		// A second is what the terminal itself feels like; the screen is small
 		// and the read is one socket round trip.
@@ -69,13 +84,64 @@
 		if (stuck && screen) screen.scrollTop = screen.scrollHeight;
 	});
 
-	async function submit() {
-		const line = draft;
+	/**
+	 * Typing goes THROUGH to the pane, character by character.
+	 *
+	 * The point of terminal mode is that the harness's own input box is where
+	 * your text appears — its history, its completion, its `!` and `/` modes
+	 * all live there and none of them can see a line bordr is holding. So each
+	 * keystroke is sent as it happens and this field empties behind it.
+	 *
+	 * The field still exists because a soft keyboard needs one, and because a
+	 * failed send has to leave your text somewhere.
+	 */
+	let composing = false;
+	let queue: Promise<void> = Promise.resolve();
+	let failed = $state(false);
+
+	/** Serialised: two keystrokes racing would arrive in either order. */
+	function enqueue(work: () => Promise<boolean>) {
+		queue = queue.then(async () => {
+			failed = !(await work());
+		});
+		return queue;
+	}
+
+	async function type(chunk: string): Promise<boolean> {
+		try {
+			const res = await fetch(`/api/agents/${encodeURIComponent(paneId)}/type`, {
+				method: 'POST',
+				headers: { 'content-type': 'application/json' },
+				body: JSON.stringify({ text: chunk })
+			});
+			return res.ok;
+		} catch {
+			return false;
+		}
+	}
+
+	function onInput() {
+		// Mid-composition (IME, or a phone's autocorrect mid-word) the value is
+		// not yet what anyone meant to type.
+		if (composing || !draft) return;
+		const chunk = draft;
 		draft = '';
-		// An empty line is Enter on its own, which is a real thing to send at a
-		// prompt — a confirmation, a blank command, dismissing a picker.
-		if (line.trim()) await onsend(line);
-		else await onkeys(['enter']);
+		void enqueue(async () => {
+			const ok = await type(chunk);
+			// Put it back rather than losing it, and stop typing through until
+			// the next keystroke proves the channel is up again.
+			if (!ok) draft = chunk + draft;
+			return ok;
+		});
+	}
+
+	async function submit() {
+		// Anything still in the field has not reached the pane yet — a failed
+		// send, or a composition that never fired input.
+		const rest = draft;
+		draft = '';
+		if (rest) await enqueue(() => type(rest));
+		await onkeys(['enter']);
 		input?.focus();
 	}
 
@@ -83,6 +149,13 @@
 		if (event.key === 'Enter') {
 			event.preventDefault();
 			void submit();
+			return;
+		}
+		// Backspace unsays a character in the PANE, since that is where the
+		// characters went; the field behind it is already empty.
+		if (event.key === 'Backspace' && !draft) {
+			event.preventDefault();
+			void onkeys(['backspace']);
 			return;
 		}
 		// Arrows and tab belong to the pane while the prompt line is empty —
@@ -95,7 +168,6 @@
 		};
 		const key = passthrough[event.key];
 		if (!key) return;
-		if ((key === 'up' || key === 'down') && draft) return;
 		event.preventDefault();
 		void onkeys([key]);
 	}
@@ -139,11 +211,19 @@
 		<input
 			bind:this={input}
 			bind:value={draft}
+			oninput={onInput}
+			oncompositionstart={() => (composing = true)}
+			oncompositionend={() => {
+				composing = false;
+				onInput();
+			}}
 			onkeydown={onKeydown}
 			disabled={busy}
 			class="min-w-0 flex-1 bg-transparent font-mono text-[13px] outline-none disabled:opacity-50"
 			style="font-size: {mono + 1}px"
-			placeholder="type here, as you would in the pane"
+			placeholder={failed
+				? 'could not reach the pane — press enter to retry'
+				: 'type — it goes into the pane'}
 			aria-label="Send to this pane"
 			autocomplete="off"
 			autocapitalize="off"

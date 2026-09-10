@@ -1209,10 +1209,6 @@
 				mono={prefs.value.monoSize}
 				{dictating}
 				{busy}
-				onsend={async (text) => {
-					draft = text;
-					await send();
-				}}
 				onkeys={(keys) => void sendKeys(keys)}
 				onmic={speechSupported ? toggleDictation : undefined}
 			/>
