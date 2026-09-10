@@ -31,5 +31,16 @@
 		<path d={path} fill-rule={!brand && drawn?.evenodd ? 'evenodd' : 'nonzero'} />
 	</svg>
 {:else}
-	<span class="font-mono" aria-hidden="true">{harnessIcon(agent)}</span>
+	<!--
+		A Nerd Font glyph draws its ink well inside the em box, so at the same
+		font-size it sits visibly smaller than a mark that fills its 1em
+		viewBox — the shell rows read as a different, lesser row. Scaled up to
+		match, with the baseline shift the enlargement introduces taken back out.
+	-->
+	<span
+		class="font-mono"
+		aria-hidden="true"
+		style="display:inline-block;font-size:1.3em;line-height:1;vertical-align:-0.1em"
+		>{harnessIcon(agent)}</span
+	>
 {/if}
