@@ -2,10 +2,10 @@
 	import { SvelteSet } from 'svelte/reactivity';
 	import { resolve } from '$app/paths';
 	import { prefs } from '$lib/prefs.svelte';
-	import { STATUS_INK, harnessText } from '$lib/theme';
-	import type { WorkspaceNode } from '$lib/types';
+	import { STATUS_INK, harnessIcon, harnessText } from '$lib/theme';
+	import type { PaneNode, WorkspaceNode } from '$lib/types';
 
-	let { current = '' }: { current?: string } = $props();
+	let { current = '', onnew = () => {} }: { current?: string; onnew?: () => void } = $props();
 
 	let workspaces = $state<WorkspaceNode[]>([]);
 	let failed = $state(false);
@@ -35,15 +35,38 @@
 	 * `agents` hides shell panes, and with them any tab or workspace left
 	 * empty — otherwise choosing "agents" leaves a tree of empty branches.
 	 */
+	/**
+	 * herdr's own order: terminals first, then agents.
+	 *
+	 * A shell is a place you go; an agent is something that might need you.
+	 * Grouping them the way the terminal does means the two lists read as two
+	 * different kinds of thing rather than one mixed pile.
+	 */
+	const RANK: Record<string, number> = { blocked: 0, working: 1, done: 2, idle: 3, unknown: 4 };
+
+	function sortAgents(panes: PaneNode[]): PaneNode[] {
+		const by = prefs.value.sort;
+		return [...panes].sort((a, b) => {
+			if (by === 'title') return a.title.localeCompare(b.title);
+			if (by === 'recent') return 0; // herdr's own order is recency
+			return (RANK[a.status] ?? 9) - (RANK[b.status] ?? 9) || a.title.localeCompare(b.title);
+		});
+	}
+
 	const shown = $derived(
 		workspaces
 			.map((w) => ({
 				...w,
 				tabs: w.tabs
-					.map((t) => ({
-						...t,
-						panes: prefs.value.treeScope === 'agents' ? t.panes.filter((p) => p.hasAgent) : t.panes
-					}))
+					.map((t) => {
+						const agents = sortAgents(t.panes.filter((p) => p.hasAgent));
+						const shells = t.panes.filter((p) => !p.hasAgent);
+						return {
+							...t,
+							// Terminals above the agents, as herdr lists them.
+							panes: prefs.value.treeScope === 'agents' ? agents : [...shells, ...agents]
+						};
+					})
 					.filter((t) => t.panes.length > 0)
 			}))
 			.filter((w) => w.tabs.length > 0)
@@ -86,6 +109,18 @@
 				>
 			{/each}
 		</div>
+		<button
+			class="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg text-working"
+			aria-label="New agent"
+			title="New agent"
+			onclick={onnew}>＋</button
+		>
+		<a
+			href={resolve('/settings')}
+			class="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg text-muted"
+			aria-label="Settings"
+			title="Settings">☰</a
+		>
 	</div>
 
 	<div class="min-h-0 flex-1 overflow-y-auto py-1">
@@ -133,8 +168,10 @@
 								aria-hidden="true"
 							></span>
 							<span class="min-w-0 flex-1 truncate text-[12.5px]">{pane.title || pane.paneId}</span>
-							<span class="shrink-0 font-mono text-[10px] {harnessText(pane.agent)}"
-								>{pane.hasAgent ? pane.agent : 'sh'}</span
+							<span
+								class="shrink-0 font-mono text-[12px] {harnessText(pane.agent)}"
+								title={pane.hasAgent ? pane.agent : 'shell'}
+								aria-label={pane.hasAgent ? pane.agent : 'shell'}>{harnessIcon(pane.agent)}</span
 							>
 						</a>
 					{/each}

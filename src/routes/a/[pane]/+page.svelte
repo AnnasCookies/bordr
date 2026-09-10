@@ -8,7 +8,14 @@
 	import { prefs } from '$lib/prefs.svelte';
 	import { flatOrder } from '$lib/grouping';
 	import { decideSwipe, inHorizontalScroller, neighbourPane } from '$lib/swipe';
-	import { harnessBorder, harnessBubble, harnessHex, harnessText, STATUS_INK } from '$lib/theme';
+	import {
+		harnessBorder,
+		harnessBubble,
+		harnessHex,
+		harnessIcon,
+		harnessText,
+		STATUS_INK
+	} from '$lib/theme';
 	import { ansiToHtml } from '$lib/ansi';
 	import { termGrid } from '$lib/term-grid';
 	import { throttleTrailing } from '$lib/throttle';
@@ -16,6 +23,7 @@
 	import Icon from '$lib/components/icon.svelte';
 	import MessageBlocks from '$lib/components/message-blocks.svelte';
 	import SessionTree from '$lib/components/session-tree.svelte';
+	import NewAgentSheet from '$lib/components/new-agent-sheet.svelte';
 	import type { Block } from '$lib/server/transcript/types';
 	let { data } = $props();
 
@@ -27,6 +35,8 @@
 	 * hidden on every open, which made the work look like it was not there.
 	 */
 	let showWork = $state(prefs.value.showWork);
+	/** The ＋ in the desktop tree opens the same sheet the agents list uses. */
+	let showNewAgent = $state(false);
 
 	/**
 	 * A bubble holds what was SAID; tool calls and thinking sit outside it.
@@ -458,11 +468,37 @@
 	/** Photos still being shrunk; the send button waits for them. */
 	let preparing = $state(0);
 
+	/**
+	 * A screenshot pasted straight into the box.
+	 *
+	 * Ctrl/Cmd-V with an image on the clipboard is how anyone on a desktop
+	 * shares a screenshot, and reaching for the camera button to find a file
+	 * they never saved is the wrong shape. Same path as the picker, so the
+	 * shrink, the cap of six and the previews all apply unchanged.
+	 */
+	async function onPaste(event: ClipboardEvent) {
+		const items = [...(event.clipboardData?.items ?? [])];
+		const images = items
+			.filter((item) => item.kind === 'file' && item.type.startsWith('image/'))
+			.map((item) => item.getAsFile())
+			.filter((file): file is File => file !== null);
+		if (images.length === 0) return;
+		// Only once there is definitely an image: otherwise this would eat a
+		// perfectly ordinary text paste.
+		event.preventDefault();
+		await attach(images);
+	}
+
 	async function addFiles(input: HTMLInputElement) {
-		const picked = [...(input.files ?? [])].slice(0, 6 - attachments.length);
+		const picked = [...(input.files ?? [])];
 		// Cleared so the same photo can be picked again after a removal —
 		// an unchanged selection fires no change event.
 		input.value = '';
+		await attach(picked);
+	}
+
+	async function attach(files: File[]) {
+		const picked = files.slice(0, 6 - attachments.length);
 		// Shrunk on the phone: six camera photos were thirty megabytes, more
 		// than the server's request cap and slow over the tailnet. One at a
 		// time, not all at once: six full-size bitmaps decoded together is
@@ -942,7 +978,7 @@
 -->
 <div class="lg:flex lg:h-dvh lg:overflow-hidden">
 	<aside class="hidden w-[276px] shrink-0 lg:block">
-		<SessionTree current={detail.paneId} />
+		<SessionTree current={detail.paneId} onnew={() => (showNewAgent = true)} />
 	</aside>
 	<div
 		class="flex min-h-dvh flex-col lg:h-dvh lg:min-h-0 lg:flex-1 lg:overflow-y-auto"
@@ -961,7 +997,11 @@
 					>
 					<span class="block truncate font-mono text-[10.5px] text-muted">
 						<span class={STATUS_INK[detail.status] ?? 'text-faint'}>● {detail.status}</span>
-						· <span class={harnessText(detail.agent)}>{detail.agent}</span>
+						·
+						<span class={harnessText(detail.agent)}
+							><span class="font-mono" aria-hidden="true">{harnessIcon(detail.agent)}</span>
+							{detail.agent}</span
+						>
 						{#if detail.workspaceLabel}· {detail.workspaceLabel}{/if}
 						{#if position >= 0 && order.length > 1}
 							· {position + 1}/{order.length}
@@ -1225,15 +1265,25 @@
 						{/if}
 					{/each}
 
+					<!--
+						What the harness says it is doing, in its own words. "working"
+						was all bordr could say; the pane has always known the verb,
+						the elapsed time and the tokens spent.
+					-->
 					{#if detail.status === 'working'}
-						<div class="ml-[22px] flex items-center gap-1.5 font-mono text-[11px] text-muted">
-							{#each [0, 1, 2] as n (n)}
-								<span
-									class="h-1 w-1 rounded-full bg-working motion-safe:animate-[bordr-pulse_1.2s_ease-in-out_infinite]"
-									style="animation-delay: {n * 0.2}s; opacity: {1 - n * 0.35}"
-								></span>
-							{/each}
-							working
+						<div class="ml-[22px]">
+							<div class="flex items-center gap-1.5 font-mono text-[11px] text-muted">
+								{#each [0, 1, 2] as n (n)}
+									<span
+										class="h-1 w-1 rounded-full bg-working motion-safe:animate-[bordr-pulse_1.2s_ease-in-out_infinite]"
+										style="animation-delay: {n * 0.2}s; opacity: {1 - n * 0.35}"
+									></span>
+								{/each}
+								<span class="min-w-0 truncate">{detail.activity?.text ?? 'working'}</span>
+							</div>
+							{#if detail.activity?.tip}
+								<p class="mt-0.5 text-[11px] text-faint">{detail.activity.tip}</p>
+							{/if}
 						</div>
 					{/if}
 
@@ -1538,6 +1588,7 @@
 					bind:this={textarea}
 					bind:value={draft}
 					onkeydown={onKeydown}
+					onpaste={onPaste}
 					rows="1"
 					placeholder={isShell
 						? 'Runs on the host…'
@@ -1617,6 +1668,7 @@
 			{/if}
 		</div>
 	</div>
+	<NewAgentSheet open={showNewAgent} onclose={() => (showNewAgent = false)} />
 </div>
 
 <style>

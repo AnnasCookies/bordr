@@ -1,7 +1,7 @@
 <script lang="ts">
 	import { resolve } from '$app/paths';
 	import { collapseHome } from '$lib/grouping';
-	import { harnessText, STATUS_INK, STATUS_RAIL, UNKNOWN_RAIL } from '$lib/theme';
+	import { harnessIcon, harnessText, STATUS_INK, STATUS_RAIL, UNKNOWN_RAIL } from '$lib/theme';
 	import type { AgentSummary } from '$lib/types';
 
 	let {
@@ -36,8 +36,11 @@
 			</span>
 		</span>
 		<span class="mt-[3px] block truncate font-mono text-[11px] text-muted">
-			<span class={harnessText(agent.agent)}>{agent.agent}</span> · {preview ||
-				collapseHome(agent.cwd)}
+			<span class={harnessText(agent.agent)}
+				><span class="font-mono" aria-hidden="true">{harnessIcon(agent.agent)}</span>
+				{agent.agent}</span
+			>
+			· {preview || collapseHome(agent.cwd)}
 		</span>
 		{#if agent.menu}
 			<!-- A menu the person opened, not a blocked agent: the status stands,

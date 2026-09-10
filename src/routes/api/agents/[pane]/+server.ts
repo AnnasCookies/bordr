@@ -5,6 +5,7 @@ import { backfillBlocks } from '$lib/server/transcript/types';
 import { DEFAULT_TAIL_BYTES, readTranscriptTail } from '$lib/server/transcript/tail';
 import { menuFooter, parsePicker, pendingAsk, suggestionFrom } from '$lib/server/picker';
 import { extractStatusLines } from '$lib/server/status';
+import { extractActivity } from '$lib/server/activity';
 import { stripAnsi } from '$lib/ansi';
 import { cleanSnapshot } from '$lib/server/snapshot';
 import type { AgentDetail, Message } from '$lib/types';
@@ -187,6 +188,11 @@ export const GET: RequestHandler = async ({ params, url }) => {
 
 	// The status footer renders in the header for everyone; cleanSnapshot
 	// strips it from snapshot bodies so it never shows twice.
+	// What the harness says it is doing right now — its verb, elapsed time,
+	// tokens and tip. Painted in place on the screen, never written to the
+	// transcript, so this is the only place it can come from.
+	const activity = extractActivity(visible);
+
 	const statusLines = extractStatusLines(visible);
 
 	/**
@@ -229,6 +235,7 @@ export const GET: RequestHandler = async ({ params, url }) => {
 		menu: picker || summary.status === 'working' ? null : menuFooter(visible),
 		degraded,
 		degradedMessage: explain(degraded, summary.agent, reason),
+		activity,
 		suggestion,
 		screenTail,
 		statusLines,

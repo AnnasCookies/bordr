@@ -1,3 +1,5 @@
+import type { Activity } from './server/activity';
+
 import type { Message } from './server/transcript/types';
 import type { Picker } from './server/picker';
 
@@ -52,6 +54,11 @@ export interface AgentDetail extends AgentSummary {
 	suggestion: string | null;
 	/** Tail of the visible terminal screen — what a keypad is driving. */
 	screenTail: string;
+	/**
+	 * The harness's live activity line — "Channeling… (4m 36s · ↓ 6.5k tokens)"
+	 * — with the tip it prints underneath. Null when nothing is running.
+	 */
+	activity: Activity | null;
 	/** The harness's own status block (model, context, usage bars), top line first. */
 	statusLines: string[];
 	/**
@@ -98,3 +105,5 @@ export interface WorkspaceNode {
 	focused: boolean;
 	tabs: TabNode[];
 }
+
+export type { Activity };
