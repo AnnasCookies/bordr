@@ -6,7 +6,7 @@
 	import PaneSplit from './pane-split.svelte';
 	import type { WorkspaceNode } from '$lib/types';
 
-	let { current }: { current: string } = $props();
+	let { current, panes = true }: { current: string; panes?: boolean } = $props();
 
 	let workspaces = $state<WorkspaceNode[]>([]);
 
@@ -237,7 +237,7 @@
 		shows — this is the row that lets you reach a terminal sitting beside
 		an agent in the same split.
 	-->
-	{#if tabPanes.length > 1 && layout}
+	{#if panes && tabPanes.length > 1 && layout}
 		<!--
 			The tab's real split, at herdr's own proportions, with dividers that
 			move the split in the terminal too. A tab is a split, not a list, so
@@ -246,7 +246,7 @@
 		<div class="flex h-24 border-b border-hairline bg-chip/40 lg:h-44">
 			<PaneSplit node={layout.tree} onratio={setRatio} tile={paneTile} />
 		</div>
-	{:else if tabPanes.length > 1}
+	{:else if panes && tabPanes.length > 1}
 		<div
 			class="flex items-center gap-1 overflow-x-auto border-b border-hairline bg-chip/40 px-2 py-1"
 			role="tablist"

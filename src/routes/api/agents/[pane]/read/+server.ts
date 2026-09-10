@@ -18,9 +18,13 @@ export const GET: RequestHandler = async ({ params, url }) => {
 	const lines =
 		Number.isFinite(requested) && requested >= 1 ? Math.min(Math.floor(requested), MAX_LINES) : 200;
 	const ansi = url.searchParams.get('ansi') === '1';
+	// A tile in the split shows what the pane is SHOWING, which is the visible
+	// screen; the keypad peek wants scrollback. Anything else is a typo.
+	const asked = url.searchParams.get('source');
+	const source = asked === 'visible' ? 'visible' : 'recent_unwrapped';
 
 	try {
-		const raw = await readPane(params.pane, { source: 'recent_unwrapped', lines, ansi });
+		const raw = await readPane(params.pane, { source, lines, ansi });
 		const text = ansi ? raw : cleanSnapshot(raw);
 		return json({ text, lines, atTop: text.split('\n').length < lines });
 	} catch (e) {
