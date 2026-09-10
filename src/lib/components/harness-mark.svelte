@@ -21,7 +21,7 @@
 
 {#if path}
 	<svg
-		viewBox="0 0 24 24"
+		viewBox={(!brand && drawn?.box) || '0 0 24 24'}
 		width="1em"
 		height="1em"
 		fill="currentColor"

@@ -25,15 +25,14 @@ request — and its "Pi", "AMP" and "Hermes" are different products entirely.
 In `src/lib/harness-marks.ts`, flattened to one colour and fitted to the
 24-unit box. Each stays its project's mark.
 
-| agent | source |
-| --- | --- |
-| pi | https://pi.dev/logo-auto.svg |
-| omp | https://github.com/can1357/oh-my-pi/blob/master/assets/icon.svg |
+| agent | mark | source |
+| --- | --- | --- |
+| pi | pi | https://pi.dev/logo-auto.svg |
+| omp | oh-my-pi | https://github.com/can1357/oh-my-pi/blob/master/assets/icon.svg |
+| codex | OpenAI | https://github.com/openai/openai-assistants-quickstart/blob/main/public/openai.svg |
 
-`codex` is drawn here rather than converted: OpenAI's mark is the one
-simple-icons removed at their request, and the Codex CLI's splash draws itself
-as `>_` — the terminal symbol bordr already uses for a shell pane, so wearing
-it would make an agent look like a shell. It gets a book, which is what the
-word means.
+OpenAI's mark is the one simple-icons removed at their request, so it is taken
+from OpenAI's own repository instead and kept in its 32-unit box. It identifies
+Codex inside bordr and nothing else; it remains OpenAI's trademark.
 
 Every other agent (grok, agy, and the rest) falls back to a Nerd Font glyph.
