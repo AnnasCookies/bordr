@@ -12,10 +12,19 @@
 	import Icon from '$lib/components/icon.svelte';
 	import TabBar from '$lib/components/tab-bar.svelte';
 	import NewAgentSheet from '$lib/components/new-agent-sheet.svelte';
+	import SessionTree from '$lib/components/session-tree.svelte';
 	import { checkPush, togglePushDetailed, type PushState } from '$lib/push-client';
 	import type { AgentSummary } from '$lib/types';
 
 	const store = agentStore;
+	/**
+	 * The workspaces drawer, from the agents list.
+	 *
+	 * The tree only existed on a conversation, so on a phone the machines and
+	 * their workspaces were unreachable until you had opened an agent — and a
+	 * shell pane, which is not an agent, could not be reached at all.
+	 */
+	let treeOpen = $state(false);
 	/**
 	 * A picture shared into bordr from another app.
 	 *
@@ -110,6 +119,12 @@
 
 <div class="flex min-h-dvh flex-col">
 	<header class="flex items-center gap-2 px-4 pt-1.5 pb-2">
+		<button
+			class="-ml-1 flex h-9 w-9 shrink-0 items-center justify-center rounded-lg text-muted"
+			aria-label="Workspaces"
+			aria-expanded={treeOpen}
+			onclick={() => (treeOpen = true)}>☰</button
+		>
 		<img
 			src="/patrl-face.png"
 			alt=""
@@ -359,6 +374,24 @@
 	>
 		<Icon name="plus" size={24} />
 	</button>
+
+	{#if treeOpen}
+		<div class="fixed inset-0 z-40">
+			<button
+				class="absolute inset-0 bg-black/40"
+				aria-label="Close the workspaces list"
+				onclick={() => (treeOpen = false)}
+			></button>
+			<div class="absolute inset-y-0 left-0 w-[86%] max-w-[320px] shadow-2xl">
+				<SessionTree
+					onnew={() => {
+						treeOpen = false;
+						showNew = true;
+					}}
+				/>
+			</div>
+		</div>
+	{/if}
 
 	<NewAgentSheet open={showNew} onclose={() => (showNew = false)} />
 

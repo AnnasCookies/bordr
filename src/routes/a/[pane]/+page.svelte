@@ -234,13 +234,18 @@
 	const toolCount = $derived(visibleMessages.reduce((n, m) => n + m.tools.length, 0));
 
 	/**
-	 * The transcript with any still-unclaimed prompts slotted into it by time.
+	 * The transcript, with any still-unclaimed prompts after it.
 	 *
 	 * A queued prompt is NOT written to the transcript when you send it — the
 	 * harness writes its file per turn, so it exists only on that pane's
-	 * screen until the turn processes it. The terminal still shows it in
-	 * place, above whatever ran afterwards, so collecting them all at the end
-	 * put them in the wrong order the moment any tool ran after one.
+	 * screen until the turn processes it.
+	 *
+	 * They go at the END, in the order they were sent. Slotting them by
+	 * timestamp — after the last entry written before they were sent — put a
+	 * queued prompt ABOVE the replies the agent went on to write, which reads
+	 * as though it had already been answered. A queued prompt has not happened
+	 * yet; the bottom of the transcript is where it belongs, and it moves into
+	 * place on its own when the turn claims it.
 	 */
 	type Row =
 		| { kind: 'message'; message: (typeof visibleMessages)[number]; key: string }
@@ -253,20 +258,8 @@
 			message,
 			key: `m${base + i}`
 		}));
-		for (const sent of pendingSends) {
-			// After the last entry the harness wrote before this was sent.
-			// Timestamps are only on entries the harness stamped; anything
-			// unstamped keeps its relative position by falling through.
-			let at = out.length;
-			for (let i = out.length - 1; i >= 0; i--) {
-				const row = out[i];
-				const stamp = row.kind === 'message' ? (row.message.at ?? 0) : row.sent.at;
-				if (stamp && stamp <= sent.at) {
-					at = i + 1;
-					break;
-				}
-			}
-			out.splice(at, 0, { kind: 'pending', sent, key: `p${sent.id}` });
+		for (const sent of [...pendingSends].sort((a, b) => a.at - b.at)) {
+			out.push({ kind: 'pending', sent, key: `p${sent.id}` });
 		}
 		return out;
 	});
@@ -1068,7 +1061,7 @@
 		aside still exists on a phone, which meant two trees polling /api/panes
 		and a stray copy of the drawer's markup in the DOM.
 	-->
-	{#if wideScreen}
+	{#if wideScreen && prefs.value.sidebarOpen}
 		<aside class="hidden w-[276px] shrink-0 lg:block">
 			<SessionTree current={detail.paneId} onnew={() => (showNewAgent = true)} />
 		</aside>
@@ -1102,17 +1095,32 @@
 	>
 		<header class="sticky top-0 z-10 border-b border-hairline bg-page">
 			<div class="flex items-center gap-1 px-2 pt-1 pb-1.5">
-				<a
-					href={resolve('/')}
-					class="flex h-10 w-10 shrink-0 items-center justify-center font-mono text-base text-working"
-					aria-label="Back to agents">←</a
-				>
+				<!--
+					The tree button comes first and stays put at every width: on a
+					phone it opens the drawer, on the desktop it collapses the tree
+					beside you. Back sits after it and only where there is nothing
+					else to navigate with — with the tree open, ← was a second way
+					to reach a list already on screen.
+				-->
 				<button
-					class="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg text-muted lg:hidden"
-					aria-label="Session list"
-					aria-expanded={treeOpen}
-					onclick={() => (treeOpen = true)}>☰</button
+					class="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg text-muted"
+					aria-label={wideScreen
+						? prefs.value.sidebarOpen
+							? 'Hide the session list'
+							: 'Show the session list'
+						: 'Session list'}
+					aria-expanded={wideScreen ? prefs.value.sidebarOpen : treeOpen}
+					onclick={() =>
+						wideScreen ? prefs.set('sidebarOpen', !prefs.value.sidebarOpen) : (treeOpen = true)}
+					>☰</button
 				>
+				{#if !wideScreen || !prefs.value.sidebarOpen}
+					<a
+						href={resolve('/')}
+						class="flex h-9 w-9 shrink-0 items-center justify-center font-mono text-base text-working"
+						aria-label="Back to agents">←</a
+					>
+				{/if}
 				<!--
 					The work switch, when it has been moved off the transcript. In
 					the header it is a state you set once, rather than a link you

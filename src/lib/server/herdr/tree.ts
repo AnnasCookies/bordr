@@ -2,9 +2,10 @@ import { getClient } from './index';
 import type { HerdrClient } from './client';
 import { activeConnections } from './connections';
 import { branchesFor } from './branches';
+import { layoutsFor } from './layout';
 import type { Machine } from './machines';
 import { formatPane } from './address';
-import type { PaneNode, TabNode, WorkspaceNode } from '$lib/types';
+import type { PaneNode, TabLayout, TabNode, WorkspaceNode } from '$lib/types';
 
 /**
  * The whole session as herdr sees it: workspaces, their tabs, their panes.
@@ -77,10 +78,13 @@ async function treeFor(
 	machineLabel: string,
 	machine?: Machine
 ): Promise<WorkspaceNode[]> {
-	const [workspaces, tabs, panes] = await Promise.all([
+	const [workspaces, tabs, panes, layouts] = await Promise.all([
 		herdr.request<{ workspaces: Record<string, unknown>[] }>('workspace.list'),
 		herdr.request<{ tabs: Record<string, unknown>[] }>('tab.list'),
-		herdr.request<{ panes: Record<string, unknown>[] }>('pane.list')
+		herdr.request<{ panes: Record<string, unknown>[] }>('pane.list'),
+		// A tab is a SPLIT, not a list. Without this the desktop can only show
+		// the panes as chips and guess at the arrangement.
+		layoutsFor(machineId).catch(() => new Map<string, TabLayout>())
 	]);
 
 	const byTab = new Map<string, PaneNode[]>();
@@ -118,7 +122,8 @@ async function treeFor(
 			label: String(raw.label ?? ''),
 			number: Number(raw.number ?? 0),
 			focused: raw.focused === true,
-			panes: byTab.get(tabId) ?? []
+			panes: byTab.get(tabId) ?? [],
+			layout: layouts.get(tabId)
 		};
 		const list = byWorkspace.get(node.workspaceId);
 		if (list) list.push(node);

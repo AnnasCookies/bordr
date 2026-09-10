@@ -3,6 +3,7 @@
 	import { resolve } from '$app/paths';
 	import { STATUS_RAIL, harnessText } from '$lib/theme';
 	import HarnessMark from './harness-mark.svelte';
+	import PaneSplit from './pane-split.svelte';
 	import type { WorkspaceNode } from '$lib/types';
 
 	let { current }: { current: string } = $props();
@@ -76,7 +77,33 @@
 	}
 
 	/** The panes in the open tab — a tab holds one or more, split. */
-	const tabPanes = $derived(tabs.find((t) => t.tabId === currentTab)?.panes ?? []);
+	const openTab = $derived(tabs.find((t) => t.tabId === currentTab));
+	const tabPanes = $derived(openTab?.panes ?? []);
+
+	/**
+	 * herdr's own arrangement of those panes, when it told us one.
+	 *
+	 * With this the strip stops being a row of chips in list order and becomes
+	 * the actual split — the same proportions the terminal is showing.
+	 */
+	const layout = $derived(openTab?.layout);
+	const byId = $derived(new Map(tabPanes.map((p) => [p.paneId, p])));
+
+	/** Move a divider, in herdr, not just here. */
+	async function setRatio(path: boolean[], ratio: number) {
+		if (!openTab) return;
+		try {
+			await fetch('/api/layout', {
+				method: 'POST',
+				headers: { 'content-type': 'application/json' },
+				body: JSON.stringify({ tabId: openTab.tabId, path, ratio })
+			});
+			await load();
+		} catch {
+			// The next poll reads herdr's real ratio back either way; a failed
+			// drag must not take the strip down with it.
+		}
+	}
 
 	/**
 	 * herdr's `+`: a new tab in the open workspace, then straight into it.
@@ -126,6 +153,29 @@
 		return STATUS_RAIL[pane.status] ?? 'bg-idle-rail';
 	}
 </script>
+
+{#snippet paneTile(paneId: string)}
+	{@const pane = byId.get(paneId)}
+	{@const open = paneId === current}
+	<a
+		href={resolve('/a/[pane]', { pane: paneId })}
+		aria-current={open ? 'page' : undefined}
+		class="flex min-h-0 min-w-0 flex-1 flex-col gap-1 overflow-hidden p-1.5 text-left {open
+			? 'bg-card ring-1 ring-working/60 ring-inset'
+			: 'text-muted hover:bg-card/50'}"
+	>
+		<span class="flex min-w-0 items-center gap-1.5">
+			<span class="h-1.5 w-1.5 shrink-0 rounded-full {pane ? paneDot(pane) : 'bg-edge'}"></span>
+			<span class="shrink-0 font-mono text-[11px] {harnessText(pane?.agent ?? '')}"
+				><HarnessMark agent={pane?.agent ?? ''} /></span
+			>
+			<span class="min-w-0 flex-1 truncate text-[11.5px]">{pane ? paneLabel(pane) : paneId}</span>
+		</span>
+		{#if pane && !pane.hasAgent}
+			<span class="truncate font-mono text-[10px] text-faint">{shortPane(paneId)}</span>
+		{/if}
+	</a>
+{/snippet}
 
 <!--
 	The workspace's tabs, where herdr puts them: across the top of the work
@@ -187,7 +237,16 @@
 		shows — this is the row that lets you reach a terminal sitting beside
 		an agent in the same split.
 	-->
-	{#if tabPanes.length > 1}
+	{#if tabPanes.length > 1 && layout}
+		<!--
+			The tab's real split, at herdr's own proportions, with dividers that
+			move the split in the terminal too. A tab is a split, not a list, so
+			a row of chips could only ever be a summary of it.
+		-->
+		<div class="flex h-24 border-b border-hairline bg-chip/40 lg:h-44">
+			<PaneSplit node={layout.tree} onratio={setRatio} tile={paneTile} />
+		</div>
+	{:else if tabPanes.length > 1}
 		<div
 			class="flex items-center gap-1 overflow-x-auto border-b border-hairline bg-chip/40 px-2 py-1"
 			role="tablist"

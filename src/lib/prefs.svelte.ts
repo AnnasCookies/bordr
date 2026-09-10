@@ -44,6 +44,8 @@ export interface Prefs {
 	 * Dragged by the divider between the two sections.
 	 */
 	sidebarSplit: number;
+	/** The desktop session tree, open or collapsed out of the way. */
+	sidebarOpen: boolean;
 	/** Render the harness's live verb, elapsed time and tokens while it works. */
 	showActivity: boolean;
 	/** A glyph beside each harness name. */
@@ -100,6 +102,7 @@ export const DEFAULTS: Prefs = {
 	treeScope: 'all',
 	agentOrder: 'priority',
 	sidebarSplit: 0.4,
+	sidebarOpen: true,
 	showActivity: true,
 	harnessIcons: true,
 	syntaxHighlight: true,
@@ -200,6 +203,7 @@ export function normalisePrefs(raw: unknown): Prefs {
 			typeof stored.sidebarSplit === 'number' && Number.isFinite(stored.sidebarSplit)
 				? Math.min(Math.max(stored.sidebarSplit, 0.15), 0.75)
 				: DEFAULTS.sidebarSplit,
+		sidebarOpen: bool(stored.sidebarOpen, DEFAULTS.sidebarOpen),
 		showActivity: bool(stored.showActivity, DEFAULTS.showActivity),
 		harnessIcons: bool(stored.harnessIcons, DEFAULTS.harnessIcons),
 		syntaxHighlight: bool(stored.syntaxHighlight, DEFAULTS.syntaxHighlight),
