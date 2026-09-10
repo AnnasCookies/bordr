@@ -24,6 +24,7 @@
 	import Icon from '$lib/components/icon.svelte';
 	import MessageBlocks from '$lib/components/message-blocks.svelte';
 	import SessionTree from '$lib/components/session-tree.svelte';
+	import WorkspaceTabs from '$lib/components/workspace-tabs.svelte';
 	import StatusBlock from '$lib/components/status-block.svelte';
 	import NewAgentSheet from '$lib/components/new-agent-sheet.svelte';
 	import type { Block } from '$lib/server/transcript/types';
@@ -1160,6 +1161,8 @@
 					<Icon name="bell" size={17} />
 				</button>
 			</div>
+
+			<WorkspaceTabs current={detail.paneId} />
 
 			{#if detail.statusLines.length > 0 && prefs.value.statusPosition === 'header'}
 				<StatusBlock

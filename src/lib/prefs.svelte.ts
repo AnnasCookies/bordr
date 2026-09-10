@@ -9,6 +9,7 @@ export type KeyStripMode = 'always' | 'peek';
 export type HarnessAccent = 'edge' | 'tint' | 'off';
 export type ToolDetail = 'formatted' | 'json';
 export type TreeScope = 'all' | 'agents';
+export type AgentOrder = 'priority' | 'workspace';
 export type StatusPosition = 'header' | 'bottom';
 export type WorkControl = 'inline' | 'header';
 
@@ -36,6 +37,10 @@ export interface Prefs {
 	 * Some people work agent-first and do not want their shells in the way.
 	 */
 	treeScope: TreeScope;
+	/** How the sidebar's agent section is ordered: by urgency, or by workspace. */
+	agentOrder: AgentOrder;
+	/** The workspace whose agents and tabs are in focus; empty means all. */
+	workspaceFocus: string;
 	/** Render the harness's live verb, elapsed time and tokens while it works. */
 	showActivity: boolean;
 	/** A glyph beside each harness name. */
@@ -90,6 +95,8 @@ export const DEFAULTS: Prefs = {
 	harnessAccent: 'edge',
 	toolDetail: 'formatted',
 	treeScope: 'all',
+	agentOrder: 'priority',
+	workspaceFocus: '',
 	showActivity: true,
 	harnessIcons: true,
 	syntaxHighlight: true,
@@ -130,6 +137,7 @@ const STRIPS: KeyStripMode[] = ['always', 'peek'];
 const ACCENTS: HarnessAccent[] = ['edge', 'tint', 'off'];
 const TOOL_DETAILS: ToolDetail[] = ['formatted', 'json'];
 const TREE_SCOPES: TreeScope[] = ['all', 'agents'];
+const AGENT_ORDERS: AgentOrder[] = ['priority', 'workspace'];
 const STATUS_POSITIONS: StatusPosition[] = ['header', 'bottom'];
 const WORK_CONTROLS: WorkControl[] = ['inline', 'header'];
 
@@ -182,6 +190,9 @@ export function normalisePrefs(raw: unknown): Prefs {
 		harnessAccent: pick(stored.harnessAccent, ACCENTS, DEFAULTS.harnessAccent),
 		toolDetail: pick(stored.toolDetail, TOOL_DETAILS, DEFAULTS.toolDetail),
 		treeScope: pick(stored.treeScope, TREE_SCOPES, DEFAULTS.treeScope),
+		agentOrder: pick(stored.agentOrder, AGENT_ORDERS, DEFAULTS.agentOrder),
+		workspaceFocus:
+			typeof stored.workspaceFocus === 'string' ? stored.workspaceFocus : DEFAULTS.workspaceFocus,
 		showActivity: bool(stored.showActivity, DEFAULTS.showActivity),
 		harnessIcons: bool(stored.harnessIcons, DEFAULTS.harnessIcons),
 		syntaxHighlight: bool(stored.syntaxHighlight, DEFAULTS.syntaxHighlight),
