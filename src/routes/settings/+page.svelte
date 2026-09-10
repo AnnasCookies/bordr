@@ -19,7 +19,8 @@
 		StatusPosition,
 		ToolDetail,
 		WorkControl,
-		KeyStripMode
+		KeyStripMode,
+		PaneView
 	} from '$lib/prefs.svelte';
 	import MessageBlocks from '$lib/components/message-blocks.svelte';
 	// Aliased: `ToolDetail` is already the name of the preference type.
@@ -399,6 +400,37 @@
 	</div>
 {/snippet}
 
+{#snippet paneViewPreview()}
+	<div class="rounded-lg bg-page p-2">
+		{#if prefs.value.paneView === 'terminal'}
+			<div class="term rounded-md bg-card p-1.5 text-[10.5px] leading-[1.4]">
+				<div>
+					<span class="text-done">tony@tm-work</span>:<span class="text-working">~</span>$ ls
+				</div>
+				<div class="text-muted">bordr&nbsp;&nbsp;repos&nbsp;&nbsp;obsidian</div>
+				<div class="mt-1 flex items-center gap-1 border-t border-hairline pt-1">
+					<span class="text-working">&rsaquo;</span>
+					<span class="text-faint">type here, as you would in the pane</span>
+					<span class="ml-auto text-faint">mic &middot; Ctrl+;</span>
+				</div>
+			</div>
+			<p class="mt-1 text-[11px] text-faint">
+				The screen itself, so a shell, a build or a picker looks exactly as it does on the machine.
+			</p>
+		{:else}
+			<div class="rounded-md bg-card p-1.5">
+				<p class="text-[12px]">Written and committed. Two commits, both pushed.</p>
+				<p class="mt-1 rounded-lg border border-hairline px-2 py-1 text-[11px] text-faint">
+					Type a reply…
+				</p>
+			</div>
+			<p class="mt-1 text-[11px] text-faint">
+				The transcript, rendered — bubbles, tools and diffs.
+			</p>
+		{/if}
+	</div>
+{/snippet}
+
 {#snippet branchPreview()}
 	<div class="rounded-lg bg-page p-2">
 		<p class="text-[12.5px]">win-vm-omarchy</p>
@@ -521,6 +553,17 @@
 				>
 					{#snippet preview()}{@render splitPreview()}{/snippet}
 				</ToggleRow>
+				<SettingRow
+					label="Pane view"
+					value={prefs.value.paneView}
+					options={[
+						{ v: 'conversation' as PaneView, l: 'Conversation' },
+						{ v: 'terminal' as PaneView, l: 'Terminal' }
+					]}
+					onchange={(v) => prefs.set('paneView', v)}
+				>
+					{#snippet preview()}{@render paneViewPreview()}{/snippet}
+				</SettingRow>
 				<ToggleRow
 					label="Git branch in the tree"
 					hint="Read from each workspace's directory; herdr does not serve it."
