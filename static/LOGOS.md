@@ -17,7 +17,23 @@ that tool inside bordr. No endorsement is implied.
 | kimi | Kimi | https://moonshotai.github.io/Branding-Guide |
 | cline | Cline | https://cline.bot/assets/branding/logos/cline-wordmark-black.svg |
 
-Agents with no mark here (codex, grok, pi, omp, agy, and the rest) fall back to
-a Nerd Font glyph. simple-icons carries no OpenAI or xAI icon — both were
-removed at the owners' request — and its "Pi", "AMP" and "Hermes" are different
-products entirely.
+simple-icons carries no OpenAI or xAI icon — both were removed at the owners'
+request — and its "Pi", "AMP" and "Hermes" are different products entirely.
+
+## Converted by hand
+
+In `src/lib/harness-marks.ts`, flattened to one colour and fitted to the
+24-unit box. Each stays its project's mark.
+
+| agent | source |
+| --- | --- |
+| pi | https://pi.dev/logo-auto.svg |
+| omp | https://github.com/can1357/oh-my-pi/blob/master/assets/icon.svg |
+
+`codex` is drawn here rather than converted: OpenAI's mark is the one
+simple-icons removed at their request, and the Codex CLI's splash draws itself
+as `>_` — the terminal symbol bordr already uses for a shell pane, so wearing
+it would make an agent look like a shell. It gets a book, which is what the
+word means.
+
+Every other agent (grok, agy, and the rest) falls back to a Nerd Font glyph.

@@ -1,14 +1,14 @@
 /**
- * Marks drawn here, for harnesses that have no usable logo.
+ * Marks for harnesses simple-icons does not carry.
  *
- * simple-icons carries no OpenAI or xAI icon — both were removed at the
- * owners' request — and pi and omp have no published mark at all. Rather than
- * a generic glyph, each gets a mark that means something: pi is the letter it
- * is named after, omp (oh-my-pi) is that letter reversed out of a tile because
- * it wraps pi, and codex is a codex — a bound book, which is what the word is.
+ * pi and omp publish their own logo, so these are conversions of the real
+ * thing rather than something invented: pi.dev/logo-auto.svg and
+ * can1357/oh-my-pi assets/icon.svg, flattened to one colour and fitted to the
+ * 24-unit box. Each stays its project's mark; see static/LOGOS.md.
  *
- * Drawn thick on purpose: these render at 11-13px, where a two-unit stroke in
- * a 24-unit box is half a pixel and disappears.
+ * Sizes are nudged where the source was drawn for a web page rather than for
+ * 11px — omp's bar and plug are a shade heavier than the original, which is a
+ * 120x90 logo whose plug came out as a smudge at this size.
  */
 export interface Mark {
 	d: string;
@@ -17,18 +17,24 @@ export interface Mark {
 }
 
 export const HARNESS_MARK: Record<string, Mark> = {
-	// π: top bar and two legs, as one closed outline.
-	pi: { d: 'M3.5 5.5h17v3.2h-3.8v10.8h-3.2V8.7H9.6v10.8H6.4V8.7H3.5z' },
+	// pi.dev/logo-auto.svg — the blocky P with its counter, and the i square.
+	pi: { d: 'M1 1H17.5V12H12V17.5H6.5V23H1ZM6.5 6.5V12H12V6.5ZM17.5 12H23V23H17.5Z', evenodd: true },
 
-	// oh-my-pi: the same letter, reversed out of a rounded tile.
+	// can1357/oh-my-pi assets/icon.svg — a pi whose short leg ends in a plug.
 	omp: {
 		d:
-			'M5 1h14a4 4 0 0 1 4 4v14a4 4 0 0 1-4 4H5a4 4 0 0 1-4-4V5a4 4 0 0 1 4-4z' +
-			'M5.5 6.5h13V9h-2.5v8.5h-2.2V9h-3.6v8.5H8V9H5.5z',
+			'M0.5 3.2H23.5V6.65H0.5ZM3.95 6.65H6.94V20.22H3.95ZM15.22 6.65H18.21V15.85H15.22Z' +
+			'M14.07 13.32H19.59V17.92H14.07ZM15.22 14.36H16.37V16.89H15.22ZM17.29 14.36H18.44V16.89H17.29Z',
 		evenodd: true
 	},
 
-	// codex: an open book, two leaves meeting at the spine.
+	/*
+	 * codex has no mark that works here. OpenAI's own is off the table —
+	 * simple-icons removed it at their request — and the Codex CLI's splash
+	 * draws itself as `>_`, which is the terminal symbol bordr already uses for
+	 * a shell pane, so wearing it would make an agent look like a shell. This
+	 * is a codex: a bound book, which is what the word means.
+	 */
 	codex: {
 		d:
 			'M2.5 5.2c2.8-1.2 5.6-1.7 8.4-1.5v14.6c-2.8-.2-5.6.3-8.4 1.5z' +
