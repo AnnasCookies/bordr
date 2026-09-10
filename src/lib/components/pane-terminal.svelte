@@ -412,7 +412,11 @@
 	</div>
 
 	{#if footer.length > 0 && prefs.value.statusPosition === 'bottom'}
-		<div class="shrink-0 border-t border-hairline bg-page pt-1.5">
+		<!-- Last on the screen, so this block owns the safe area. -->
+		<div
+			class="shrink-0 border-t border-hairline bg-page pt-1.5"
+			style="padding-bottom: max(0.5rem, env(safe-area-inset-bottom))"
+		>
 			<StatusBlock
 				rows={footer}
 				{agent}
