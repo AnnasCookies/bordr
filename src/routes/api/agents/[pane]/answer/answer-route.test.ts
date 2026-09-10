@@ -9,11 +9,10 @@ const herdr = vi.hoisted(() => ({
 	screens: [] as string[],
 	sent: [] as string[][],
 	readVisible: vi.fn(async () => herdr.screens.shift() ?? ''),
-	getClient: () => ({
-		request: vi.fn(async (_method: string, params: { keys: string[] }) => {
-			herdr.sent.push(params.keys);
-			return {};
-		})
+	// The route sends through sendKeys now, which resolves the pane's machine
+	// before it ever reaches a client.
+	sendKeys: vi.fn(async (_pane: string, keys: string[]) => {
+		herdr.sent.push(keys);
 	})
 }));
 vi.mock('$lib/server/herdr', () => herdr);
