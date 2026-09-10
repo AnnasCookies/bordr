@@ -14,7 +14,13 @@
 	import { checkPush, togglePushDetailed, type PushState } from '$lib/push-client';
 	import { onMount } from 'svelte';
 	import { resolve } from '$app/paths';
-	import type { HarnessAccent, ToolDetail, KeyStripMode } from '$lib/prefs.svelte';
+	import type {
+		HarnessAccent,
+		StatusPosition,
+		ToolDetail,
+		WorkControl,
+		KeyStripMode
+	} from '$lib/prefs.svelte';
 	import MessageBlocks from '$lib/components/message-blocks.svelte';
 	// Aliased: `ToolDetail` is already the name of the preference type.
 	import ToolDetailView from '$lib/components/tool-detail.svelte';
@@ -188,6 +194,31 @@
 			</div>
 		{:else}
 			<p class="text-[12px] text-muted">The harness's own suggested prompt stays hidden.</p>
+		{/if}
+	</div>
+{/snippet}
+
+{#snippet statusPositionPreview()}
+	<div class="rounded-lg bg-page p-2 text-[11px] text-muted">
+		{#if prefs.value.statusPosition === 'header'}
+			Under the title, where it is always visible.
+		{:else}
+			Under the composer — the on-screen keyboard covers it instead of the conversation.
+		{/if}
+		<p class="mt-1 truncate font-mono text-[10px] text-faint">
+			CTX ▰▰▰▰▱▱▱▱▱▱ 48% · 478.9K/1.0M · scroll to pick a row
+		</p>
+	</div>
+{/snippet}
+
+{#snippet workControlPreview()}
+	<div class="rounded-lg bg-page p-2">
+		{#if prefs.value.workControl === 'header'}
+			<span class="rounded-full bg-working-bg px-2.5 py-1 text-[12px] text-working">work 27</span>
+			<span class="ml-1 text-[11px] text-muted">in the header, always reachable</span>
+		{:else}
+			<span class="text-[11.5px] text-working">Hide the work (27)</span>
+			<span class="ml-1 text-[11px] text-muted">at the end of the transcript</span>
 		{/if}
 	</div>
 {/snippet}
@@ -377,6 +408,44 @@
 				>
 					{#snippet preview()}{@render bubblePreview()}{/snippet}
 				</ToggleRow>
+				{#if prefs.value.bubbles}
+					<ColourRow
+						label="You"
+						background={prefs.bubbleColours.userBubble}
+						text={prefs.bubbleColours.userText}
+						onbackground={(v) => prefs.setBubble('user', v)}
+						ontext={(v) => prefs.set('userText', v)}
+					/>
+					<ColourRow
+						label="Agent"
+						background={prefs.bubbleColours.agentBubble}
+						text={prefs.bubbleColours.agentText}
+						onbackground={(v) => prefs.setBubble('agent', v)}
+						ontext={(v) => prefs.set('agentText', v)}
+					/>
+					<SettingRow
+						label="Harness accent"
+						value={prefs.value.harnessAccent}
+						options={[
+							{ v: 'edge' as HarnessAccent, l: 'Edge' },
+							{ v: 'tint' as HarnessAccent, l: 'Tint' },
+							{ v: 'off' as HarnessAccent, l: 'Off' }
+						]}
+						onchange={(v) => prefs.set('harnessAccent', v)}
+					>
+						{#snippet preview()}{@render accentPreview()}{/snippet}
+					</SettingRow>
+					<p class="px-3.5 pb-2 text-[12px] text-muted">
+						Edge puts the harness's colour down the side of the bubble; tint blends it into the
+						background. A colour picked above overrides both.
+					</p>
+					<button
+						class="w-full px-3.5 py-3 text-left text-[15px] text-working"
+						onclick={() => prefs.reset('userBubble', 'userText', 'agentBubble', 'agentText')}
+					>
+						Reset colours
+					</button>
+				{/if}
 				<ToggleRow
 					label="Show the work"
 					hint="Tool calls, their results and the agent's thinking, as expandable rows. Each conversation's own toggle overrides this and is remembered."
@@ -385,6 +454,28 @@
 				>
 					{#snippet preview()}{@render workPreview()}{/snippet}
 				</ToggleRow>
+				<SettingRow
+					label="Status lines"
+					value={prefs.value.statusPosition}
+					options={[
+						{ v: 'header' as StatusPosition, l: 'Under title' },
+						{ v: 'bottom' as StatusPosition, l: 'Below input' }
+					]}
+					onchange={(v) => prefs.set('statusPosition', v)}
+				>
+					{#snippet preview()}{@render statusPositionPreview()}{/snippet}
+				</SettingRow>
+				<SettingRow
+					label="Show the work control"
+					value={prefs.value.workControl}
+					options={[
+						{ v: 'inline' as WorkControl, l: 'In transcript' },
+						{ v: 'header' as WorkControl, l: 'In header' }
+					]}
+					onchange={(v) => prefs.set('workControl', v)}
+				>
+					{#snippet preview()}{@render workControlPreview()}{/snippet}
+				</SettingRow>
 				<ToggleRow
 					label="Activity line"
 					hint="What the harness says it is doing while it works — its verb, elapsed time and tokens — instead of just 'working'."
@@ -426,44 +517,6 @@
 				>
 					{#snippet preview()}{@render toolPreview()}{/snippet}
 				</SettingRow>
-				{#if prefs.value.bubbles}
-					<ColourRow
-						label="You"
-						background={prefs.bubbleColours.userBubble}
-						text={prefs.bubbleColours.userText}
-						onbackground={(v) => prefs.setBubble('user', v)}
-						ontext={(v) => prefs.set('userText', v)}
-					/>
-					<ColourRow
-						label="Agent"
-						background={prefs.bubbleColours.agentBubble}
-						text={prefs.bubbleColours.agentText}
-						onbackground={(v) => prefs.setBubble('agent', v)}
-						ontext={(v) => prefs.set('agentText', v)}
-					/>
-					<SettingRow
-						label="Harness accent"
-						value={prefs.value.harnessAccent}
-						options={[
-							{ v: 'edge' as HarnessAccent, l: 'Edge' },
-							{ v: 'tint' as HarnessAccent, l: 'Tint' },
-							{ v: 'off' as HarnessAccent, l: 'Off' }
-						]}
-						onchange={(v) => prefs.set('harnessAccent', v)}
-					>
-						{#snippet preview()}{@render accentPreview()}{/snippet}
-					</SettingRow>
-					<p class="px-3.5 pb-2 text-[12px] text-muted">
-						Edge puts the harness's colour down the side of the bubble; tint blends it into the
-						background. A colour picked above overrides both.
-					</p>
-					<button
-						class="w-full px-3.5 py-3 text-left text-[15px] text-working"
-						onclick={() => prefs.reset('userBubble', 'userText', 'agentBubble', 'agentText')}
-					>
-						Reset colours
-					</button>
-				{/if}
 			</div>
 		</section>
 

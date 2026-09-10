@@ -24,6 +24,7 @@
 	import Icon from '$lib/components/icon.svelte';
 	import MessageBlocks from '$lib/components/message-blocks.svelte';
 	import SessionTree from '$lib/components/session-tree.svelte';
+	import StatusBlock from '$lib/components/status-block.svelte';
 	import NewAgentSheet from '$lib/components/new-agent-sheet.svelte';
 	import type { Block } from '$lib/server/transcript/types';
 	let { data } = $props();
@@ -179,8 +180,6 @@
 	 * covers a payload cached on a phone that has not reloaded yet.
 	 */
 	const statusRows = $derived(detail.statusAnsi?.length ? detail.statusAnsi : detail.statusLines);
-	const statusHtml = $derived(statusRows.map((line) => ansiToHtml(line)).join('\n'));
-	const statusHtmlFirst = $derived(ansiToHtml(statusRows[0] ?? ''));
 
 	/**
 	 * How the harness shows on an agent bubble.
@@ -1025,6 +1024,25 @@
 					class="flex h-10 w-10 shrink-0 items-center justify-center font-mono text-base text-working"
 					aria-label="Back to agents">←</a
 				>
+				<!--
+					The work switch, when it has been moved off the transcript. In
+					the header it is a state you set once, rather than a link you
+					re-find at the bottom of a growing conversation.
+				-->
+				{#if prefs.value.workControl === 'header' && toolCount > 0}
+					<button
+						class="order-last flex h-8 shrink-0 items-center rounded-full px-2.5 text-[12px] {showWork
+							? 'bg-working-bg text-working'
+							: 'text-muted'}"
+						aria-pressed={showWork}
+						onclick={() => {
+							showWork = !showWork;
+							prefs.set('showWork', showWork);
+						}}
+					>
+						work {toolCount}
+					</button>
+				{/if}
 				<span class="min-w-0 flex-1">
 					<span class="block truncate text-[16px] font-semibold"
 						>{detail.title || detail.paneId}</span
@@ -1068,25 +1086,13 @@
 				</button>
 			</div>
 
-			{#if detail.statusLines.length > 0}
-				<button
-					class="flex w-full items-center gap-1 px-4 pb-1.5 text-left font-mono text-[10px] text-muted"
-					onclick={() => (statusOpen = !statusOpen)}
-				>
-					<!--
-					Safe: ansiToHtml escapes every HTML metacharacter in the payload
-					and emits only <span style="…"> wrappers for SGR colour — the
-					same guarantee the screen peek relies on, proven by the
-					escaping cases in src/lib/ansi.test.ts.
-				-->
-					<!-- eslint-disable svelte/no-at-html-tags -->
-					{#if statusOpen}
-						<span class="whitespace-pre-wrap">{@html statusHtml}</span>
-					{:else}
-						<span class="min-w-0 flex-1 truncate">{@html statusHtmlFirst}</span>
-						<span aria-hidden="true">▾</span>
-					{/if}
-				</button>
+			{#if detail.statusLines.length > 0 && prefs.value.statusPosition === 'header'}
+				<StatusBlock
+					rows={statusRows}
+					agent={detail.agent}
+					open={statusOpen}
+					ontoggle={() => (statusOpen = !statusOpen)}
+				/>
 			{/if}
 		</header>
 
@@ -1335,7 +1341,7 @@
 				-->
 				{/if}
 
-				{#if toolCount > 0}
+				{#if toolCount > 0 && prefs.value.workControl === 'inline'}
 					<div class="flex justify-center">
 						<button
 							class="rounded-full px-3 py-1 text-[11.5px] text-working"
@@ -1706,6 +1712,20 @@
 					</div>
 				{/if}
 			</div>
+			<!--
+				The other home for the status block: under the composer, where the
+				on-screen keyboard covers it rather than the conversation.
+			-->
+			{#if detail.statusLines.length > 0 && prefs.value.statusPosition === 'bottom'}
+				<div class="border-t border-hairline bg-page pt-1.5">
+					<StatusBlock
+						rows={statusRows}
+						agent={detail.agent}
+						open={statusOpen}
+						ontoggle={() => (statusOpen = !statusOpen)}
+					/>
+				</div>
+			{/if}
 		</div>
 	</div>
 	<NewAgentSheet open={showNewAgent} onclose={() => (showNewAgent = false)} />
