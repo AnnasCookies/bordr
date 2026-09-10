@@ -1,7 +1,8 @@
 <script lang="ts">
 	import { resolve } from '$app/paths';
 	import { collapseHome } from '$lib/grouping';
-	import { harnessIcon, harnessText, STATUS_INK, STATUS_RAIL, UNKNOWN_RAIL } from '$lib/theme';
+	import { harnessText, STATUS_INK, STATUS_RAIL, UNKNOWN_RAIL } from '$lib/theme';
+	import HarnessMark from './harness-mark.svelte';
 	import type { ResolvedPathname } from '$app/types';
 	import type { AgentSummary } from '$lib/types';
 
@@ -45,7 +46,7 @@
 		</span>
 		<span class="mt-[3px] block truncate font-mono text-[11px] text-muted">
 			<span class={harnessText(agent.agent)}
-				><span class="font-mono" aria-hidden="true">{harnessIcon(agent.agent)}</span>
+				><HarnessMark agent={agent.agent} />
 				{agent.agent}</span
 			>
 			· {preview || collapseHome(agent.cwd)}

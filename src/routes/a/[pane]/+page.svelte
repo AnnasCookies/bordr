@@ -9,18 +9,12 @@
 	import { prefs } from '$lib/prefs.svelte';
 	import { flatOrder } from '$lib/grouping';
 	import { decideSwipe, inHorizontalScroller, neighbourPane } from '$lib/swipe';
-	import {
-		harnessBorder,
-		harnessBubble,
-		harnessHex,
-		harnessIcon,
-		harnessText,
-		STATUS_INK
-	} from '$lib/theme';
+	import { harnessBorder, harnessBubble, harnessHex, harnessText, STATUS_INK } from '$lib/theme';
 	import { ansiToHtml } from '$lib/ansi';
 	import { termGrid } from '$lib/term-grid';
 	import { throttleTrailing } from '$lib/throttle';
 	import { rankCommands, type SlashCommand } from '$lib/commands';
+	import HarnessMark from '$lib/components/harness-mark.svelte';
 	import Icon from '$lib/components/icon.svelte';
 	import MessageBlocks from '$lib/components/message-blocks.svelte';
 	import SessionTree from '$lib/components/session-tree.svelte';
@@ -1127,9 +1121,7 @@
 						<span class={STATUS_INK[detail.status] ?? 'text-faint'}>● {detail.status}</span>
 						·
 						<span class={harnessText(detail.agent)}
-							>{#if prefs.value.harnessIcons}<span class="font-mono" aria-hidden="true"
-									>{harnessIcon(detail.agent)}</span
-								>{/if}>
+							>{#if prefs.value.harnessIcons}<HarnessMark agent={detail.agent} />{/if}>
 							{detail.agent}</span
 						>
 						{#if detail.workspaceLabel}· {detail.workspaceLabel}{/if}

@@ -24,7 +24,8 @@
 	import MessageBlocks from '$lib/components/message-blocks.svelte';
 	// Aliased: `ToolDetail` is already the name of the preference type.
 	import ToolDetailView from '$lib/components/tool-detail.svelte';
-	import { harnessBubble, harnessHex, harnessIcon, harnessText } from '$lib/theme';
+	import { harnessBubble, harnessHex, harnessText } from '$lib/theme';
+	import HarnessMark from '$lib/components/harness-mark.svelte';
 	import CodeBlock from '$lib/components/code-block.svelte';
 	import type { Block } from '$lib/server/transcript/types';
 
@@ -164,9 +165,9 @@
 
 {#snippet iconPreview()}
 	<div class="flex gap-3 rounded-lg bg-page p-2 font-mono text-[12px]">
-		{#each ['claude', 'codex', 'pi', ''] as kind (kind)}
+		{#each ['claude', 'gemini', 'codex', ''] as kind (kind)}
 			<span class={harnessText(kind)}>
-				{#if prefs.value.harnessIcons}{harnessIcon(kind)}{/if}
+				{#if prefs.value.harnessIcons}<HarnessMark agent={kind} />{/if}
 				{kind || 'shell'}
 			</span>
 		{/each}

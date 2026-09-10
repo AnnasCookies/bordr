@@ -2,7 +2,8 @@
 	import { resolve } from '$app/paths';
 	import { SvelteSet } from 'svelte/reactivity';
 	import { prefs, type AgentOrder } from '$lib/prefs.svelte';
-	import { STATUS_INK, harnessIcon, harnessText } from '$lib/theme';
+	import { STATUS_INK, harnessText } from '$lib/theme';
+	import HarnessMark from './harness-mark.svelte';
 	import type { MachineStatus, PaneNode, WorkspaceNode } from '$lib/types';
 
 	let { current = '', onnew = () => {} }: { current?: string; onnew?: () => void } = $props();
@@ -328,7 +329,7 @@
 				<span
 					class="shrink-0 font-mono text-[12px] {harnessText(pane.agent)}"
 					title={pane.hasAgent ? pane.agent : 'shell'}
-					aria-label={pane.hasAgent ? pane.agent : 'shell'}>{harnessIcon(pane.agent)}</span
+					aria-label={pane.hasAgent ? pane.agent : 'shell'}><HarnessMark agent={pane.agent} /></span
 				>
 			</a>
 		{/each}

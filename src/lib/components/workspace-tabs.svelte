@@ -1,7 +1,8 @@
 <script lang="ts">
 	import { goto } from '$app/navigation';
 	import { resolve } from '$app/paths';
-	import { STATUS_INK, harnessIcon, harnessText } from '$lib/theme';
+	import { STATUS_INK, harnessText } from '$lib/theme';
+	import HarnessMark from './harness-mark.svelte';
 	import type { WorkspaceNode } from '$lib/types';
 
 	let { current }: { current: string } = $props();
@@ -173,7 +174,7 @@
 						aria-hidden="true"
 					></span>
 					<span class="font-mono text-[11px] {harnessText(pane.agent)}"
-						>{harnessIcon(pane.agent)}</span
+						><HarnessMark agent={pane.agent} /></span
 					>
 					<span class="max-w-[9rem] truncate">{paneLabel(pane)}</span>
 				</a>
