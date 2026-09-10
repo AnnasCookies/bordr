@@ -43,9 +43,19 @@ const starting = new Map<string, Promise<Connection | null>>();
  * Memoised on the in-flight promise: two requests arriving together would
  * otherwise each spawn ssh and race for the same socket path.
  */
+async function alive(connection: Connection): Promise<boolean> {
+	if (!existsSync(connection.socketPath)) return false;
+	try {
+		await connection.client.request('ping', {}, 4000);
+		return true;
+	} catch {
+		return false;
+	}
+}
+
 async function connect(machine: Machine): Promise<Connection | null> {
 	const live = connections.get(machine.id);
-	if (live && existsSync(live.socketPath)) return live;
+	if (live && !live.error && (await alive(live))) return live;
 
 	const pending = starting.get(machine.id);
 	if (pending) return pending;
@@ -214,7 +224,7 @@ export function connectionFor(machineId: string): Connection | undefined {
  */
 export async function ensureConnection(machineId: string): Promise<Connection | null> {
 	const live = connections.get(machineId);
-	if (live && !live.error && existsSync(live.socketPath)) return live;
+	if (live && !live.error && (await alive(live))) return live;
 	const machine = listMachines().find((m) => m.id === machineId && m.enabled);
 	if (!machine) return null;
 	return connect(machine);
