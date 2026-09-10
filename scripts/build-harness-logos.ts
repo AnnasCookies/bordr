@@ -14,6 +14,7 @@
  *
  *   bun run scripts/build-harness-logos.ts
  */
+import { execFileSync } from 'node:child_process';
 import { writeFileSync } from 'node:fs';
 import * as icons from 'simple-icons';
 
@@ -78,5 +79,10 @@ removed at the owners' request — and its "Pi", "AMP" and "Hermes" are differen
 products entirely.
 `
 );
+
+// Formatted here, so regenerating never fails the repo's own lint.
+execFileSync('bunx', ['prettier', '--write', 'src/lib/harness-logos.ts', 'static/LOGOS.md'], {
+	stdio: 'ignore'
+});
 
 console.log(`wrote ${entries.length} marks`);

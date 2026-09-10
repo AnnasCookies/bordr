@@ -664,8 +664,27 @@
 		const host = scrollHost();
 		const target: HTMLElement | Window = host ?? window;
 		target.addEventListener('scroll', onScroll, { passive: true });
+
+		// `following` is geometry, and a scroll is only one of the things that
+		// changes it. The mobile keyboard opening, a rotation, the desktop
+		// column being resized and the transcript growing all move the bottom
+		// without any scroll event — which left the Latest button showing while
+		// already at the end, pointing at where you were.
+		//
+		// visualViewport as well as window: the soft keyboard resizes the
+		// visual viewport and, on iOS, fires nothing on window at all.
+		window.addEventListener('resize', onScroll);
+		window.visualViewport?.addEventListener('resize', onScroll);
+		const observer = new ResizeObserver(onScroll);
+		if (swipeRoot) observer.observe(swipeRoot);
+
 		onScroll();
-		return () => target.removeEventListener('scroll', onScroll);
+		return () => {
+			target.removeEventListener('scroll', onScroll);
+			window.removeEventListener('resize', onScroll);
+			window.visualViewport?.removeEventListener('resize', onScroll);
+			observer.disconnect();
+		};
 	});
 
 	/** Refresh from the server; keep the view pinned to the bottom unless the
