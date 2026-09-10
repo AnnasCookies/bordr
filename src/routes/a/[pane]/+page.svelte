@@ -1210,6 +1210,7 @@
 			<PaneTerminal
 				paneId={detail.paneId}
 				agent={detail.agent}
+				ask={detail.picker && detail.picker.options.length > 0 ? pickerCard : undefined}
 				bind:draft
 				mono={prefs.value.monoSize}
 				{dictating}
@@ -1478,68 +1479,7 @@
 					{/if}
 				</div>
 
-				{#if detail.picker && detail.picker.options.length > 0}
-					<section
-						class="mt-4 flex overflow-hidden rounded-xl border border-blocked-edge bg-blocked-surface shadow-[0_6px_18px_rgba(217,119,6,.10)]"
-					>
-						<span class="w-1 shrink-0 self-stretch bg-blocked"></span>
-						<div class="min-w-0 flex-1 p-3">
-							<p class="font-mono text-[10.5px] tracking-[.3px] text-blocked-ink">
-								? WAITING ON YOU{detail.picker.multi ? ' · MULTI-SELECT' : ''}
-							</p>
-							{#if detail.picker.question}
-								<p class="mt-1.5 text-[15px]">{detail.picker.question}</p>
-							{/if}
-							<div class="mt-2 flex flex-col gap-1.5">
-								{#each detail.picker.options as option (option.index)}
-									<button
-										class="flex items-center gap-2 rounded-lg px-3 py-2.5 text-left text-[14px] disabled:opacity-50 {detail
-											.picker.multi
-											? option.selected
-												? 'border border-working bg-card'
-												: 'border border-black/[.08] bg-card dark:border-white/[.08]'
-											: option.selected
-												? 'bg-ink text-card'
-												: 'border border-black/[.08] bg-card dark:border-white/[.08]'}"
-										disabled={busy}
-										onclick={() => answer(option.index)}
-									>
-										{#if detail.picker.multi}
-											<span
-												class="flex h-5 w-5 shrink-0 items-center justify-center rounded-[5px] text-[12px] {option.checked
-													? 'bg-working text-white'
-													: 'border-[1.5px] border-idle-rail'}">{option.checked ? '✓' : ''}</span
-											>
-										{:else}
-											<span class="shrink-0 font-mono text-[12px]"
-												>{option.selected ? '❯ ' : ''}{option.index}</span
-											>
-										{/if}
-										<span class="min-w-0 flex-1">{option.label}</span>
-									</button>
-								{/each}
-							</div>
-							{#if detail.picker.multi}
-								<button
-									class="mt-2.5 w-full rounded-lg bg-ink py-3 text-[14px] font-medium text-card disabled:opacity-50"
-									disabled={busy}
-									onclick={() => sendKeys(['enter'])}
-								>
-									Submit selection
-								</button>
-							{/if}
-							<p class="mt-2 text-[11px] text-faint">
-								{#if detail.picker.axis === 'horizontal'}
-									Arrow keys move the slider and Enter confirms; verified against the screen.
-								{:else if detail.picker.numbered}
-									Digit is sent as a keystroke and verified against the screen.
-								{:else}
-									Arrow keys and Enter are sent, then verified against the screen.
-								{/if}
-							</p>
-						</div>
-					</section>
-				{/if}
+				{@render pickerCard()}
 
 				{#if !detail.picker && detail.menu}
 					<!-- A menu bordr could not read as options (omp's model browser,
@@ -1854,6 +1794,70 @@
 			</div>
 		{/if}
 	</div>
+{/snippet}
+{#snippet pickerCard()}
+	{#if detail.picker && detail.picker.options.length > 0}
+		<section
+			class="mt-4 flex overflow-hidden rounded-xl border border-blocked-edge bg-blocked-surface shadow-[0_6px_18px_rgba(217,119,6,.10)]"
+		>
+			<span class="w-1 shrink-0 self-stretch bg-blocked"></span>
+			<div class="min-w-0 flex-1 p-3">
+				<p class="font-mono text-[10.5px] tracking-[.3px] text-blocked-ink">
+					? WAITING ON YOU{detail.picker.multi ? ' · MULTI-SELECT' : ''}
+				</p>
+				{#if detail.picker.question}
+					<p class="mt-1.5 text-[15px]">{detail.picker.question}</p>
+				{/if}
+				<div class="mt-2 flex flex-col gap-1.5">
+					{#each detail.picker.options as option (option.index)}
+						<button
+							class="flex items-center gap-2 rounded-lg px-3 py-2.5 text-left text-[14px] disabled:opacity-50 {detail
+								.picker.multi
+								? option.selected
+									? 'border border-working bg-card'
+									: 'border border-black/[.08] bg-card dark:border-white/[.08]'
+								: option.selected
+									? 'bg-ink text-card'
+									: 'border border-black/[.08] bg-card dark:border-white/[.08]'}"
+							disabled={busy}
+							onclick={() => answer(option.index)}
+						>
+							{#if detail.picker.multi}
+								<span
+									class="flex h-5 w-5 shrink-0 items-center justify-center rounded-[5px] text-[12px] {option.checked
+										? 'bg-working text-white'
+										: 'border-[1.5px] border-idle-rail'}">{option.checked ? '✓' : ''}</span
+								>
+							{:else}
+								<span class="shrink-0 font-mono text-[12px]"
+									>{option.selected ? '❯ ' : ''}{option.index}</span
+								>
+							{/if}
+							<span class="min-w-0 flex-1">{option.label}</span>
+						</button>
+					{/each}
+				</div>
+				{#if detail.picker.multi}
+					<button
+						class="mt-2.5 w-full rounded-lg bg-ink py-3 text-[14px] font-medium text-card disabled:opacity-50"
+						disabled={busy}
+						onclick={() => sendKeys(['enter'])}
+					>
+						Submit selection
+					</button>
+				{/if}
+				<p class="mt-2 text-[11px] text-faint">
+					{#if detail.picker.axis === 'horizontal'}
+						Arrow keys move the slider and Enter confirms; verified against the screen.
+					{:else if detail.picker.numbered}
+						Digit is sent as a keystroke and verified against the screen.
+					{:else}
+						Arrow keys and Enter are sent, then verified against the screen.
+					{/if}
+				</p>
+			</div>
+		</section>
+	{/if}
 {/snippet}
 {#snippet splitTile(paneId: string)}
 	{#if paneId === detail.paneId}

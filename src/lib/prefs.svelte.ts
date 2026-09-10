@@ -9,6 +9,7 @@ export type KeyStripMode = 'always' | 'peek';
 export type HarnessAccent = 'edge' | 'tint' | 'off';
 export type ToolDetail = 'formatted' | 'json';
 export type PaneView = 'conversation' | 'terminal';
+export type TerminalFit = 'fit' | 'wrap' | 'native';
 
 export type TreeScope = 'all' | 'agents';
 export type AgentOrder = 'priority' | 'workspace';
@@ -52,6 +53,8 @@ export interface Prefs {
 	splitPanes: boolean;
 	/** A pane as its transcript, or as the terminal screen with a prompt line. */
 	paneView: PaneView;
+	/** How a screen wider than the window is made to fit it. */
+	terminalFit: TerminalFit;
 	/** The git branch under each workspace in the tree. */
 	showBranches: boolean;
 	/** Name an unnamed tab after what is in it, rather than "tab 2". */
@@ -115,6 +118,7 @@ export const DEFAULTS: Prefs = {
 	sidebarOpen: true,
 	splitPanes: true,
 	paneView: 'conversation',
+	terminalFit: 'fit',
 	showBranches: true,
 	smartTabLabels: true,
 	showActivity: true,
@@ -161,6 +165,7 @@ const AGENT_ORDERS: AgentOrder[] = ['priority', 'workspace'];
 const STATUS_POSITIONS: StatusPosition[] = ['header', 'bottom'];
 const WORK_CONTROLS: WorkControl[] = ['inline', 'header'];
 const PANE_VIEWS: PaneView[] = ['conversation', 'terminal'];
+const TERMINAL_FITS: TerminalFit[] = ['fit', 'wrap', 'native'];
 
 function pick<T extends string>(value: unknown, allowed: T[], fallback: T): T {
 	return allowed.includes(value as T) ? (value as T) : fallback;
@@ -221,6 +226,7 @@ export function normalisePrefs(raw: unknown): Prefs {
 		sidebarOpen: bool(stored.sidebarOpen, DEFAULTS.sidebarOpen),
 		splitPanes: bool(stored.splitPanes, DEFAULTS.splitPanes),
 		paneView: pick(stored.paneView, PANE_VIEWS, DEFAULTS.paneView),
+		terminalFit: pick(stored.terminalFit, TERMINAL_FITS, DEFAULTS.terminalFit),
 		showBranches: bool(stored.showBranches, DEFAULTS.showBranches),
 		smartTabLabels: bool(stored.smartTabLabels, DEFAULTS.smartTabLabels),
 		showActivity: bool(stored.showActivity, DEFAULTS.showActivity),

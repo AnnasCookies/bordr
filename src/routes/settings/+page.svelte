@@ -20,7 +20,8 @@
 		ToolDetail,
 		WorkControl,
 		KeyStripMode,
-		PaneView
+		PaneView,
+		TerminalFit
 	} from '$lib/prefs.svelte';
 	import MessageBlocks from '$lib/components/message-blocks.svelte';
 	// Aliased: `ToolDetail` is already the name of the preference type.
@@ -431,6 +432,37 @@
 	</div>
 {/snippet}
 
+{#snippet fitPreview()}
+	<div class="rounded-lg bg-page p-2">
+		<div class="term overflow-hidden rounded-md bg-card p-1.5 leading-[1.4]">
+			{#if prefs.value.terminalFit === 'wrap'}
+				<div class="text-[10.5px] whitespace-pre-wrap">
+					CTX ▰▰▰▱▱ 46% · 540K left · a long status row that has been allowed to wrap onto the next
+					line
+				</div>
+			{:else}
+				<div
+					class="text-[10.5px] whitespace-pre {prefs.value.terminalFit === 'native'
+						? 'overflow-x-auto'
+						: ''}"
+					style={prefs.value.terminalFit === 'fit' ? 'font-size:8px' : ''}
+				>
+					CTX ▰▰▰▱▱ 46% · 540K left · a long status row kept on one line so its columns stay put
+				</div>
+			{/if}
+		</div>
+		<p class="mt-1 text-[11px] text-faint">
+			{#if prefs.value.terminalFit === 'fit'}
+				Type shrinks until the pane's width fits, down to 8px. Columns stay lined up.
+			{:else if prefs.value.terminalFit === 'wrap'}
+				Long lines wrap. Easier to read, but tables and bars lose their columns.
+			{:else}
+				The pane's own size, scrolling sideways when it is wider than the window.
+			{/if}
+		</p>
+	</div>
+{/snippet}
+
 {#snippet branchPreview()}
 	<div class="rounded-lg bg-page p-2">
 		<p class="text-[12.5px]">win-vm-omarchy</p>
@@ -563,6 +595,18 @@
 					onchange={(v) => prefs.set('paneView', v)}
 				>
 					{#snippet preview()}{@render paneViewPreview()}{/snippet}
+				</SettingRow>
+				<SettingRow
+					label="Wide screens"
+					value={prefs.value.terminalFit}
+					options={[
+						{ v: 'fit' as TerminalFit, l: 'Fit' },
+						{ v: 'wrap' as TerminalFit, l: 'Wrap' },
+						{ v: 'native' as TerminalFit, l: 'Native' }
+					]}
+					onchange={(v) => prefs.set('terminalFit', v)}
+				>
+					{#snippet preview()}{@render fitPreview()}{/snippet}
 				</SettingRow>
 				<ToggleRow
 					label="Git branch in the tree"

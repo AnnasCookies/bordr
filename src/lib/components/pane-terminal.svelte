@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { onMount } from 'svelte';
+	import { onMount, type Snippet } from 'svelte';
 	import { ansiToHtml } from '$lib/ansi';
 	import { prefs } from '$lib/prefs.svelte';
 	import { promptMark, splitAtPrompt } from '$lib/screen-split';
@@ -20,6 +20,7 @@
 		paneId,
 		agent = '',
 		draft = $bindable(''),
+		ask,
 		lines = 200,
 		mono = 12,
 		dictating = false,
@@ -32,6 +33,8 @@
 		agent?: string;
 		/** Bound, so dictation writes into this line the way it does the composer. */
 		draft?: string;
+		/** The harness's question, when it has one — shown above the prompt. */
+		ask?: Snippet;
 		lines?: number;
 		mono?: number;
 		dictating?: boolean;
@@ -122,9 +125,14 @@
 	 */
 	const FLOOR = 8;
 	let fitted = $state(0);
-	const size = $derived(fitted || mono);
+	const mode = $derived(prefs.value.terminalFit);
+	const size = $derived(mode === 'fit' ? fitted || mono : mono);
 
 	function fit() {
+		if (mode !== 'fit') {
+			fitted = 0;
+			return;
+		}
 		const box = screen;
 		const pre = box?.firstElementChild as HTMLElement | undefined;
 		if (!box || !pre || !box.clientWidth) return;
@@ -140,6 +148,7 @@
 	$effect(() => {
 		void text;
 		void mono;
+		void mode;
 		// After the paint: scrollWidth is only true once the new text is in.
 		const id = requestAnimationFrame(fit);
 		return () => cancelAnimationFrame(id);
@@ -280,9 +289,25 @@
 		class="term min-h-0 w-full flex-1 overflow-auto px-3 py-2 leading-[1.35]"
 		style="font-size: {size}px"
 	>
-		<!-- eslint-disable-next-line svelte/no-at-html-tags -- ansiToHtml escapes its input -->
-		<pre class="whitespace-pre">{@html ansiToHtml(parts.above.join('\n'), true)}</pre>
+		<!-- eslint-disable svelte/no-at-html-tags -- ansiToHtml escapes its input -->
+		<pre
+			class={mode === 'wrap'
+				? '[overflow-wrap:anywhere] whitespace-pre-wrap'
+				: 'whitespace-pre'}>{@html ansiToHtml(parts.above.join('\n'), true)}</pre>
+		<!-- eslint-enable svelte/no-at-html-tags -->
 	</div>
+
+	{#if ask}
+		<!--
+			A question belongs where the answer goes. In terminal mode the picker
+			is on the screen as text you could type a number into, but the same
+			card the conversation shows is a tap instead — and the pane cannot
+			tell the difference.
+		-->
+		<div class="max-h-[45%] shrink-0 overflow-y-auto border-t border-hairline px-3 pb-2">
+			{@render ask()}
+		</div>
+	{/if}
 
 	{#if footer.length > 0 && prefs.value.statusPosition === 'header'}
 		<div class="shrink-0 border-t border-hairline">
