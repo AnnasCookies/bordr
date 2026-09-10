@@ -1,6 +1,6 @@
 <script lang="ts">
 	import { resolve } from '$app/paths';
-	import { collapseHome } from '$lib/grouping';
+	import { agentTitle, collapseHome } from '$lib/grouping';
 	import { harnessText, STATUS_INK, STATUS_RAIL, UNKNOWN_RAIL } from '$lib/theme';
 	import { prefs } from '$lib/prefs.svelte';
 	import HarnessMark from './harness-mark.svelte';
@@ -49,7 +49,7 @@
 	<span class="min-w-0 flex-1 px-3 py-[11px]">
 		<span class="flex items-baseline gap-2">
 			<span class="min-w-0 flex-1 truncate text-[15px] font-medium {dim ? 'text-muted' : ''}">
-				{agent.title || agent.paneId}
+				{agentTitle(agent.title, agent.workspaceLabel, agent.paneId, agent.agent)}
 			</span>
 			{#if unread}
 				<span class="h-[7px] w-[7px] shrink-0 rounded-full bg-working" aria-label="unread"></span>

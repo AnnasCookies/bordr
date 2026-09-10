@@ -1,5 +1,12 @@
 import { describe, expect, it } from 'vitest';
-import { collapseHome, flatOrder, partitionAgents, rollupCounts, sortAgents } from './grouping';
+import {
+	agentTitle,
+	collapseHome,
+	flatOrder,
+	partitionAgents,
+	rollupCounts,
+	sortAgents
+} from './grouping';
 import type { AgentStatus, AgentSummary } from './types';
 
 function agent(over: Partial<AgentSummary> & { paneId: string }): AgentSummary {
@@ -147,5 +154,42 @@ describe('flatOrder', () => {
 
 	it('changes with the sort, so swipe follows what you see', () => {
 		expect(flatOrder(FLEET, 'none', 'recent')).toEqual(['w1:p2', 'w2:p2', 'w1:p1', 'w2:p1']);
+	});
+});
+
+describe('agentTitle', () => {
+	it('keeps a title the harness wrote', () => {
+		expect(agentTitle('ctxc #11403', 'bordr', 'w1:p1')).toBe('ctxc #11403');
+	});
+
+	/**
+	 * The case this exists for: an idle agy under the shell's own title, which
+	 * read as a stray terminal in a list of agents.
+	 */
+	it('falls back to the workspace when the shell title is still up', () => {
+		expect(agentTitle('tony@tm-work:~', 'win-vm-omarchy', 'wJ:p1')).toBe('win-vm-omarchy');
+		expect(agentTitle('~', 'bordr', 'w3:p1')).toBe('bordr');
+		expect(agentTitle('~/repos/it-work', 'it-work', 'w6:p1')).toBe('it-work');
+		expect(agentTitle('/var/log', 'logs', 'w2:p1')).toBe('logs');
+		expect(agentTitle('', 'e2e', 'wM:p1')).toBe('e2e');
+	});
+
+	it('does not mistake real work for a shell prompt', () => {
+		expect(agentTitle('Fix the @mentions parser', 'bordr', 'w1:p1')).toBe(
+			'Fix the @mentions parser'
+		);
+		expect(agentTitle('user@host is unreachable', 'ops', 'w1:p1')).toBe('user@host is unreachable');
+	});
+
+	/**
+	 * An agent started in home sits in a workspace called `~`, so falling back
+	 * to the workspace just repeats the problem — say what the row is instead.
+	 */
+	it('names the harness when the workspace is shell-shaped too', () => {
+		expect(agentTitle('~', '~', 'wB:p1', 'opencode')).toBe('opencode');
+	});
+
+	it('has the pane id to fall back on when there is nothing else', () => {
+		expect(agentTitle('~', '', 'w9:p2')).toBe('w9:p2');
 	});
 });

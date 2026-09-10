@@ -1,6 +1,7 @@
 <script lang="ts">
 	import { resolve } from '$app/paths';
 	import { SvelteSet } from 'svelte/reactivity';
+	import { agentTitle } from '$lib/grouping';
 	import { prefs, type AgentOrder } from '$lib/prefs.svelte';
 	import { STATUS_RAIL, harnessText } from '$lib/theme';
 	import HarnessMark from './harness-mark.svelte';
@@ -317,7 +318,9 @@
 					aria-hidden="true"
 				></span>
 				<span class="min-w-0 flex-1">
-					<span class="block truncate text-[12.5px]">{pane.title || pane.paneId}</span>
+					<span class="block truncate text-[12.5px]"
+						>{agentTitle(pane.title, pane.workspaceLabel, pane.paneId, pane.agent)}</span
+					>
 					<!--
 						Where the agent is, always — herdr's own list carries the
 						workspace on every row. Showing it only under one sort order
