@@ -5,6 +5,8 @@ import type { AgentStatus, AgentSummary } from '$lib/types';
 import { HerdrClient, HerdrRequestError } from './client';
 import { judgeCompatibility, type Compatibility } from './compat';
 import { SubscriptionManager } from './subscriptions';
+import { ensureConnection } from './connections';
+import { parsePane } from './address';
 
 const DEFAULT_SOCKET = join(homedir(), '.config', 'herdr', 'sessions', 'main', 'herdr.sock');
 
@@ -39,6 +41,24 @@ export function getClient(): HerdrClient {
 		client = new HerdrClient(path);
 	}
 	return client;
+}
+
+/**
+ * The client for a pane address: this host, or the machine it names.
+ *
+ * Throws for a machine that is configured but not reachable, so the caller
+ * reports "not reachable" rather than silently answering with local panes.
+ */
+export async function clientFor(machineId: string): Promise<HerdrClient> {
+	if (!machineId) return getClient();
+	const connection = await ensureConnection(machineId);
+	if (!connection || connection.error) {
+		throw new HerdrRequestError(
+			'machine_unreachable',
+			connection?.error ?? `machine ${machineId} is not reachable`
+		);
+	}
+	return connection.client;
 }
 
 /**
@@ -148,8 +168,12 @@ export async function rawAgents(): Promise<Record<string, unknown>[]> {
 	return result.agents;
 }
 
-export async function rawAgent(paneId: string): Promise<Record<string, unknown> | null> {
-	return (await rawAgents()).find((a) => a.pane_id === paneId) ?? null;
+export async function rawAgent(address: string): Promise<Record<string, unknown> | null> {
+	const { machineId, paneId } = parsePane(address);
+	const herdr = await clientFor(machineId);
+	const result = await herdr.request<{ agents: Record<string, unknown>[] }>('agent.list');
+	const agent = result.agents.find((a) => a.pane_id === paneId);
+	return agent ? { ...agent, pane_id: address } : null;
 }
 
 /**
@@ -159,10 +183,13 @@ export async function rawAgent(paneId: string): Promise<Record<string, unknown> 
  * on one 404'd. `pane.list` carries every pane and the same fields where an
  * agent exists, so the caller can treat both alike.
  */
-export async function rawPane(paneId: string): Promise<Record<string, unknown> | null> {
-	const herdr = getClient();
+export async function rawPane(address: string): Promise<Record<string, unknown> | null> {
+	const { machineId, paneId } = parsePane(address);
+	const herdr = await clientFor(machineId);
 	const result = await herdr.request<{ panes: Record<string, unknown>[] }>('pane.list');
-	return result.panes.find((p) => p.pane_id === paneId) ?? null;
+	const pane = result.panes.find((p) => p.pane_id === paneId);
+	// Re-addressed on the way out so callers keep working in bordr's ids.
+	return pane ? { ...pane, pane_id: address } : null;
 }
 
 export async function readVisible(paneId: string): Promise<string> {
@@ -180,10 +207,11 @@ export async function readVisible(paneId: string): Promise<string> {
  * "unknown variant" error back from herdr.
  */
 export async function readPane(
-	paneId: string,
+	address: string,
 	opts: { source?: 'visible' | 'recent' | 'recent_unwrapped'; lines?: number; ansi?: boolean } = {}
 ): Promise<string> {
-	const herdr = getClient();
+	const { machineId, paneId } = parsePane(address);
+	const herdr = await clientFor(machineId);
 	const params = {
 		source: opts.source ?? 'visible',
 		format: opts.ansi ? 'ansi' : 'text',
@@ -260,8 +288,9 @@ export async function settleScreen(
  * a harness starts — and the new-agent route already waits that window out
  * before it hands the pane over.
  */
-export async function promptAgent(paneId: string, text: string): Promise<void> {
-	const herdr = getClient();
+export async function promptAgent(address: string, text: string): Promise<void> {
+	const { machineId, paneId } = parsePane(address);
+	const herdr = await clientFor(machineId);
 	/**
 	 * A leading `!` is a MODE SWITCH, not text.
 	 *
@@ -290,7 +319,36 @@ export async function promptAgent(paneId: string, text: string): Promise<void> {
 			await herdr.request('agent.prompt', { target: paneId, text });
 			return;
 		}
+		// A shell pane has no agent to prompt; typing the line and pressing
+		// enter is the same gesture, and is what the key strip already does.
+		if (e instanceof Error && /agent target .* not found/.test(e.message)) {
+			await herdr.request('pane.send_text', { pane_id: paneId, text });
+			await herdr.request('pane.send_keys', { pane_id: paneId, keys: ['enter'] });
+			return;
+		}
 		throw e;
+	}
+}
+
+/**
+ * Send keys to a pane, wherever it lives.
+ *
+ * Routes used to hand `params.pane` straight to `agent.send_keys`, which is
+ * bordr's address rather than herdr's — a remote pane failed with "agent
+ * target tm-dev/w9:p1 not found". Going through here means a route never has
+ * to know a machine exists.
+ */
+export async function sendKeys(address: string, keys: string[]): Promise<void> {
+	const { machineId, paneId } = parsePane(address);
+	const herdr = await clientFor(machineId);
+	try {
+		await herdr.request('agent.send_keys', { target: paneId, keys });
+	} catch (e) {
+		// `agent.send_keys` resolves an AGENT, so a pane running a plain shell
+		// fails with "agent target … not found". The pane surface takes the
+		// same keys, which is what a shell pane needs.
+		if (!(e instanceof Error)) throw e;
+		await herdr.request('pane.send_keys', { pane_id: paneId, keys });
 	}
 }
 

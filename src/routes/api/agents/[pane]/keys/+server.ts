@@ -1,5 +1,5 @@
 import { error, json } from '@sveltejs/kit';
-import { getClient, HerdrRequestError } from '$lib/server/herdr';
+import { sendKeys, HerdrRequestError } from '$lib/server/herdr';
 import { validateKeys } from './validate';
 import type { RequestHandler } from './$types';
 
@@ -12,7 +12,7 @@ export const POST: RequestHandler = async ({ params, request }) => {
 		throw error(400, (e as Error).message);
 	}
 	try {
-		await getClient().request('agent.send_keys', { target: params.pane, keys });
+		await sendKeys(params.pane, keys);
 	} catch (e) {
 		// Same mapping as the prompt route: a refusal is the caller's problem
 		// (409, with herdr's reason); a dead socket is the server's (503).

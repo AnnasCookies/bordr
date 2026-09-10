@@ -1,5 +1,5 @@
 import { error, json } from '@sveltejs/kit';
-import { getClient, promptAgent, rawAgent, readVisible } from '$lib/server/herdr';
+import { promptAgent, rawAgent, readVisible, sendKeys } from '$lib/server/herdr';
 import { keysForOption, parsePicker, pendingAsk, type Picker } from '$lib/server/picker';
 import { adapterFor } from '$lib/server/transcript';
 import { readTranscriptTail } from '$lib/server/transcript/tail';
@@ -51,15 +51,12 @@ export const POST: RequestHandler = async ({ params, request }) => {
 			if (!current?.multi) return json({ ok: true, chose: 'submit' });
 			const highlighted = current.options.find((o) => o.selected)?.index;
 			if (highlighted === undefined) {
-				await getClient().request('agent.send_keys', { target: params.pane, keys: ['enter'] });
+				await sendKeys(params.pane, ['enter']);
 			} else {
 				const boxes = current.options.filter((o) => o.checked !== undefined);
 				const maxBox = Math.max(...boxes.map((o) => o.index));
 				const downs = Math.max(1, maxBox - highlighted + 1);
-				await getClient().request('agent.send_keys', {
-					target: params.pane,
-					keys: Array(downs).fill('down')
-				});
+				await sendKeys(params.pane, Array(downs).fill('down'));
 			}
 			await new Promise((r) => setTimeout(r, 800));
 		}
@@ -70,8 +67,7 @@ export const POST: RequestHandler = async ({ params, request }) => {
 	const wanted = picker.options.find((o) => o.index === index);
 	if (!wanted) throw error(409, `option ${index} is not on screen`);
 
-	const send = (keys: string[]) =>
-		getClient().request('agent.send_keys', { target: params.pane, keys });
+	const send = (keys: string[]) => sendKeys(params.pane, keys);
 	const settle = () => new Promise((r) => setTimeout(r, 500));
 	const sameDialog = (a: Picker, b: Picker) =>
 		a.options.length === b.options.length &&

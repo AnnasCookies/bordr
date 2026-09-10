@@ -101,6 +101,8 @@ export interface TabNode {
 
 export interface WorkspaceNode {
 	workspaceId: string;
+	/** The machine this workspace lives on; empty for this host. */
+	machine: string;
 	label: string;
 	number: number;
 	focused: boolean;

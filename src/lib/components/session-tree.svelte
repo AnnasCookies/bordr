@@ -18,7 +18,6 @@
 
 	let workspaces = $state<WorkspaceNode[]>([]);
 	let machines = $state<Machine[]>([]);
-	let failed = $state(false);
 	/** Collapsed workspaces, by id. Everything starts open. */
 	const collapsed = new SvelteSet<string>();
 
@@ -29,9 +28,8 @@
 			const body = await res.json();
 			workspaces = body.workspaces ?? [];
 			machines = body.machines ?? [];
-			failed = false;
 		} catch {
-			failed = true;
+			// A failed poll keeps the last tree rather than blanking it.
 		}
 	}
 
@@ -82,6 +80,31 @@
 					.filter((t) => t.panes.length > 0)
 			}))
 			.filter((w) => w.tabs.length > 0)
+	);
+
+	/**
+	 * Workspaces under the machine they live on. This host first and without a
+	 * heading — it is where you already are — then each machine that answered.
+	 */
+	const grouped = $derived.by((): { machine: string; workspaces: typeof shown }[] => {
+		// Plain arrays: local scratch inside a derived, never read reactively,
+		// so the rule that steers reactive state to SvelteMap does not apply.
+		const groups: { machine: string; workspaces: typeof shown }[] = [];
+		for (const workspace of shown) {
+			const machine = workspace.machine ?? '';
+			const existing = groups.find((g) => g.machine === machine);
+			if (existing) existing.workspaces.push(workspace);
+			else groups.push({ machine, workspaces: [workspace] });
+		}
+		// This host first, unlabelled — it is where you already are.
+		return groups.sort((a, b) =>
+			a.machine === '' ? -1 : b.machine === '' ? 1 : a.machine.localeCompare(b.machine)
+		);
+	});
+
+	/** Configured, enabled, and not represented in the tree. */
+	const unreachable = $derived(
+		machines.filter((m) => m.enabled && !shown.some((w) => w.machine === m.label))
 	);
 
 	function toggle(id: string) {
@@ -136,88 +159,76 @@
 	</div>
 
 	<div class="min-h-0 flex-1 overflow-y-auto py-1">
-		{#if machines.length > 0}
+		{#if unreachable.length > 0}
 			<!--
-				herdr's SSH machines, named but not served. Its socket has no
-				machine concept at all, so bordr shows this host's panes and can
-				only tell you the others exist — saying so beats a sidebar that
-				is silent about them.
+				A machine that is configured and enabled but did not answer. Named
+				rather than silently missing: "where is tm-dev" is a question the
+				sidebar should be able to answer.
 			-->
-			<p class="px-2 py-1 font-mono text-[11px] text-muted">machines</p>
-			<div class="flex items-center gap-2 py-1 pr-2 pl-6">
-				<span class="h-1.5 w-1.5 shrink-0 rounded-full bg-done" aria-hidden="true"></span>
-				<span class="min-w-0 flex-1 truncate text-[12.5px]">this machine</span>
-				<span class="shrink-0 font-mono text-[10px] text-faint">served</span>
-			</div>
-			{#each machines as machine (machine.id)}
-				<div class="flex items-center gap-2 py-1 pr-2 pl-6 opacity-60">
+			{#each unreachable as machine (machine.id)}
+				<div class="flex items-center gap-2 px-2 py-1 opacity-60">
 					<span class="h-1.5 w-1.5 shrink-0 rounded-full bg-idle-rail" aria-hidden="true"></span>
-					<span class="min-w-0 flex-1 truncate text-[12.5px]">{machine.label}</span>
-					<span class="shrink-0 font-mono text-[10px] text-faint"
-						>{machine.enabled ? 'ssh' : 'off'}</span
-					>
+					<span class="min-w-0 flex-1 truncate font-mono text-[11px]">{machine.label}</span>
+					<span class="shrink-0 font-mono text-[10px] text-faint">no answer</span>
 				</div>
 			{/each}
-			<p class="px-2 pt-0.5 pb-1.5 pl-6 text-[10.5px] text-faint">
-				Run bordr on a machine to reach its panes.
-			</p>
-			<div class="mx-2 my-1 border-t border-hairline"></div>
 		{/if}
 
-		{#if failed}
-			<p class="px-3 py-2 text-[12px] text-muted">herdr is not reachable.</p>
-		{:else if shown.length === 0}
-			<p class="px-3 py-2 text-[12px] text-muted">Nothing open.</p>
-		{/if}
-
-		{#each shown as workspace (workspace.workspaceId)}
-			<button
-				class="flex w-full items-center gap-1.5 px-2 py-1 text-left"
-				onclick={() => toggle(workspace.workspaceId)}
-				aria-expanded={!collapsed.has(workspace.workspaceId)}
-			>
-				<span class="w-2 shrink-0 font-mono text-[9px] text-faint" aria-hidden="true"
-					>{collapsed.has(workspace.workspaceId) ? '▸' : '▾'}</span
-				>
-				<span class="min-w-0 flex-1 truncate font-mono text-[11px] text-muted"
-					>{workspace.label || workspace.workspaceId}</span
-				>
-			</button>
-
-			{#if !collapsed.has(workspace.workspaceId)}
-				{#each workspace.tabs as tab (tab.tabId)}
-					<!-- A tab with one pane is just that pane; showing a tab row
-					     above it would be a row that says nothing. -->
-					{#if workspace.tabs.length > 1 || tab.panes.length > 1}
-						<p class="truncate py-0.5 pr-2 pl-6 font-mono text-[10.5px] text-faint">
-							{tabLabel(tab.label, tab.number)}
-						</p>
-					{/if}
-					{#each tab.panes as pane (pane.paneId)}
-						<a
-							href={paneHref(pane.paneId)}
-							class="flex items-center gap-2 py-1 pr-2 pl-6 {pane.paneId === current
-								? 'bg-chip'
-								: ''}"
-							aria-current={pane.paneId === current ? 'page' : undefined}
-							onclick={onpick}
-						>
-							<span
-								class="h-1.5 w-1.5 shrink-0 rounded-full {pane.hasAgent
-									? (STATUS_INK[pane.status] ?? 'bg-idle-rail')
-									: 'bg-idle-rail'}"
-								aria-hidden="true"
-							></span>
-							<span class="min-w-0 flex-1 truncate text-[12.5px]">{pane.title || pane.paneId}</span>
-							<span
-								class="shrink-0 font-mono text-[12px] {harnessText(pane.agent)}"
-								title={pane.hasAgent ? pane.agent : 'shell'}
-								aria-label={pane.hasAgent ? pane.agent : 'shell'}>{harnessIcon(pane.agent)}</span
-							>
-						</a>
-					{/each}
-				{/each}
+		{#each grouped as group (group.machine)}
+			{#if group.machine}
+				<p class="mt-1 px-2 py-1 font-mono text-[11px] text-working">{group.machine}</p>
 			{/if}
+			{#each group.workspaces as workspace (workspace.workspaceId)}
+				<button
+					class="flex w-full items-center gap-1.5 px-2 py-1 text-left"
+					onclick={() => toggle(workspace.workspaceId)}
+					aria-expanded={!collapsed.has(workspace.workspaceId)}
+				>
+					<span class="w-2 shrink-0 font-mono text-[9px] text-faint" aria-hidden="true"
+						>{collapsed.has(workspace.workspaceId) ? '▸' : '▾'}</span
+					>
+					<span class="min-w-0 flex-1 truncate font-mono text-[11px] text-muted"
+						>{workspace.label || workspace.workspaceId}</span
+					>
+				</button>
+
+				{#if !collapsed.has(workspace.workspaceId)}
+					{#each workspace.tabs as tab (tab.tabId)}
+						<!-- A tab with one pane is just that pane; showing a tab row
+					     above it would be a row that says nothing. -->
+						{#if workspace.tabs.length > 1 || tab.panes.length > 1}
+							<p class="truncate py-0.5 pr-2 pl-6 font-mono text-[10.5px] text-faint">
+								{tabLabel(tab.label, tab.number)}
+							</p>
+						{/if}
+						{#each tab.panes as pane (pane.paneId)}
+							<a
+								href={paneHref(pane.paneId)}
+								class="flex items-center gap-2 py-1 pr-2 pl-6 {pane.paneId === current
+									? 'bg-chip'
+									: ''}"
+								aria-current={pane.paneId === current ? 'page' : undefined}
+								onclick={onpick}
+							>
+								<span
+									class="h-1.5 w-1.5 shrink-0 rounded-full {pane.hasAgent
+										? (STATUS_INK[pane.status] ?? 'bg-idle-rail')
+										: 'bg-idle-rail'}"
+									aria-hidden="true"
+								></span>
+								<span class="min-w-0 flex-1 truncate text-[12.5px]"
+									>{pane.title || pane.paneId}</span
+								>
+								<span
+									class="shrink-0 font-mono text-[12px] {harnessText(pane.agent)}"
+									title={pane.hasAgent ? pane.agent : 'shell'}
+									aria-label={pane.hasAgent ? pane.agent : 'shell'}>{harnessIcon(pane.agent)}</span
+								>
+							</a>
+						{/each}
+					{/each}
+				{/if}
+			{/each}
 		{/each}
 	</div>
 
