@@ -85,8 +85,17 @@
 
 	const parts = $derived(splitAtPrompt(text));
 	const mark = $derived(parts.prompt ? promptMark(parts.prompt) : '\u203a');
-	/** The harness's own footer, handed to the block that knows how to park it. */
-	const footer = $derived(parts.below.filter((l) => l.trim() !== ''));
+	/**
+	 * The harness's own footer, handed to the block that knows how to park it.
+	 *
+	 * Condensed the same way the server condenses the rows it lifts off a
+	 * screen: a footer is laid out in terminal columns, so expanded it arrives
+	 * full of the runs of spaces that did the aligning, and those read as gaps
+	 * once the line is allowed to wrap.
+	 */
+	const footer = $derived(
+		parts.below.map((l) => l.trim().replace(/\s{2,}/g, '  ')).filter((l) => l !== '')
+	);
 	let statusOpen = $state(false);
 
 	// The screen follows its own bottom, the way a terminal does, unless you
@@ -94,6 +103,56 @@
 	$effect(() => {
 		void text;
 		if (stuck && screen) screen.scrollTop = screen.scrollHeight;
+	});
+
+	/**
+	 * Shrink the type until the pane's own width fits the window's.
+	 *
+	 * herdr draws a pane at the terminal's width — 198 columns here — and
+	 * bordr only displays what it drew. On a phone that is four times the
+	 * screen, so without this every line runs off the side and reading
+	 * anything means scrolling sideways. Scaling the type keeps the columns
+	 * lined up, which wrapping would destroy: a status bar, a table and a
+	 * progress meter are all built out of column positions.
+	 *
+	 * Down to a floor only. Past that it stops being legible and buys nothing —
+	 * a 198-column pane needs about 3px a character to fit a phone, which is
+	 * not reading, it is a texture. Below the floor, sideways scrolling is the
+	 * better of two bad answers.
+	 */
+	const FLOOR = 8;
+	let fitted = $state(0);
+	const size = $derived(fitted || mono);
+
+	function fit() {
+		const box = screen;
+		const pre = box?.firstElementChild as HTMLElement | undefined;
+		if (!box || !pre || !box.clientWidth) return;
+		// Measure at the SOURCE size, so the answer does not drift each time
+		// it is recomputed from its own previous result.
+		const at = fitted || mono;
+		const natural = (pre.scrollWidth / at) * mono;
+		if (!natural) return;
+		const want = Math.min(mono, (box.clientWidth / natural) * mono);
+		fitted = Math.max(FLOOR, Math.floor(want * 10) / 10);
+	}
+
+	$effect(() => {
+		void text;
+		void mono;
+		// After the paint: scrollWidth is only true once the new text is in.
+		const id = requestAnimationFrame(fit);
+		return () => cancelAnimationFrame(id);
+	});
+
+	$effect(() => {
+		const box = screen;
+		if (!box) return;
+		// The window resizing, the split moving, the keyboard opening — all
+		// change the width without changing a character of the text.
+		const observer = new ResizeObserver(() => fit());
+		observer.observe(box);
+		return () => observer.disconnect();
 	});
 
 	/**
@@ -219,7 +278,7 @@
 			if (screen) stuck = screen.scrollTop + screen.clientHeight >= screen.scrollHeight - 24;
 		}}
 		class="term min-h-0 w-full flex-1 overflow-auto px-3 py-2 leading-[1.35]"
-		style="font-size: {mono}px"
+		style="font-size: {size}px"
 	>
 		<!-- eslint-disable-next-line svelte/no-at-html-tags -- ansiToHtml escapes its input -->
 		<pre class="whitespace-pre">{@html ansiToHtml(parts.above.join('\n'), true)}</pre>
