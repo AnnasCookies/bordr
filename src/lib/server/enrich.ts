@@ -2,6 +2,7 @@ import { adapterFor } from './transcript';
 import { readTranscriptTail } from './transcript/tail';
 import { menuFooter, parsePicker, pendingAsk } from './picker';
 import { rawAgents, readVisible } from './herdr';
+import { extractStatusLines } from './status';
 import type { AgentSummary } from '$lib/types';
 import type { Message } from './transcript/types';
 
@@ -42,6 +43,8 @@ interface ScreenReading {
 	at: number;
 	picker: AgentSummary['picker'];
 	menu: string | null;
+	/** The harness's status footer, from the same read. */
+	status: string[];
 }
 const screens = new Map<string, ScreenReading>();
 
@@ -164,6 +167,8 @@ export async function enrichAgents(agents: AgentSummary[]): Promise<AgentSummary
 			(a.agent_session as { value?: string } | undefined)?.value
 		])
 	);
+	// Which pane the terminal itself is on — herdr says so in the same list.
+	const focused = new Set(raws.filter((a) => a.focused === true).map((a) => a.pane_id as string));
 
 	const transcripts = await Promise.all(
 		agents.map((summary) => previewFor(summary, sessions.get(summary.paneId)))
@@ -192,7 +197,11 @@ export async function enrichAgents(agents: AgentSummary[]): Promise<AgentSummary
 						: null,
 					// A menu the person opened is not a blocked agent, so the
 					// status stands; the row just says where to drive it.
-					menu: picker || summary.status === 'working' ? null : menuFooter(visible)
+					menu: picker || summary.status === 'working' ? null : menuFooter(visible),
+					// The footer is already on the screen this read fetched, so
+					// carrying it costs nothing — model, context and spend on the
+					// list without a call per row.
+					status: extractStatusLines(visible, 3)
 				});
 			} catch {
 				// Keep the previous reading; a herdr-blocked pane with none
@@ -210,6 +219,8 @@ export async function enrichAgents(agents: AgentSummary[]): Promise<AgentSummary
 		return {
 			...summary,
 			preview: transcripts[i].preview,
+			statusRows: reading?.status ?? [],
+			focused: focused.has(summary.paneId),
 			picker,
 			menu: picker ? null : (reading?.menu ?? null),
 			status: picker && summary.status !== 'blocked' ? 'blocked' : summary.status

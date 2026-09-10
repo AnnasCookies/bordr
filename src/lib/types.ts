@@ -33,6 +33,17 @@ export interface AgentSummary {
 	 * the phone can point at the key strip. Null when there is none.
 	 */
 	menu?: string | null;
+	/**
+	 * The harness's own status rows, condensed — model, context, spend, quota.
+	 * Lifted off the same screen reading the list already takes, so they cost
+	 * no extra call. Empty when the harness prints no footer.
+	 *
+	 * Several, because which one matters is a per-harness habit: the list shows
+	 * whichever row you settled on in the conversation's status block.
+	 */
+	statusRows?: string[];
+	/** The pane the terminal itself is looking at. */
+	focused?: boolean;
 }
 
 export interface AgentDetail extends AgentSummary {

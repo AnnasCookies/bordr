@@ -258,6 +258,26 @@
 	</div>
 {/snippet}
 
+{#snippet listDetailPreview()}
+	<div class="rounded-lg bg-page p-2 text-[12px]">
+		<div class="flex items-center gap-2">
+			<span class="flex-1 font-medium">Bordr exploration</span>
+			{#if prefs.value.listDetail}
+				<span class="rounded bg-chip px-1 font-mono text-[9.5px] text-faint">on screen</span>
+			{/if}
+			<span class="font-mono text-[10.5px] text-working">working</span>
+		</div>
+		<p class="font-mono text-[11px] text-muted">
+			<HarnessMark agent="claude" /> claude · ▸ Bash bun run build
+		</p>
+		{#if prefs.value.listDetail}
+			<p class="font-mono text-[10.5px] text-faint">
+				Opus 5 · high · 46% · 540K left · £248.39 · 45h40m
+			</p>
+		{/if}
+	</div>
+{/snippet}
+
 {#snippet groupPreview()}
 	<div class="rounded-lg bg-page p-2 text-[12px]">
 		{#if prefs.value.groupBy === 'none'}
@@ -555,6 +575,14 @@
 				>
 					{#snippet preview()}{@render sortPreview()}{/snippet}
 				</SettingRow>
+				<ToggleRow
+					label="More on each row"
+					hint="The harness's own status row — whichever one you settled on in a conversation — and a mark on the pane the terminal is looking at. Both come off readings the list already takes."
+					checked={prefs.value.listDetail}
+					onchange={(v) => prefs.set('listDetail', v)}
+				>
+					{#snippet preview()}{@render listDetailPreview()}{/snippet}
+				</ToggleRow>
 				<ToggleRow
 					label="Show rollup counts"
 					checked={prefs.value.rollup}

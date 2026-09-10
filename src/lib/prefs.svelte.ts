@@ -61,6 +61,8 @@ export interface Prefs {
 	terminalFit: TerminalFit;
 	/** How tightly the terminal's rows are packed. */
 	terminalDensity: TerminalDensity;
+	/** The harness's status row, and where the terminal is looking, on each list row. */
+	listDetail: boolean;
 	/** The git branch under each workspace in the tree. */
 	showBranches: boolean;
 	/** Name an unnamed tab after what is in it, rather than "tab 2". */
@@ -126,6 +128,7 @@ export const DEFAULTS: Prefs = {
 	paneView: 'auto',
 	terminalFit: 'fit',
 	terminalDensity: 'comfortable',
+	listDetail: true,
 	showBranches: true,
 	smartTabLabels: true,
 	showActivity: true,
@@ -236,6 +239,7 @@ export function normalisePrefs(raw: unknown): Prefs {
 		paneView: pick(stored.paneView, PANE_VIEWS, DEFAULTS.paneView),
 		terminalFit: pick(stored.terminalFit, TERMINAL_FITS, DEFAULTS.terminalFit),
 		terminalDensity: pick(stored.terminalDensity, TERMINAL_DENSITIES, DEFAULTS.terminalDensity),
+		listDetail: bool(stored.listDetail, DEFAULTS.listDetail),
 		showBranches: bool(stored.showBranches, DEFAULTS.showBranches),
 		smartTabLabels: bool(stored.smartTabLabels, DEFAULTS.smartTabLabels),
 		showActivity: bool(stored.showActivity, DEFAULTS.showActivity),
