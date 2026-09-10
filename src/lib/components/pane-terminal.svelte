@@ -299,7 +299,7 @@
 		onscroll={() => {
 			if (screen) stuck = screen.scrollTop + screen.clientHeight >= screen.scrollHeight - 24;
 		}}
-		class="term min-h-0 w-full flex-1 overflow-auto {tight
+		class="term flex min-h-0 w-full flex-1 flex-col justify-end overflow-auto {tight
 			? 'px-1.5 py-0.5 leading-[1.15]'
 			: 'px-3 py-2 leading-[1.35]'}"
 		style="font-size: {size}px"

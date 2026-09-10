@@ -51,8 +51,13 @@ export function splitAtPrompt(screen: string): ScreenParts {
 	for (let i = end - 1; i >= 0; i--) {
 		const bare = plain(lines[i]).trimEnd();
 		if (!PROMPT.test(bare)) continue;
+		// A harness pads the space between its last output and its input box
+		// with empty rows. Keeping them put that padding between the output and
+		// bordr's own box — a screenful of nothing, on every pane.
+		let top = i;
+		while (top > 0 && plain(lines[top - 1]).trim() === '') top--;
 		return {
-			above: lines.slice(0, i),
+			above: lines.slice(0, top),
 			prompt: lines[i],
 			// The rules that box a prompt belong to the prompt, not to the footer
 			// under it — carrying them down draws half a box.

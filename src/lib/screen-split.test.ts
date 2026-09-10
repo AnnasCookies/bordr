@@ -47,6 +47,17 @@ describe('splitAtPrompt', () => {
 		expect(promptMark(parts.prompt)).toBe('❯');
 	});
 
+	/**
+	 * A harness pads between its last output and its input box with empty
+	 * rows. Carried through, they became a screenful of nothing between the
+	 * output and bordr's own box.
+	 */
+	it('drops the padding a harness leaves above its prompt', () => {
+		const parts = splitAtPrompt(['done.', '', '', '', '❯', 'CTX 46%'].join('\n'));
+		expect(parts.above).toEqual(['done.']);
+		expect(parts.below).toEqual(['CTX 46%']);
+	});
+
 	it('gives everything back as output when there is no prompt at all', () => {
 		const parts = splitAtPrompt(['building…', '[==>    ] 40%'].join('\n'));
 		expect(parts.prompt).toBe('');
