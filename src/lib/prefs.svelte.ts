@@ -10,6 +10,7 @@ export type HarnessAccent = 'edge' | 'tint' | 'off';
 export type ToolDetail = 'formatted' | 'json';
 export type PaneView = 'conversation' | 'terminal';
 export type TerminalFit = 'fit' | 'wrap' | 'native';
+export type TerminalDensity = 'compact' | 'comfortable';
 
 export type TreeScope = 'all' | 'agents';
 export type AgentOrder = 'priority' | 'workspace';
@@ -55,6 +56,8 @@ export interface Prefs {
 	paneView: PaneView;
 	/** How a screen wider than the window is made to fit it. */
 	terminalFit: TerminalFit;
+	/** How tightly the terminal's rows are packed. */
+	terminalDensity: TerminalDensity;
 	/** The git branch under each workspace in the tree. */
 	showBranches: boolean;
 	/** Name an unnamed tab after what is in it, rather than "tab 2". */
@@ -119,6 +122,7 @@ export const DEFAULTS: Prefs = {
 	splitPanes: true,
 	paneView: 'conversation',
 	terminalFit: 'fit',
+	terminalDensity: 'comfortable',
 	showBranches: true,
 	smartTabLabels: true,
 	showActivity: true,
@@ -166,6 +170,7 @@ const STATUS_POSITIONS: StatusPosition[] = ['header', 'bottom'];
 const WORK_CONTROLS: WorkControl[] = ['inline', 'header'];
 const PANE_VIEWS: PaneView[] = ['conversation', 'terminal'];
 const TERMINAL_FITS: TerminalFit[] = ['fit', 'wrap', 'native'];
+const TERMINAL_DENSITIES: TerminalDensity[] = ['compact', 'comfortable'];
 
 function pick<T extends string>(value: unknown, allowed: T[], fallback: T): T {
 	return allowed.includes(value as T) ? (value as T) : fallback;
@@ -227,6 +232,7 @@ export function normalisePrefs(raw: unknown): Prefs {
 		splitPanes: bool(stored.splitPanes, DEFAULTS.splitPanes),
 		paneView: pick(stored.paneView, PANE_VIEWS, DEFAULTS.paneView),
 		terminalFit: pick(stored.terminalFit, TERMINAL_FITS, DEFAULTS.terminalFit),
+		terminalDensity: pick(stored.terminalDensity, TERMINAL_DENSITIES, DEFAULTS.terminalDensity),
 		showBranches: bool(stored.showBranches, DEFAULTS.showBranches),
 		smartTabLabels: bool(stored.smartTabLabels, DEFAULTS.smartTabLabels),
 		showActivity: bool(stored.showActivity, DEFAULTS.showActivity),

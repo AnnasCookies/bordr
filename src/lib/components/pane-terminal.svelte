@@ -63,7 +63,7 @@
 		}
 		try {
 			const res = await fetch(
-				`/api/agents/${encodeURIComponent(id)}/read?lines=${lines}&ansi=1&source=visible`
+				`/api/agents/${encodeURIComponent(id)}/read?lines=${lines}&ansi=1&source=recent`
 			);
 			if (!res.ok) return;
 			const next = (await res.json()).text ?? '';
@@ -126,6 +126,14 @@
 	const FLOOR = 8;
 	let fitted = $state(0);
 	const mode = $derived(prefs.value.terminalFit);
+	/**
+	 * How much of the pane fits on screen.
+	 *
+	 * A terminal row is drawn at its own line height; bordr was adding a
+	 * third of a line to every one of them and a row of padding all round,
+	 * which on a phone is several lines of the pane you cannot see.
+	 */
+	const tight = $derived(prefs.value.terminalDensity === 'compact');
 	const size = $derived(mode === 'fit' ? fitted || mono : mono);
 
 	function fit() {
@@ -286,7 +294,9 @@
 		onscroll={() => {
 			if (screen) stuck = screen.scrollTop + screen.clientHeight >= screen.scrollHeight - 24;
 		}}
-		class="term min-h-0 w-full flex-1 overflow-auto px-3 py-2 leading-[1.35]"
+		class="term min-h-0 w-full flex-1 overflow-auto {tight
+			? 'px-1.5 py-0.5 leading-[1.15]'
+			: 'px-3 py-2 leading-[1.35]'}"
 		style="font-size: {size}px"
 	>
 		<!-- eslint-disable svelte/no-at-html-tags -- ansiToHtml escapes its input -->

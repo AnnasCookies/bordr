@@ -21,7 +21,8 @@
 		WorkControl,
 		KeyStripMode,
 		PaneView,
-		TerminalFit
+		TerminalFit,
+		TerminalDensity
 	} from '$lib/prefs.svelte';
 	import MessageBlocks from '$lib/components/message-blocks.svelte';
 	// Aliased: `ToolDetail` is already the name of the preference type.
@@ -463,6 +464,26 @@
 	</div>
 {/snippet}
 
+{#snippet densityPreview()}
+	<div class="rounded-lg bg-page p-2">
+		<div
+			class="term overflow-hidden rounded-md bg-card text-[10px] {prefs.value.terminalDensity ===
+			'compact'
+				? 'px-1.5 py-0.5 leading-[1.15]'
+				: 'px-3 py-2 leading-[1.35]'}"
+		>
+			{#each ['$ git status', 'On branch main', 'nothing to commit', '$ ls', 'bordr  repos'] as row (row)}
+				<div class="whitespace-pre">{row}</div>
+			{/each}
+		</div>
+		<p class="mt-1 text-[11px] text-faint">
+			{prefs.value.terminalDensity === 'compact'
+				? 'Tighter rows and less padding — more of the pane on screen.'
+				: "The terminal's own spacing, with room around it."}
+		</p>
+	</div>
+{/snippet}
+
 {#snippet branchPreview()}
 	<div class="rounded-lg bg-page p-2">
 		<p class="text-[12.5px]">win-vm-omarchy</p>
@@ -607,6 +628,17 @@
 					onchange={(v) => prefs.set('terminalFit', v)}
 				>
 					{#snippet preview()}{@render fitPreview()}{/snippet}
+				</SettingRow>
+				<SettingRow
+					label="Terminal density"
+					value={prefs.value.terminalDensity}
+					options={[
+						{ v: 'comfortable' as TerminalDensity, l: 'Comfortable' },
+						{ v: 'compact' as TerminalDensity, l: 'Compact' }
+					]}
+					onchange={(v) => prefs.set('terminalDensity', v)}
+				>
+					{#snippet preview()}{@render densityPreview()}{/snippet}
 				</SettingRow>
 				<ToggleRow
 					label="Git branch in the tree"
