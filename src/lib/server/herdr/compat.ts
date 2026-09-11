@@ -1,6 +1,17 @@
 /** Protocol range bordr has been built and tested against. */
 export const MIN_PROTOCOL = 19;
-export const MAX_TESTED_PROTOCOL = 20;
+export const MAX_TESTED_PROTOCOL = 22;
+/*
+ * Raised to 22 for herdr 0.9.0 after reading its release notes for anything
+ * touching the socket API bordr reads. One entry does: lifecycle
+ * subscriptions no longer replay retained history (#1270), which is handled
+ * by subscribing before the snapshot in herdr/index.ts and was already
+ * covered defensively by the push watcher's reconcile poll.
+ *
+ * Exercised live on 0.9.0 across claude, codex, pi and omp panes: agent.list,
+ * workspace.list, agent.read (text and ansi), agent.prompt, agent.send_keys
+ * and events.subscribe.
+ */
 
 export type CompatLevel = 'ok' | 'untested' | 'incompatible' | 'unreachable';
 

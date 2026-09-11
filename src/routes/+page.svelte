@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
+	import { page } from '$app/state';
 	import { version } from '$app/environment';
 	import { resolve } from '$app/paths';
 	import { agentStore } from '$lib/agents.svelte';
@@ -15,6 +16,17 @@
 	import type { AgentSummary } from '$lib/types';
 
 	const store = agentStore;
+	/**
+	 * A picture shared into bordr from another app.
+	 *
+	 * The Android share sheet cannot know which agent you meant, so /share
+	 * stashes the file and sends you here to choose. The names travel on to
+	 * the conversation, which attaches them.
+	 */
+	const shared = $derived(page.url.searchParams.get('shared') ?? '');
+	const sharedText = $derived(page.url.searchParams.get('text') ?? '');
+	const sharedCount = $derived(shared ? shared.split(',').filter(Boolean).length : 0);
+	const query = $derived(shared ? `?${page.url.searchParams}` : '');
 	let pushState = $state<PushState>('unknown');
 	/** Why the bell did not turn on, shown under the header rather than alert()ed. */
 	let pushMessage = $state<string | null>(null);
@@ -153,6 +165,19 @@
 			<div
 				class="mb-3 grid grid-cols-4 gap-px overflow-hidden rounded-xl border border-hairline bg-black/[.07] dark:bg-white/[.07]"
 			>
+				{#if sharedCount > 0}
+					<div class="mb-2 rounded-xl border border-working bg-working-bg px-3 py-2 text-[13px]">
+						<p class="font-medium">
+							{sharedCount === 1 ? 'Photo shared' : `${sharedCount} photos shared`} — pick an agent to
+							send
+							{sharedCount === 1 ? 'it' : 'them'} to.
+						</p>
+						{#if sharedText}
+							<p class="mt-0.5 truncate text-[12px] text-muted">{sharedText}</p>
+						{/if}
+					</div>
+				{/if}
+
 				{#each rollup as cell (cell.status)}
 					<div class="px-3 pt-3 pb-2.5 {cell.status === 'blocked' ? 'bg-blocked-bg' : 'bg-card'}">
 						<div
@@ -283,7 +308,7 @@
 			{/if}
 			<ul class="flex flex-col gap-1.5">
 				{#each group.agents as agent (agent.paneId)}
-					<li><AgentRow {agent} unread={unread(agent)} preview={previewOf(agent)} /></li>
+					<li><AgentRow {agent} unread={unread(agent)} preview={previewOf(agent)} {query} /></li>
 				{/each}
 			</ul>
 		{/each}

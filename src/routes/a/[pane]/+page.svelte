@@ -1,6 +1,7 @@
 <script lang="ts">
 	import { onMount, tick } from 'svelte';
 	import { goto, invalidateAll } from '$app/navigation';
+	import { page } from '$app/state';
 	import { resolve } from '$app/paths';
 	import { agentStore } from '$lib/agents.svelte';
 	import { mergeResults } from '$lib/dictation';
@@ -8,13 +9,23 @@
 	import { prefs } from '$lib/prefs.svelte';
 	import { flatOrder } from '$lib/grouping';
 	import { decideSwipe, inHorizontalScroller, neighbourPane } from '$lib/swipe';
-	import { harnessBorder, harnessBubble, harnessText, STATUS_INK } from '$lib/theme';
+	import {
+		harnessBorder,
+		harnessBubble,
+		harnessHex,
+		harnessIcon,
+		harnessText,
+		STATUS_INK
+	} from '$lib/theme';
 	import { ansiToHtml } from '$lib/ansi';
 	import { termGrid } from '$lib/term-grid';
 	import { throttleTrailing } from '$lib/throttle';
 	import { rankCommands, type SlashCommand } from '$lib/commands';
 	import Icon from '$lib/components/icon.svelte';
 	import MessageBlocks from '$lib/components/message-blocks.svelte';
+	import SessionTree from '$lib/components/session-tree.svelte';
+	import StatusBlock from '$lib/components/status-block.svelte';
+	import NewAgentSheet from '$lib/components/new-agent-sheet.svelte';
 	import type { Block } from '$lib/server/transcript/types';
 	let { data } = $props();
 
@@ -26,6 +37,8 @@
 	 * hidden on every open, which made the work look like it was not there.
 	 */
 	let showWork = $state(prefs.value.showWork);
+	/** The ＋ in the desktop tree opens the same sheet the agents list uses. */
+	let showNewAgent = $state(false);
 
 	/**
 	 * A bubble holds what was SAID; tool calls and thinking sit outside it.
@@ -51,6 +64,11 @@
 	 */
 	let showControls = $state(prefs.value.keyStrip === 'always');
 	let draft = $state('');
+
+	/** A draft that starts with `!` is a shell command Claude Code will run. */
+	// The bare `!` counts: the box must say what it is the moment the key is
+	// pressed, not once a command has been typed after it.
+	const isShell = $derived(draft.startsWith('!'));
 	let textarea = $state<HTMLTextAreaElement | undefined>();
 
 	/**
@@ -162,29 +180,67 @@
 	 * covers a payload cached on a phone that has not reloaded yet.
 	 */
 	const statusRows = $derived(detail.statusAnsi?.length ? detail.statusAnsi : detail.statusLines);
-	const statusHtml = $derived(statusRows.map((line) => ansiToHtml(line)).join('\n'));
-	const statusHtmlFirst = $derived(ansiToHtml(statusRows[0] ?? ''));
 
 	/**
-	 * The agent bubble, tinted with this harness's accent unless a colour has
-	 * been picked by hand. A picked colour always wins: it is an explicit
-	 * choice and must not be second-guessed per harness.
+	 * How the harness shows on an agent bubble.
+	 *
+	 * 'edge' is the default because blending an accent into the background
+	 * muddies it — orange into a light grey is a dull beige, and every theme
+	 * colour it touches shifts. A stripe down the side carries the accent at
+	 * full strength and leaves the bubble the colour it was.
 	 */
+	const accentMode = $derived(prefs.value.agentBubble ? 'off' : prefs.value.harnessAccent);
 	const agentBubbleColour = $derived(
-		prefs.value.agentBubble ||
-			(prefs.value.harnessBubbles
-				? harnessBubble(
-						detail.agent,
-						prefs.resolvedTheme === 'dark',
-						prefs.bubbleColours.agentBubble
-					)
-				: prefs.bubbleColours.agentBubble)
+		accentMode === 'tint'
+			? harnessBubble(detail.agent, prefs.resolvedTheme === 'dark', prefs.bubbleColours.agentBubble)
+			: prefs.bubbleColours.agentBubble
+	);
+	const agentEdge = $derived(
+		accentMode === 'edge' ? harnessHex(detail.agent, prefs.resolvedTheme === 'dark') : ''
 	);
 	const watched = $derived(data.watched);
 	const visibleMessages = $derived(detail.messages.slice(-shown));
 	const hidden = $derived(Math.max(0, detail.messages.length - shown));
 	const canShowEarlier = $derived(hidden > 0 || detail.hasMore);
 	const toolCount = $derived(visibleMessages.reduce((n, m) => n + m.tools.length, 0));
+
+	/**
+	 * The transcript with any still-unclaimed prompts slotted into it by time.
+	 *
+	 * A queued prompt is NOT written to the transcript when you send it — the
+	 * harness writes its file per turn, so it exists only on that pane's
+	 * screen until the turn processes it. The terminal still shows it in
+	 * place, above whatever ran afterwards, so collecting them all at the end
+	 * put them in the wrong order the moment any tool ran after one.
+	 */
+	type Row =
+		| { kind: 'message'; message: (typeof visibleMessages)[number]; key: string }
+		| { kind: 'pending'; sent: { id: number; text: string; at: number }; key: string };
+
+	const rows = $derived.by((): Row[] => {
+		const base = detail.messages.length - visibleMessages.length;
+		const out: Row[] = visibleMessages.map((message, i) => ({
+			kind: 'message' as const,
+			message,
+			key: `m${base + i}`
+		}));
+		for (const sent of pendingSends) {
+			// After the last entry the harness wrote before this was sent.
+			// Timestamps are only on entries the harness stamped; anything
+			// unstamped keeps its relative position by falling through.
+			let at = out.length;
+			for (let i = out.length - 1; i >= 0; i--) {
+				const row = out[i];
+				const stamp = row.kind === 'message' ? (row.message.at ?? 0) : row.sent.at;
+				if (stamp && stamp <= sent.at) {
+					at = i + 1;
+					break;
+				}
+			}
+			out.splice(at, 0, { kind: 'pending', sent, key: `p${sent.id}` });
+		}
+		return out;
+	});
 
 	/**
 	 * Prompts that herdr has accepted but the transcript has not caught up
@@ -196,17 +252,88 @@
 	 * as your own message straight away, and retired the moment the real one
 	 * appears.
 	 */
-	let pendingSends = $state<{ id: number; text: string }[]>([]);
+	let pendingSends = $state<{ id: number; text: string; at: number }[]>([]);
 	let pendingSeq = 0;
+
+	/**
+	 * Queued prompts survive leaving the conversation.
+	 *
+	 * They used to be component state, so switching agent or reloading lost
+	 * them — and a queued prompt is exactly the thing you leave the app and
+	 * come back to check on. Stored per pane, because they belong to that
+	 * agent's queue and nothing else.
+	 */
+	const PENDING_KEY = $derived(`bordr-pending:${detail.paneId}`);
+	/** A prompt still unclaimed after this long is not coming back. */
+	const PENDING_TTL_MS = 6 * 60 * 60 * 1000;
+
+	$effect(() => {
+		// Re-runs when the pane changes, which is what makes switching agents
+		// load that agent's queue rather than keeping the last one's.
+		const key = PENDING_KEY;
+		let restored: typeof pendingSends = [];
+		try {
+			const raw = JSON.parse(localStorage.getItem(key) ?? '[]');
+			const now = Date.now();
+			if (Array.isArray(raw)) {
+				restored = raw.filter(
+					(p) => p && typeof p.text === 'string' && now - Number(p.at ?? 0) < PENDING_TTL_MS
+				);
+			}
+		} catch {
+			// Unreadable storage is not a reason to lose the conversation.
+		}
+		pendingSeq = restored.reduce((n, p) => Math.max(n, Number(p.id) || 0), 0);
+		pendingSends = restored;
+	});
+
+	$effect(() => {
+		const key = PENDING_KEY;
+		const value = pendingSends;
+		try {
+			if (value.length === 0) localStorage.removeItem(key);
+			else localStorage.setItem(key, JSON.stringify(value));
+		} catch {
+			// Private mode, or storage full. The echo still works in-session.
+		}
+	});
 
 	$effect(() => {
 		if (pendingSends.length === 0) return;
-		// Matched on text rather than order: a queued prompt can land after a
-		// later one, and the harness may rewrite the tail as it goes.
-		const landed = new Set(
-			detail.messages.filter((m) => m.role === 'user').map((m) => m.text.trim())
+
+		/**
+		 * What has actually landed in the transcript.
+		 *
+		 * Matched on text rather than order: a queued prompt can land after a
+		 * later one, and the harness may rewrite the tail as it goes.
+		 *
+		 * A `!` command contributes NO text — its content is a tool block — so
+		 * it has to be recovered from the block's own command, or every shell
+		 * command sent from the phone stayed "queued" forever.
+		 */
+		// An array rather than a Set: this is a local scratch value, and the
+		// lint rule that steers reactive state to SvelteSet cannot tell the
+		// difference. There are only ever a handful of unsent prompts.
+		const landed: string[] = [];
+		for (const message of detail.messages) {
+			if (message.role !== 'user') continue;
+			if (message.text.trim()) landed.push(message.text.trim());
+			for (const block of message.blocks ?? []) {
+				if (block.kind !== 'tool' || block.name !== '!') continue;
+				const command = String(block.input?.command ?? '').trim();
+				if (command) landed.push(`!${command}`);
+			}
+		}
+
+		// A prompt cannot still be queued once the agent has stopped: if it had
+		// been taken it would be in the transcript, and if it has not it is
+		// never going to be. The grace period covers the transcript lagging the
+		// state change by a beat.
+		const settled = detail.status === 'idle' || detail.status === 'done';
+		const now = Date.now();
+		const still = pendingSends.filter(
+			(p) => !landed.includes(p.text.trim()) && !(settled && now - p.at > 20_000)
 		);
-		const still = pendingSends.filter((p) => !landed.has(p.text.trim()));
 		if (still.length !== pendingSends.length) pendingSends = still;
 	});
 
@@ -341,11 +468,69 @@
 	/** Photos still being shrunk; the send button waits for them. */
 	let preparing = $state(0);
 
+	/**
+	 * A screenshot pasted straight into the box.
+	 *
+	 * Ctrl/Cmd-V with an image on the clipboard is how anyone on a desktop
+	 * shares a screenshot, and reaching for the camera button to find a file
+	 * they never saved is the wrong shape. Same path as the picker, so the
+	 * shrink, the cap of six and the previews all apply unchanged.
+	 */
+	async function onPaste(event: ClipboardEvent) {
+		const items = [...(event.clipboardData?.items ?? [])];
+		const images = items
+			.filter((item) => item.kind === 'file' && item.type.startsWith('image/'))
+			.map((item) => item.getAsFile())
+			.filter((file): file is File => file !== null);
+		if (images.length === 0) return;
+		// Only once there is definitely an image: otherwise this would eat a
+		// perfectly ordinary text paste.
+		event.preventDefault();
+		await attach(images);
+	}
+
 	async function addFiles(input: HTMLInputElement) {
-		const picked = [...(input.files ?? [])].slice(0, 6 - attachments.length);
+		const picked = [...(input.files ?? [])];
 		// Cleared so the same photo can be picked again after a removal —
 		// an unchanged selection fires no change event.
 		input.value = '';
+		await attach(picked);
+	}
+
+	/**
+	 * Photos that arrived through the Android share sheet.
+	 *
+	 * /share stashed them and the agents list sent you here with their names.
+	 * Fetched back through the uploads route and attached exactly as a picked
+	 * or pasted photo would be, then the query is cleared so a reload does not
+	 * attach them a second time.
+	 */
+	async function claimShared() {
+		const names = (page.url.searchParams.get('shared') ?? '').split(',').filter(Boolean);
+		if (names.length === 0) return;
+		const text = page.url.searchParams.get('text') ?? '';
+		const files: File[] = [];
+		for (const name of names) {
+			try {
+				const res = await fetch(`/api/uploads/${encodeURIComponent(name)}`);
+				if (!res.ok) continue;
+				const blob = await res.blob();
+				files.push(new File([blob], name, { type: blob.type }));
+			} catch {
+				// A pruned or unreadable share is not worth failing the page for.
+			}
+		}
+		if (text && !draft) draft = text;
+		if (files.length) await attach(files);
+		await goto(resolve('/a/[pane]', { pane: detail.paneId }), {
+			replaceState: true,
+			noScroll: true,
+			keepFocus: true
+		});
+	}
+
+	async function attach(files: File[]) {
+		const picked = files.slice(0, 6 - attachments.length);
 		// Shrunk on the phone: six camera photos were thirty megabytes, more
 		// than the server's request cap and slow over the tailnet. One at a
 		// time, not all at once: six full-size bitmaps decoded together is
@@ -410,13 +595,49 @@
 		shown += 200;
 	}
 
-	function scrollBottom() {
-		window.scrollTo({ top: document.body.scrollHeight });
+	/**
+	 * Whatever is actually scrolling.
+	 *
+	 * On the phone that is the window. On desktop the conversation column
+	 * scrolls inside itself so the session tree can stay put — which silently
+	 * broke stick-to-bottom, because `window.scrollY` never moves there.
+	 */
+	function scrollHost(): HTMLElement | null {
+		if (!swipeRoot) return null;
+		return getComputedStyle(swipeRoot).overflowY === 'auto' ? swipeRoot : null;
 	}
 
+	function scrollBottom() {
+		const host = scrollHost();
+		if (host) host.scrollTop = host.scrollHeight;
+		else window.scrollTo({ top: document.body.scrollHeight });
+	}
+
+	/** Within a screenful-ish of the end, which is what "following" means. */
 	function nearBottom(): boolean {
+		const host = scrollHost();
+		if (host) return host.scrollTop + host.clientHeight >= host.scrollHeight - 160;
 		return window.innerHeight + window.scrollY >= document.body.scrollHeight - 160;
 	}
+
+	/**
+	 * Whether the reader is following the end. Drives the jump button: showing
+	 * it while already at the bottom is noise, and hiding it while scrolled up
+	 * is the thing that makes a long transcript feel like a trap.
+	 */
+	let following = $state(true);
+
+	function onScroll() {
+		following = nearBottom();
+	}
+
+	$effect(() => {
+		const host = scrollHost();
+		const target: HTMLElement | Window = host ?? window;
+		target.addEventListener('scroll', onScroll, { passive: true });
+		onScroll();
+		return () => target.removeEventListener('scroll', onScroll);
+	});
 
 	/** Refresh from the server; keep the view pinned to the bottom unless the
 	 *  reader has deliberately scrolled up. */
@@ -431,6 +652,7 @@
 	}
 
 	onMount(() => {
+		void claimShared();
 		scrollBottom();
 		store.start();
 		document.addEventListener('visibilitychange', onVisibility);
@@ -692,7 +914,8 @@
 			// Only a delivered prompt clears the box; a refused one stays put
 			// to be fixed or resent. Echo it first: herdr has accepted it, so
 			// showing it is a statement of fact, not optimism.
-			if (draft.trim()) pendingSends = [...pendingSends, { id: ++pendingSeq, text: draft }];
+			if (draft.trim())
+				pendingSends = [...pendingSends, { id: ++pendingSeq, text: draft, at: Date.now() }];
 			draft = '';
 		} catch (e) {
 			sendError = (e as Error).message;
@@ -781,247 +1004,334 @@
 
 <svelte:head><title>{detail.title || detail.paneId} · bordr</title></svelte:head>
 
-<div class="flex min-h-dvh flex-col" bind:this={swipeRoot}>
-	<header class="sticky top-0 z-10 border-b border-hairline bg-page">
-		<div class="flex items-center gap-1 px-2 pt-1 pb-1.5">
-			<a
-				href={resolve('/')}
-				class="flex h-10 w-10 shrink-0 items-center justify-center font-mono text-base text-working"
-				aria-label="Back to agents">←</a
-			>
-			<span class="min-w-0 flex-1">
-				<span class="block truncate text-[16px] font-semibold">{detail.title || detail.paneId}</span
+<!--
+	Desktop adds a session tree beside the conversation; the phone gets
+	exactly what it had. Everything is one breakpoint — there is no second
+	conversation component to keep in step, which is what makes this safe.
+-->
+<div class="lg:flex lg:h-dvh lg:overflow-hidden">
+	<aside class="hidden w-[276px] shrink-0 lg:block">
+		<SessionTree current={detail.paneId} onnew={() => (showNewAgent = true)} />
+	</aside>
+	<div
+		class="flex min-h-dvh flex-col lg:h-dvh lg:min-h-0 lg:flex-1 lg:overflow-y-auto"
+		bind:this={swipeRoot}
+	>
+		<header class="sticky top-0 z-10 border-b border-hairline bg-page">
+			<div class="flex items-center gap-1 px-2 pt-1 pb-1.5">
+				<a
+					href={resolve('/')}
+					class="flex h-10 w-10 shrink-0 items-center justify-center font-mono text-base text-working"
+					aria-label="Back to agents">←</a
 				>
-				<span class="block truncate font-mono text-[10.5px] text-muted">
-					<span class={STATUS_INK[detail.status] ?? 'text-faint'}>● {detail.status}</span>
-					· <span class={harnessText(detail.agent)}>{detail.agent}</span>
-					{#if detail.workspaceLabel}· {detail.workspaceLabel}{/if}
-					{#if position >= 0 && order.length > 1}
-						· {position + 1}/{order.length}
-					{/if}
-				</span>
-			</span>
-			{#if detail.status === 'working'}
-				<button
-					class="flex h-9 shrink-0 items-center gap-1.5 rounded-full border border-edge px-3 text-[13px] font-medium"
-					onclick={stop}
-				>
-					<span
-						class="h-2 w-2 rounded-full bg-working ring-[3px] ring-working-halo"
-						aria-hidden="true"
-					></span>
-					Stop
-				</button>
-			{/if}
-			<button
-				class="flex h-9 w-9 shrink-0 items-center justify-center rounded-full border {watched
-					? 'border-blocked-edge bg-blocked-bg text-blocked-ink'
-					: 'border-edge text-faint'}"
-				aria-label={watched ? 'Stop notifying on done' : 'Notify on every done'}
-				aria-pressed={watched}
-				onclick={toggleWatch}
-			>
-				<Icon name="bell" size={17} />
-			</button>
-		</div>
-
-		{#if detail.statusLines.length > 0}
-			<button
-				class="flex w-full items-center gap-1 px-4 pb-1.5 text-left font-mono text-[10px] text-muted"
-				onclick={() => (statusOpen = !statusOpen)}
-			>
 				<!--
-					Safe: ansiToHtml escapes every HTML metacharacter in the payload
-					and emits only <span style="…"> wrappers for SGR colour — the
-					same guarantee the screen peek relies on, proven by the
-					escaping cases in src/lib/ansi.test.ts.
+					The work switch, when it has been moved off the transcript. In
+					the header it is a state you set once, rather than a link you
+					re-find at the bottom of a growing conversation.
 				-->
-				<!-- eslint-disable svelte/no-at-html-tags -->
-				{#if statusOpen}
-					<span class="whitespace-pre-wrap">{@html statusHtml}</span>
-				{:else}
-					<span class="min-w-0 flex-1 truncate">{@html statusHtmlFirst}</span>
-					<span aria-hidden="true">▾</span>
+				{#if prefs.value.workControl === 'header' && toolCount > 0}
+					<button
+						class="order-last flex h-8 shrink-0 items-center rounded-full px-2.5 text-[12px] {showWork
+							? 'bg-working-bg text-working'
+							: 'text-muted'}"
+						aria-pressed={showWork}
+						onclick={() => {
+							showWork = !showWork;
+							prefs.set('showWork', showWork);
+						}}
+					>
+						work {toolCount}
+					</button>
 				{/if}
-			</button>
-		{/if}
-	</header>
-
-	<main class="flex-1 px-4 pt-3 pb-2">
-		{#if detail.degraded !== 'none'}
-			<p class="mb-3 flex items-center gap-2 text-[12px] text-muted">
 				<span class="min-w-0 flex-1">
-					{detail.degradedMessage}
+					<span class="block truncate text-[16px] font-semibold"
+						>{detail.title || detail.paneId}</span
+					>
+					<span class="block truncate font-mono text-[10.5px] text-muted">
+						<span class={STATUS_INK[detail.status] ?? 'text-faint'}>● {detail.status}</span>
+						·
+						<span class={harnessText(detail.agent)}
+							>{#if prefs.value.harnessIcons}<span class="font-mono" aria-hidden="true"
+									>{harnessIcon(detail.agent)}</span
+								>{/if}>
+							{detail.agent}</span
+						>
+						{#if detail.workspaceLabel}· {detail.workspaceLabel}{/if}
+						{#if position >= 0 && order.length > 1}
+							· {position + 1}/{order.length}
+						{/if}
+					</span>
 				</span>
+				{#if detail.status === 'working'}
+					<button
+						class="flex h-9 shrink-0 items-center gap-1.5 rounded-full border border-edge px-3 text-[13px] font-medium"
+						onclick={stop}
+					>
+						<span
+							class="h-2 w-2 rounded-full bg-working ring-[3px] ring-working-halo"
+							aria-hidden="true"
+						></span>
+						Stop
+					</button>
+				{/if}
 				<button
-					class="shrink-0 text-working"
-					disabled={loadingBack}
-					onclick={() => loadScrollback(scrollbackLines)}
+					class="flex h-9 w-9 shrink-0 items-center justify-center rounded-full border {watched
+						? 'border-blocked-edge bg-blocked-bg text-blocked-ink'
+						: 'border-edge text-faint'}"
+					aria-label={watched ? 'Stop notifying on done' : 'Notify on every done'}
+					aria-pressed={watched}
+					onclick={toggleWatch}
 				>
-					{loadingBack ? 'Loading…' : scrollback === null ? 'Load scrollback' : 'Reload scrollback'}
-				</button>
-			</p>
-		{/if}
-
-		{#if scrollbackError}
-			<p
-				role="status"
-				class="mb-3 rounded-[10px] bg-danger-bg px-3 py-2 text-[12.5px] text-danger-ink"
-			>
-				{scrollbackError}
-			</p>
-		{/if}
-
-		{#if uncertain}
-			<p
-				role="status"
-				class="mb-3 flex items-start gap-2 rounded-[10px] border border-blocked-edge bg-blocked-surface px-3 py-2.5 text-[12.5px] text-blocked-ink"
-			>
-				<span class="font-mono" aria-hidden="true">!</span>
-				<span class="min-w-0 flex-1">{uncertain}</span>
-				<button class="shrink-0 underline" onclick={() => (uncertain = null)}>Dismiss</button>
-			</p>
-		{/if}
-
-		{#if canShowEarlier}
-			<div class="mb-3 flex justify-center">
-				<button
-					class="rounded-full border border-edge px-3 py-1.5 text-[11.5px] text-muted disabled:opacity-50"
-					disabled={loadingEarlier}
-					onclick={showEarlier}
-				>
-					{#if loadingEarlier}
-						Reading further back…
-					{:else if hidden > 0}
-						Show earlier ({hidden} more)
-					{:else}
-						Load earlier from disk
-					{/if}
+					<Icon name="bell" size={17} />
 				</button>
 			</div>
-		{/if}
 
-		<div class="flex flex-col gap-3 text-[14.5px] leading-[1.5]">
-			{#if scrollback !== null}
-				<div
-					use:termGrid
-					class="term overflow-x-auto rounded-lg border border-hairline bg-card px-3 py-2.5 text-body"
-					style="font-size: {prefs.value.monoSize}px"
+			{#if detail.statusLines.length > 0 && prefs.value.statusPosition === 'header'}
+				<StatusBlock
+					rows={statusRows}
+					agent={detail.agent}
+					open={statusOpen}
+					ontoggle={() => (statusOpen = !statusOpen)}
+				/>
+			{/if}
+		</header>
+
+		<main class="mx-auto w-full max-w-screen-sm flex-1 px-4 pt-3 pb-2 lg:max-w-3xl">
+			{#if detail.degraded !== 'none'}
+				<p class="mb-3 flex items-center gap-2 text-[12px] text-muted">
+					<span class="min-w-0 flex-1">
+						{detail.degradedMessage}
+					</span>
+					<button
+						class="shrink-0 text-working"
+						disabled={loadingBack}
+						onclick={() => loadScrollback(scrollbackLines)}
+					>
+						{loadingBack
+							? 'Loading…'
+							: scrollback === null
+								? 'Load scrollback'
+								: 'Reload scrollback'}
+					</button>
+				</p>
+			{/if}
+
+			{#if scrollbackError}
+				<p
+					role="status"
+					class="mb-3 rounded-[10px] bg-danger-bg px-3 py-2 text-[12.5px] text-danger-ink"
 				>
-					{#each scrollback.split('\n') as line, i (i)}
-						<!--
+					{scrollbackError}
+				</p>
+			{/if}
+
+			{#if uncertain}
+				<p
+					role="status"
+					class="mb-3 flex items-start gap-2 rounded-[10px] border border-blocked-edge bg-blocked-surface px-3 py-2.5 text-[12.5px] text-blocked-ink"
+				>
+					<span class="font-mono" aria-hidden="true">!</span>
+					<span class="min-w-0 flex-1">{uncertain}</span>
+					<button class="shrink-0 underline" onclick={() => (uncertain = null)}>Dismiss</button>
+				</p>
+			{/if}
+
+			{#if canShowEarlier}
+				<div class="mb-3 flex justify-center">
+					<button
+						class="rounded-full border border-edge px-3 py-1.5 text-[11.5px] text-muted disabled:opacity-50"
+						disabled={loadingEarlier}
+						onclick={showEarlier}
+					>
+						{#if loadingEarlier}
+							Reading further back…
+						{:else if hidden > 0}
+							Show earlier ({hidden} more)
+						{:else}
+							Load earlier from disk
+						{/if}
+					</button>
+				</div>
+			{/if}
+
+			<div class="flex flex-col gap-3 text-[14.5px] leading-[1.5]">
+				{#if scrollback !== null}
+					<div
+						use:termGrid
+						class="term overflow-x-auto rounded-lg border border-hairline bg-card px-3 py-2.5 text-body"
+						style="font-size: {prefs.value.monoSize}px"
+					>
+						{#each scrollback.split('\n') as line, i (i)}
+							<!--
 							Safe: ansiToHtml escapes every HTML metacharacter in the payload
 							and emits only <span style="…"> wrappers for SGR colour — proven
 							by the escaping cases in src/lib/ansi.test.ts. Terminal output is
 							untrusted, which is exactly why it is escaped rather than trusted.
 						-->
-						<!-- eslint-disable svelte/no-at-html-tags -->
-						<div class="whitespace-pre">{@html ansiToHtml(line, true) || '&nbsp;'}</div>
-					{/each}
-				</div>
-				<div class="flex justify-center gap-2">
-					<button
-						class="rounded-full border border-edge px-3 py-1.5 text-[11.5px] text-muted"
-						disabled={loadingBack}
-						onclick={() => loadScrollback(scrollbackLines + 400)}
-					>
-						Load more ({scrollbackLines} lines shown)
-					</button>
-					<!-- Scrollback is a still photograph; this is the way back to the live view. -->
-					<button
-						class="rounded-full border border-edge px-3 py-1.5 text-[11.5px] text-working"
-						onclick={() => {
-							scrollback = null;
-							requestAnimationFrame(scrollBottom);
-						}}
-					>
-						Back to live view
-					</button>
-				</div>
-			{:else}
-				{#each visibleMessages as message, i (detail.messages.length - visibleMessages.length + i)}
-					{#if message.role === 'system'}
-						<div class="flex justify-center">
-							<span
-								class="rounded-full border border-hairline bg-card px-3 py-1 font-mono text-[11px] text-muted"
-								>{message.text}</span
-							>
-						</div>
-					{:else if message.role === 'user'}
-						{#if prefs.value.bubbles}
-							<div class="flex justify-end">
-								<span
-									class="max-w-[85%] rounded-2xl rounded-br-sm px-3 py-2 [overflow-wrap:anywhere] whitespace-pre-wrap"
-									style="background:{prefs.bubbleColours.userBubble}; color:{prefs.bubbleColours
-										.userText}"
-								>
-									<MessageBlocks blocks={message.blocks ?? []} mono={prefs.value.monoSize} plain />
-								</span>
-							</div>
-						{:else}
-							<div class="flex gap-2">
-								<span
-									class="shrink-0 font-mono text-[13px] leading-[1.7] text-working"
-									aria-hidden="true">›</span
-								>
-								<span class="min-w-0 flex-1 font-medium [overflow-wrap:anywhere]">
-									<MessageBlocks blocks={message.blocks ?? []} mono={prefs.value.monoSize} plain />
-								</span>
-							</div>
-						{/if}
-					{:else if message.text || (showWork && (message.blocks?.length ?? 0) > 0)}
-						<!-- A turn that is only tool calls has nothing to show while the
-						     work is hidden; rendering the prefix anyway left a column of
-						     bare dots separated by empty space. -->
-						<div class="flex gap-2">
-							{#if !prefs.value.bubbles}
-								<span
-									class="shrink-0 font-mono text-[13px] leading-[1.7] {harnessText(detail.agent)}"
-									aria-hidden="true">·</span
-								>
-							{/if}
-							<div class="min-w-0 flex-1">
-								{#if prefs.value.bubbles}
-									{#if prose(message).length > 0}
-										<div
-											class="max-w-[92%] rounded-2xl rounded-bl-sm px-3 py-2 [overflow-wrap:anywhere]"
-											style="background:{agentBubbleColour}; color:{prefs.bubbleColours.agentText}"
-										>
-											<MessageBlocks blocks={prose(message)} mono={prefs.value.monoSize} />
-										</div>
-									{/if}
-									<MessageBlocks blocks={work(message)} mono={prefs.value.monoSize} {showWork} />
-								{:else}
-									<div
-										class="border-l-2 pl-2.5 [overflow-wrap:anywhere] text-body {harnessBorder(
-											detail.agent
-										)}"
+							<!-- eslint-disable svelte/no-at-html-tags -->
+							<div class="whitespace-pre">{@html ansiToHtml(line, true) || '&nbsp;'}</div>
+						{/each}
+					</div>
+					<div class="flex justify-center gap-2">
+						<button
+							class="rounded-full border border-edge px-3 py-1.5 text-[11.5px] text-muted"
+							disabled={loadingBack}
+							onclick={() => loadScrollback(scrollbackLines + 400)}
+						>
+							Load more ({scrollbackLines} lines shown)
+						</button>
+						<!-- Scrollback is a still photograph; this is the way back to the live view. -->
+						<button
+							class="rounded-full border border-edge px-3 py-1.5 text-[11.5px] text-working"
+							onclick={() => {
+								scrollback = null;
+								requestAnimationFrame(scrollBottom);
+							}}
+						>
+							Back to live view
+						</button>
+					</div>
+				{:else}
+					{#each rows as row (row.key)}
+						{#if row.kind === 'pending'}
+							{@const sent = row.sent}
+							{#if prefs.value.bubbles}
+								<div class="flex justify-end">
+									<span
+										class="max-w-[85%] rounded-2xl rounded-br-sm px-3 py-2 [overflow-wrap:anywhere] whitespace-pre-wrap opacity-60"
+										style="background:{prefs.bubbleColours.userBubble}; color:{prefs.bubbleColours
+											.userText}">{sent.text}</span
 									>
-										<MessageBlocks
-											blocks={message.blocks ?? []}
-											mono={prefs.value.monoSize}
-											{showWork}
-										/>
+								</div>
+							{:else}
+								<div class="flex gap-2 opacity-60">
+									<span
+										class="shrink-0 font-mono text-[13px] leading-[1.7] text-working"
+										aria-hidden="true">›</span
+									>
+									<span
+										class="min-w-0 flex-1 font-medium [overflow-wrap:anywhere] whitespace-pre-wrap"
+										>{sent.text}</span
+									>
+								</div>
+							{/if}
+							<p class="text-right text-[11px] text-faint">
+								{detail.status === 'working' ? 'queued behind this turn' : 'sent'}
+							</p>
+						{:else}
+							{@const message = row.message}
+							{#if message.role === 'system'}
+								<div class="flex justify-center">
+									<span
+										class="rounded-full border border-hairline bg-card px-3 py-1 font-mono text-[11px] text-muted"
+										>{message.text}</span
+									>
+								</div>
+							{:else if message.role === 'user'}
+								{#if prefs.value.bubbles}
+									<div class="flex justify-end">
+										<span
+											class="max-w-[85%] rounded-2xl rounded-br-sm px-3 py-2 [overflow-wrap:anywhere] whitespace-pre-wrap"
+											style="background:{prefs.bubbleColours.userBubble}; color:{prefs.bubbleColours
+												.userText}"
+										>
+											<MessageBlocks
+												blocks={message.blocks ?? []}
+												mono={prefs.value.monoSize}
+												plain
+											/>
+										</span>
+									</div>
+								{:else}
+									<div class="flex gap-2">
+										<span
+											class="shrink-0 font-mono text-[13px] leading-[1.7] text-working"
+											aria-hidden="true">›</span
+										>
+										<span class="min-w-0 flex-1 font-medium [overflow-wrap:anywhere]">
+											<MessageBlocks
+												blocks={message.blocks ?? []}
+												mono={prefs.value.monoSize}
+												plain
+											/>
+										</span>
 									</div>
 								{/if}
+							{:else if message.text || (showWork && (message.blocks?.length ?? 0) > 0)}
+								<!-- A turn that is only tool calls has nothing to show while the
+						     work is hidden; rendering the prefix anyway left a column of
+						     bare dots separated by empty space. -->
+								<div class="flex gap-2">
+									{#if !prefs.value.bubbles}
+										<span
+											class="shrink-0 font-mono text-[13px] leading-[1.7] {harnessText(
+												detail.agent
+											)}"
+											aria-hidden="true">·</span
+										>
+									{/if}
+									<div class="min-w-0 flex-1">
+										{#if prefs.value.bubbles}
+											{#if prose(message).length > 0}
+												<div
+													class="max-w-[92%] rounded-2xl rounded-bl-sm px-3 py-2 [overflow-wrap:anywhere]"
+													style="background:{agentBubbleColour}; color:{prefs.bubbleColours
+														.agentText}{agentEdge
+														? `; border-left:3px solid ${agentEdge}; border-top-left-radius:6px; border-bottom-left-radius:6px`
+														: ''}"
+												>
+													<MessageBlocks blocks={prose(message)} mono={prefs.value.monoSize} />
+												</div>
+											{/if}
+											<MessageBlocks
+												blocks={work(message)}
+												mono={prefs.value.monoSize}
+												{showWork}
+											/>
+										{:else}
+											<div
+												class="border-l-2 pl-2.5 [overflow-wrap:anywhere] text-body {harnessBorder(
+													detail.agent
+												)}"
+											>
+												<MessageBlocks
+													blocks={message.blocks ?? []}
+													mono={prefs.value.monoSize}
+													{showWork}
+												/>
+											</div>
+										{/if}
+									</div>
+								</div>
+							{/if}
+						{/if}
+					{/each}
+
+					<!--
+						What the harness says it is doing, in its own words. "working"
+						was all bordr could say; the pane has always known the verb,
+						the elapsed time and the tokens spent.
+					-->
+					{#if detail.status === 'working'}
+						<div class="ml-[22px]">
+							<div class="flex items-center gap-1.5 font-mono text-[11px] text-muted">
+								{#each [0, 1, 2] as n (n)}
+									<span
+										class="h-1 w-1 rounded-full bg-working motion-safe:animate-[bordr-pulse_1.2s_ease-in-out_infinite]"
+										style="animation-delay: {n * 0.2}s; opacity: {1 - n * 0.35}"
+									></span>
+								{/each}
+								<span class="min-w-0 truncate"
+									>{(prefs.value.showActivity ? detail.activity?.text : null) ?? 'working'}</span
+								>
 							</div>
+							{#if prefs.value.showActivity && detail.activity?.tip}
+								<p class="mt-0.5 text-[11px] text-faint">{detail.activity.tip}</p>
+							{/if}
 						</div>
 					{/if}
-				{/each}
 
-				{#if detail.status === 'working'}
-					<div class="ml-[22px] flex items-center gap-1.5 font-mono text-[11px] text-muted">
-						{#each [0, 1, 2] as n (n)}
-							<span
-								class="h-1 w-1 rounded-full bg-working motion-safe:animate-[bordr-pulse_1.2s_ease-in-out_infinite]"
-								style="animation-delay: {n * 0.2}s; opacity: {1 - n * 0.35}"
-							></span>
-						{/each}
-						working
-					</div>
-				{/if}
-
-				<!--
+					<!--
 					Sent, accepted by herdr, not yet in the transcript.
 
 					BELOW the working indicator, which is where the terminal puts
@@ -1029,372 +1339,396 @@
 					prompt is waiting behind it. Above the spinner it read as
 					though it had already been picked up.
 				-->
-				{#each pendingSends as sent (sent.id)}
-					{#if prefs.value.bubbles}
-						<div class="flex justify-end">
-							<span
-								class="max-w-[85%] rounded-2xl rounded-br-sm px-3 py-2 [overflow-wrap:anywhere] whitespace-pre-wrap opacity-60"
-								style="background:{prefs.bubbleColours.userBubble}; color:{prefs.bubbleColours
-									.userText}">{sent.text}</span
-							>
-						</div>
-					{:else}
-						<div class="flex gap-2 opacity-60">
-							<span
-								class="shrink-0 font-mono text-[13px] leading-[1.7] text-working"
-								aria-hidden="true">›</span
-							>
-							<span class="min-w-0 flex-1 font-medium [overflow-wrap:anywhere] whitespace-pre-wrap"
-								>{sent.text}</span
-							>
-						</div>
-					{/if}
-					<p class="text-right text-[11px] text-faint">
-						{detail.status === 'working' ? 'queued behind this turn' : 'sent'}
-					</p>
-				{/each}
-			{/if}
+				{/if}
 
-			{#if toolCount > 0}
-				<div class="flex justify-center">
-					<button
-						class="rounded-full px-3 py-1 text-[11.5px] text-working"
-						onclick={() => {
-							showWork = !showWork;
-							prefs.set('showWork', showWork);
-						}}
-					>
-						{showWork ? 'Hide' : 'Show'} the work ({toolCount})
-					</button>
-				</div>
-			{/if}
-		</div>
-
-		{#if detail.picker && detail.picker.options.length > 0}
-			<section
-				class="mt-4 flex overflow-hidden rounded-xl border border-blocked-edge bg-blocked-surface shadow-[0_6px_18px_rgba(217,119,6,.10)]"
-			>
-				<span class="w-1 shrink-0 self-stretch bg-blocked"></span>
-				<div class="min-w-0 flex-1 p-3">
-					<p class="font-mono text-[10.5px] tracking-[.3px] text-blocked-ink">
-						? WAITING ON YOU{detail.picker.multi ? ' · MULTI-SELECT' : ''}
-					</p>
-					{#if detail.picker.question}
-						<p class="mt-1.5 text-[15px]">{detail.picker.question}</p>
-					{/if}
-					<div class="mt-2 flex flex-col gap-1.5">
-						{#each detail.picker.options as option (option.index)}
-							<button
-								class="flex items-center gap-2 rounded-lg px-3 py-2.5 text-left text-[14px] disabled:opacity-50 {detail
-									.picker.multi
-									? option.selected
-										? 'border border-working bg-card'
-										: 'border border-black/[.08] bg-card dark:border-white/[.08]'
-									: option.selected
-										? 'bg-ink text-card'
-										: 'border border-black/[.08] bg-card dark:border-white/[.08]'}"
-								disabled={busy}
-								onclick={() => answer(option.index)}
-							>
-								{#if detail.picker.multi}
-									<span
-										class="flex h-5 w-5 shrink-0 items-center justify-center rounded-[5px] text-[12px] {option.checked
-											? 'bg-working text-white'
-											: 'border-[1.5px] border-idle-rail'}">{option.checked ? '✓' : ''}</span
-									>
-								{:else}
-									<span class="shrink-0 font-mono text-[12px]"
-										>{option.selected ? '❯ ' : ''}{option.index}</span
-									>
-								{/if}
-								<span class="min-w-0 flex-1">{option.label}</span>
-							</button>
-						{/each}
-					</div>
-					{#if detail.picker.multi}
+				{#if toolCount > 0 && prefs.value.workControl === 'inline'}
+					<div class="flex justify-center">
 						<button
-							class="mt-2.5 w-full rounded-lg bg-ink py-3 text-[14px] font-medium text-card disabled:opacity-50"
-							disabled={busy}
-							onclick={() => sendKeys(['enter'])}
-						>
-							Submit selection
-						</button>
-					{/if}
-					<p class="mt-2 text-[11px] text-faint">
-						{#if detail.picker.axis === 'horizontal'}
-							Arrow keys move the slider and Enter confirms; verified against the screen.
-						{:else if detail.picker.numbered}
-							Digit is sent as a keystroke and verified against the screen.
-						{:else}
-							Arrow keys and Enter are sent, then verified against the screen.
-						{/if}
-					</p>
-				</div>
-			</section>
-		{/if}
-
-		{#if !detail.picker && detail.menu}
-			<!-- A menu bordr could not read as options (omp's model browser,
-			     Claude Code's /config): say so, and open the key strip. -->
-			<section
-				class="mt-4 flex overflow-hidden rounded-xl border border-blocked-edge bg-blocked-surface"
-			>
-				<span class="w-1 shrink-0 self-stretch bg-blocked"></span>
-				<div class="min-w-0 flex-1 p-3">
-					<p class="font-mono text-[10.5px] tracking-[.3px] text-blocked-ink">
-						⌨ MENU OPEN ON THE TERMINAL
-					</p>
-					<p class="mt-1.5 text-[13px] [overflow-wrap:anywhere] text-muted">{detail.menu}</p>
-					{#if !showControls}
-						<button
-							class="mt-2.5 rounded-lg bg-ink px-3.5 py-2 text-[13px] font-medium text-card"
+							class="rounded-full px-3 py-1 text-[11.5px] text-working"
 							onclick={() => {
-								showControls = true;
-								requestAnimationFrame(() => screenBox?.scrollIntoView({ block: 'start' }));
+								showWork = !showWork;
+								prefs.set('showWork', showWork);
 							}}
 						>
-							Show the screen and key strip
+							{showWork ? 'Hide' : 'Show'} the work ({toolCount})
 						</button>
-					{/if}
-				</div>
-			</section>
-		{/if}
+					</div>
+				{/if}
+			</div>
 
-		{#if showControls}
-			<div class="mt-4">
-				<!--
+			{#if detail.picker && detail.picker.options.length > 0}
+				<section
+					class="mt-4 flex overflow-hidden rounded-xl border border-blocked-edge bg-blocked-surface shadow-[0_6px_18px_rgba(217,119,6,.10)]"
+				>
+					<span class="w-1 shrink-0 self-stretch bg-blocked"></span>
+					<div class="min-w-0 flex-1 p-3">
+						<p class="font-mono text-[10.5px] tracking-[.3px] text-blocked-ink">
+							? WAITING ON YOU{detail.picker.multi ? ' · MULTI-SELECT' : ''}
+						</p>
+						{#if detail.picker.question}
+							<p class="mt-1.5 text-[15px]">{detail.picker.question}</p>
+						{/if}
+						<div class="mt-2 flex flex-col gap-1.5">
+							{#each detail.picker.options as option (option.index)}
+								<button
+									class="flex items-center gap-2 rounded-lg px-3 py-2.5 text-left text-[14px] disabled:opacity-50 {detail
+										.picker.multi
+										? option.selected
+											? 'border border-working bg-card'
+											: 'border border-black/[.08] bg-card dark:border-white/[.08]'
+										: option.selected
+											? 'bg-ink text-card'
+											: 'border border-black/[.08] bg-card dark:border-white/[.08]'}"
+									disabled={busy}
+									onclick={() => answer(option.index)}
+								>
+									{#if detail.picker.multi}
+										<span
+											class="flex h-5 w-5 shrink-0 items-center justify-center rounded-[5px] text-[12px] {option.checked
+												? 'bg-working text-white'
+												: 'border-[1.5px] border-idle-rail'}">{option.checked ? '✓' : ''}</span
+										>
+									{:else}
+										<span class="shrink-0 font-mono text-[12px]"
+											>{option.selected ? '❯ ' : ''}{option.index}</span
+										>
+									{/if}
+									<span class="min-w-0 flex-1">{option.label}</span>
+								</button>
+							{/each}
+						</div>
+						{#if detail.picker.multi}
+							<button
+								class="mt-2.5 w-full rounded-lg bg-ink py-3 text-[14px] font-medium text-card disabled:opacity-50"
+								disabled={busy}
+								onclick={() => sendKeys(['enter'])}
+							>
+								Submit selection
+							</button>
+						{/if}
+						<p class="mt-2 text-[11px] text-faint">
+							{#if detail.picker.axis === 'horizontal'}
+								Arrow keys move the slider and Enter confirms; verified against the screen.
+							{:else if detail.picker.numbered}
+								Digit is sent as a keystroke and verified against the screen.
+							{:else}
+								Arrow keys and Enter are sent, then verified against the screen.
+							{/if}
+						</p>
+					</div>
+				</section>
+			{/if}
+
+			{#if !detail.picker && detail.menu}
+				<!-- A menu bordr could not read as options (omp's model browser,
+			     Claude Code's /config): say so, and open the key strip. -->
+				<section
+					class="mt-4 flex overflow-hidden rounded-xl border border-blocked-edge bg-blocked-surface"
+				>
+					<span class="w-1 shrink-0 self-stretch bg-blocked"></span>
+					<div class="min-w-0 flex-1 p-3">
+						<p class="font-mono text-[10.5px] tracking-[.3px] text-blocked-ink">
+							⌨ MENU OPEN ON THE TERMINAL
+						</p>
+						<p class="mt-1.5 text-[13px] [overflow-wrap:anywhere] text-muted">{detail.menu}</p>
+						{#if !showControls}
+							<button
+								class="mt-2.5 rounded-lg bg-ink px-3.5 py-2 text-[13px] font-medium text-card"
+								onclick={() => {
+									showControls = true;
+									requestAnimationFrame(() => screenBox?.scrollIntoView({ block: 'start' }));
+								}}
+							>
+								Show the screen and key strip
+							</button>
+						{/if}
+					</div>
+				</section>
+			{/if}
+
+			{#if showControls}
+				<div class="mt-4">
+					<!--
 					The whole pane, scrollable, held at the bottom where the prompt
 					and footer live; a long panel (Claude Code's /config) is read by
 					scrolling up inside the box rather than being cut off.
 				-->
-				<div
-					use:termGrid
-					bind:this={screenBox}
-					onscroll={onScreenScroll}
-					class="term max-h-[60vh] overflow-auto rounded-[10px] border border-hairline bg-card px-3 py-2.5 text-body"
-					style="font-size: {prefs.value.monoSize}px"
-				>
-					{#each detail.screenTail.split('\n') as line, i (i)}
-						<!--
+					<div
+						use:termGrid
+						bind:this={screenBox}
+						onscroll={onScreenScroll}
+						class="term max-h-[60vh] overflow-auto rounded-[10px] border border-hairline bg-card px-3 py-2.5 text-body"
+						style="font-size: {prefs.value.monoSize}px"
+					>
+						{#each detail.screenTail.split('\n') as line, i (i)}
+							<!--
 							Safe: ansiToHtml escapes every HTML metacharacter in the payload
 							and emits only <span style="…"> wrappers for SGR colour — proven
 							by the escaping cases in src/lib/ansi.test.ts. Terminal output is
 							untrusted, which is exactly why it is escaped rather than trusted.
 						-->
-						<!-- eslint-disable svelte/no-at-html-tags -->
-						<div class="whitespace-pre">{@html ansiToHtml(line, true) || '&nbsp;'}</div>
-					{/each}
+							<!-- eslint-disable svelte/no-at-html-tags -->
+							<div class="whitespace-pre">{@html ansiToHtml(line, true) || '&nbsp;'}</div>
+						{/each}
+					</div>
+					<p class="mt-1 text-[11.5px] text-faint">
+						The pane's screen, live · scroll up inside it for the rest
+					</p>
 				</div>
-				<p class="mt-1 text-[11.5px] text-faint">
-					The pane's screen, live · scroll up inside it for the rest
-				</p>
-			</div>
-		{/if}
-	</main>
+			{/if}
+		</main>
 
-	<div
-		class="sticky bottom-0 z-10 border-t border-hairline bg-page px-3 py-2.5"
-		style="padding-bottom: max(0.625rem, env(safe-area-inset-bottom))"
-	>
-		<!--
+		<div class="sticky bottom-0 z-10">
+			<!--
+				Above the whole composer stack, never on it: the suggestion chip
+				and the input are the two things you are reaching for, and a pill
+				parked over either is worse than no pill. Absolute inside the
+				sticky wrapper, so it overlays the transcript only.
+			-->
+			{#if !following}
+				<div class="pointer-events-none absolute -top-9 right-0 left-0 flex justify-center">
+					<button
+						class="pointer-events-auto flex items-center gap-1 rounded-full border border-hairline bg-card px-3 py-1.5 text-[12.5px] text-working shadow-[0_2px_8px_rgba(0,0,0,.18)]"
+						onclick={() => scrollBottom()}
+					>
+						<span aria-hidden="true">↓</span> Latest
+					</button>
+				</div>
+			{/if}
+			<div
+				class="border-t border-hairline bg-page px-3 py-2.5"
+				style="padding-bottom: max(0.625rem, env(safe-area-inset-bottom))"
+			>
+				<!--
 			The harness's own ghost prompt. Tapping fills the box rather than
 			sending: on a phone you cannot see what you are about to commit to
 			the way you can in a terminal, and it is usually a starting point
 			worth editing. Hidden the moment you type anything of your own.
 		-->
-		{#if detail.suggestion && draft.trim() === ''}
-			<button
-				class="mb-2 flex w-full items-center gap-2 rounded-xl border border-hairline bg-card px-3 py-2 text-left"
-				onclick={() => {
-					draft = detail.suggestion ?? '';
-					textarea?.focus();
-				}}
-			>
-				<span class="shrink-0 text-[13px] text-faint" aria-hidden="true">&rarr;</span>
-				<span class="min-w-0 flex-1 truncate text-[14px] text-muted">{detail.suggestion}</span>
-			</button>
-		{/if}
-
-		{#if previews.length > 0 || preparing > 0}
-			<div class="mb-2 flex items-center gap-2 overflow-x-auto">
-				{#each previews as src, i (src)}
-					<span class="relative shrink-0">
-						<img
-							{src}
-							alt=""
-							class="h-16 w-16 rounded-[10px] border border-hairline object-cover"
-						/>
-						<button
-							class="absolute -top-1.5 -right-1.5 flex h-[22px] w-[22px] items-center justify-center rounded-full bg-ink text-[11px] text-card"
-							aria-label="Remove image"
-							onclick={() => removeAt(i)}>✕</button
-						>
-					</span>
-				{/each}
-				{#if preparing > 0}
-					<span
-						class="flex h-16 w-16 shrink-0 items-center justify-center rounded-[10px] border border-dashed border-hairline font-mono text-[11px] text-faint"
-						role="status"
-						aria-live="polite"
-					>
-						{preparing > 1 ? `${preparing} more…` : 'shrinking…'}
-					</span>
-				{/if}
-				<span class="shrink-0 font-mono text-[11px] text-faint">{attachments.length} / 6</span>
-			</div>
-		{/if}
-
-		{#if slashQuery}
-			<div
-				class="mb-2 max-h-[45vh] overflow-y-auto rounded-xl border border-edge bg-card"
-				role="listbox"
-				aria-label="Slash commands"
-			>
-				{#if commandList === null}
-					<p class="px-3 py-2 text-[12.5px] text-muted">Loading commands…</p>
-				{:else if suggestions.length === 0}
-					<p class="px-3 py-2 text-[12.5px] text-muted">Nothing matches {draft}.</p>
-				{:else}
-					{#each suggestions as command (command.name)}
-						<button
-							type="button"
-							role="option"
-							aria-selected="false"
-							class="flex w-full items-baseline gap-2 border-b border-hairline px-3 py-2 text-left last:border-b-0"
-							onclick={() => pickCommand(command)}
-						>
-							<span class="shrink-0 font-mono text-[13px] text-working">/{command.name}</span>
-							<span class="min-w-0 flex-1 truncate text-[12.5px] text-muted"
-								>{command.description}</span
-							>
-							{#if command.source !== 'builtin'}
-								<span class="shrink-0 font-mono text-[10px] text-faint">{command.source}</span>
-							{/if}
-						</button>
-					{/each}
-				{/if}
-			</div>
-		{/if}
-
-		{#if sendError}
-			<p
-				role="status"
-				class="mb-2 rounded-[10px] bg-danger-bg px-3 py-2 text-[12.5px] text-danger-ink"
-			>
-				{sendError}
-			</p>
-		{/if}
-
-		<div class="flex items-end gap-1.5 rounded-xl border border-edge bg-card p-2">
-			<button
-				class="flex h-[34px] w-[34px] shrink-0 items-center justify-center rounded-lg {showControls
-					? 'bg-working-bg text-working'
-					: 'text-muted'}"
-				aria-label="Manual controls"
-				aria-pressed={showControls}
-				onclick={() => {
-					showControls = !showControls;
-					// Remembered, not just for this conversation: the keyboard
-					// button is the only place most people will ever change
-					// this, and it used to reset on every open.
-					prefs.set('keyStrip', showControls ? 'always' : 'peek');
-				}}
-			>
-				<Icon name="keyboard" size={19} />
-			</button>
-			<button
-				class="flex h-[34px] w-[34px] shrink-0 items-center justify-center rounded-lg text-muted"
-				aria-label="Attach a photo"
-				onclick={() => fileInput?.click()}
-			>
-				<Icon name="camera" size={19} />
-			</button>
-			<input
-				bind:this={fileInput}
-				type="file"
-				accept="image/*"
-				multiple
-				class="hidden"
-				onchange={(e) => void addFiles(e.currentTarget)}
-			/>
-			<textarea
-				bind:this={textarea}
-				bind:value={draft}
-				onkeydown={onKeydown}
-				rows="1"
-				placeholder={detail.picker ? 'Or type a reply…' : 'Type a reply…'}
-				class="[field-sizing:content] max-h-[min(10rem,22dvh)] min-w-0 flex-1 resize-none bg-transparent py-1.5 text-[16px] placeholder:text-faint focus:outline-none"
-			></textarea>
-			{#if speechSupported}
-				{#if dictating}
+				{#if prefs.value.showSuggestions && detail.suggestion && draft.trim() === ''}
 					<button
-						class="flex h-[34px] shrink-0 items-center gap-1.5 rounded-full bg-danger-bg px-2.5"
-						aria-label="Stop dictation"
-						onclick={toggleDictation}
+						class="mb-2 flex w-full items-center gap-2 rounded-xl border border-hairline bg-card px-3 py-2 text-left"
+						onclick={() => {
+							draft = detail.suggestion ?? '';
+							textarea?.focus();
+						}}
 					>
-						<span class="h-2.5 w-2.5 rounded-[2px] bg-danger" aria-hidden="true"></span>
-						<span class="flex items-end gap-px" aria-hidden="true">
-							{#each [3, 6, 4, 8, 5, 9, 4, 7, 3, 6] as h, n (n)}
-								<span
-									class="w-px bg-danger motion-safe:animate-[bordr-pulse_1s_ease-in-out_infinite]"
-									style="height: {h}px; animation-delay: {n * 0.08}s"
-								></span>
-							{/each}
-						</span>
-						<span class="font-mono text-[11px] text-danger-ink">stop</span>
+						<span class="shrink-0 text-[13px] text-faint" aria-hidden="true">&rarr;</span>
+						<span class="min-w-0 flex-1 truncate text-[14px] text-muted">{detail.suggestion}</span>
 					</button>
-				{:else}
+				{/if}
+
+				{#if previews.length > 0 || preparing > 0}
+					<div class="mb-2 flex items-center gap-2 overflow-x-auto">
+						{#each previews as src, i (src)}
+							<span class="relative shrink-0">
+								<img
+									{src}
+									alt=""
+									class="h-16 w-16 rounded-[10px] border border-hairline object-cover"
+								/>
+								<button
+									class="absolute -top-1.5 -right-1.5 flex h-[22px] w-[22px] items-center justify-center rounded-full bg-ink text-[11px] text-card"
+									aria-label="Remove image"
+									onclick={() => removeAt(i)}>✕</button
+								>
+							</span>
+						{/each}
+						{#if preparing > 0}
+							<span
+								class="flex h-16 w-16 shrink-0 items-center justify-center rounded-[10px] border border-dashed border-hairline font-mono text-[11px] text-faint"
+								role="status"
+								aria-live="polite"
+							>
+								{preparing > 1 ? `${preparing} more…` : 'shrinking…'}
+							</span>
+						{/if}
+						<span class="shrink-0 font-mono text-[11px] text-faint">{attachments.length} / 6</span>
+					</div>
+				{/if}
+
+				{#if slashQuery}
+					<div
+						class="mb-2 max-h-[45vh] overflow-y-auto rounded-xl border border-edge bg-card"
+						role="listbox"
+						aria-label="Slash commands"
+					>
+						{#if commandList === null}
+							<p class="px-3 py-2 text-[12.5px] text-muted">Loading commands…</p>
+						{:else if suggestions.length === 0}
+							<p class="px-3 py-2 text-[12.5px] text-muted">Nothing matches {draft}.</p>
+						{:else}
+							{#each suggestions as command (command.name)}
+								<button
+									type="button"
+									role="option"
+									aria-selected="false"
+									class="flex w-full items-baseline gap-2 border-b border-hairline px-3 py-2 text-left last:border-b-0"
+									onclick={() => pickCommand(command)}
+								>
+									<span class="shrink-0 font-mono text-[13px] text-working">/{command.name}</span>
+									<span class="min-w-0 flex-1 truncate text-[12.5px] text-muted"
+										>{command.description}</span
+									>
+									{#if command.source !== 'builtin'}
+										<span class="shrink-0 font-mono text-[10px] text-faint">{command.source}</span>
+									{/if}
+								</button>
+							{/each}
+						{/if}
+					</div>
+				{/if}
+
+				{#if sendError}
+					<p
+						role="status"
+						class="mb-2 rounded-[10px] bg-danger-bg px-3 py-2 text-[12.5px] text-danger-ink"
+					>
+						{sendError}
+					</p>
+				{/if}
+
+				<!--
+			A `!` draft is a SHELL command, not a message to the agent — it runs
+			on the host. The box says so before you send it, because the two are
+			one keystroke apart and only one of them is undoable.
+		-->
+				<div
+					class="flex items-end gap-1.5 rounded-xl border p-2 {isShell
+						? 'border-working bg-working-bg'
+						: 'border-edge bg-card'}"
+				>
+					<button
+						class="flex h-[34px] w-[34px] shrink-0 items-center justify-center rounded-lg {showControls
+							? 'bg-working-bg text-working'
+							: 'text-muted'}"
+						aria-label="Manual controls"
+						aria-pressed={showControls}
+						onclick={() => {
+							showControls = !showControls;
+							// Remembered, not just for this conversation: the keyboard
+							// button is the only place most people will ever change
+							// this, and it used to reset on every open.
+							prefs.set('keyStrip', showControls ? 'always' : 'peek');
+						}}
+					>
+						<Icon name="keyboard" size={19} />
+					</button>
 					<button
 						class="flex h-[34px] w-[34px] shrink-0 items-center justify-center rounded-lg text-muted"
-						aria-label="Dictate"
-						onclick={toggleDictation}
+						aria-label="Attach a photo"
+						onclick={() => fileInput?.click()}
 					>
-						<Icon name="mic" size={19} />
+						<Icon name="camera" size={19} />
 					</button>
-				{/if}
-			{/if}
-			<button
-				class="flex h-[34px] w-[34px] shrink-0 items-center justify-center rounded-lg text-white {draft.trim() ||
-				attachments.length > 0
-					? 'bg-working'
-					: 'bg-idle-rail'}"
-				aria-label="Send"
-				disabled={busy || preparing > 0}
-				onclick={send}
-			>
-				<Icon name="arrow-up" size={19} />
-			</button>
-		</div>
-
-		{#if dictating}
-			<p class="mt-1.5 text-center text-[11px] text-faint" role="status">
-				{#if interim}
-					<span class="italic">{interim}</span>
-				{:else}
-					Web Speech · {prefs.value.dictationLang} ·
-					{prefs.value.dictationHold ? 'until you tap stop' : 'stops at a pause'}
-					{screenHeld ? '· screen stays on' : ''} ·
-					{prefs.value.enterSends ? '⏎ sends' : '⌘⏎ sends, ⏎ is a newline'}
-				{/if}
-			</p>
-		{/if}
-
-		{#if showControls}
-			<div class="mt-2 grid grid-cols-8 gap-[5px]">
-				{#each KEY_STRIP as key (key.k)}
+					<input
+						bind:this={fileInput}
+						type="file"
+						accept="image/*"
+						multiple
+						class="hidden"
+						onchange={(e) => void addFiles(e.currentTarget)}
+					/>
+					<textarea
+						bind:this={textarea}
+						bind:value={draft}
+						onkeydown={onKeydown}
+						onpaste={onPaste}
+						rows="1"
+						placeholder={isShell
+							? 'Runs on the host…'
+							: detail.picker
+								? 'Or type a reply…'
+								: 'Type a reply…'}
+						class="[field-sizing:content] max-h-[min(10rem,22dvh)] min-w-0 flex-1 resize-none bg-transparent py-1.5 text-[16px] placeholder:text-faint focus:outline-none"
+					></textarea>
+					{#if speechSupported}
+						{#if dictating}
+							<button
+								class="flex h-[34px] shrink-0 items-center gap-1.5 rounded-full bg-danger-bg px-2.5"
+								aria-label="Stop dictation"
+								onclick={toggleDictation}
+							>
+								<span class="h-2.5 w-2.5 rounded-[2px] bg-danger" aria-hidden="true"></span>
+								<span class="flex items-end gap-px" aria-hidden="true">
+									{#each [3, 6, 4, 8, 5, 9, 4, 7, 3, 6] as h, n (n)}
+										<span
+											class="w-px bg-danger motion-safe:animate-[bordr-pulse_1s_ease-in-out_infinite]"
+											style="height: {h}px; animation-delay: {n * 0.08}s"
+										></span>
+									{/each}
+								</span>
+								<span class="font-mono text-[11px] text-danger-ink">stop</span>
+							</button>
+						{:else}
+							<button
+								class="flex h-[34px] w-[34px] shrink-0 items-center justify-center rounded-lg text-muted"
+								aria-label="Dictate"
+								onclick={toggleDictation}
+							>
+								<Icon name="mic" size={19} />
+							</button>
+						{/if}
+					{/if}
 					<button
-						class="min-h-11 rounded-md py-2.5 font-mono text-[12px] {flashKey === key.k
-							? 'bg-working text-white'
-							: 'bg-key text-key-ink'}"
-						aria-label={key.k}
-						onclick={() => tapKey(key.k)}
+						class="flex h-[34px] w-[34px] shrink-0 items-center justify-center rounded-lg text-white {draft.trim() ||
+						attachments.length > 0
+							? 'bg-working'
+							: 'bg-idle-rail'}"
+						aria-label="Send"
+						disabled={busy || preparing > 0}
+						onclick={send}
 					>
-						{key.l}
+						<Icon name="arrow-up" size={19} />
 					</button>
-				{/each}
+				</div>
+
+				{#if dictating}
+					<p class="mt-1.5 text-center text-[11px] text-faint" role="status">
+						{#if interim}
+							<span class="italic">{interim}</span>
+						{:else}
+							Web Speech · {prefs.value.dictationLang} ·
+							{prefs.value.dictationHold ? 'until you tap stop' : 'stops at a pause'}
+							{screenHeld ? '· screen stays on' : ''} ·
+							{prefs.value.enterSends ? '⏎ sends' : '⌘⏎ sends, ⏎ is a newline'}
+						{/if}
+					</p>
+				{/if}
+
+				{#if showControls}
+					<div class="mt-2 grid grid-cols-8 gap-[5px]">
+						{#each KEY_STRIP as key (key.k)}
+							<button
+								class="min-h-11 rounded-md py-2.5 font-mono text-[12px] {flashKey === key.k
+									? 'bg-working text-white'
+									: 'bg-key text-key-ink'}"
+								aria-label={key.k}
+								onclick={() => tapKey(key.k)}
+							>
+								{key.l}
+							</button>
+						{/each}
+					</div>
+				{/if}
 			</div>
-		{/if}
+			<!--
+				The other home for the status block: under the composer, where the
+				on-screen keyboard covers it rather than the conversation.
+			-->
+			{#if detail.statusLines.length > 0 && prefs.value.statusPosition === 'bottom'}
+				<div class="border-t border-hairline bg-page pt-1.5">
+					<StatusBlock
+						rows={statusRows}
+						agent={detail.agent}
+						open={statusOpen}
+						ontoggle={() => (statusOpen = !statusOpen)}
+					/>
+				</div>
+			{/if}
+		</div>
 	</div>
+	<NewAgentSheet open={showNewAgent} onclose={() => (showNewAgent = false)} />
 </div>
 
 <style>

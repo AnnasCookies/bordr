@@ -4,6 +4,7 @@ import { codexAdapter } from './codex';
 import { copilotAdapter } from './copilot';
 import { grokAdapter } from './grok';
 import { piAdapter } from './pi';
+import { withLocalFiles } from './local-files';
 import { withPhotoPrompts } from './photo';
 import { backfillBlocks, type Adapter } from './types';
 
@@ -34,7 +35,8 @@ const ADAPTERS: Record<string, Adapter> = {
 
 export function adapterFor(agentKind: string): Adapter | null {
 	const adapter = ADAPTERS[agentKind];
-	return adapter ? withBlocks(withPhotoPrompts(adapter)) : null;
+	// withBlocks first so withLocalFiles always has blocks to walk.
+	return adapter ? withLocalFiles(withBlocks(withPhotoPrompts(adapter))) : null;
 }
 
 export type { Adapter, Block, Message, ToolCall, ToolResult } from './types';

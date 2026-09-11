@@ -1,3 +1,5 @@
+import type { Activity } from './server/activity';
+
 import type { Message } from './server/transcript/types';
 import type { Picker } from './server/picker';
 
@@ -52,6 +54,11 @@ export interface AgentDetail extends AgentSummary {
 	suggestion: string | null;
 	/** Tail of the visible terminal screen — what a keypad is driving. */
 	screenTail: string;
+	/**
+	 * The harness's live activity line — "Channeling… (4m 36s · ↓ 6.5k tokens)"
+	 * — with the tip it prints underneath. Null when nothing is running.
+	 */
+	activity: Activity | null;
 	/** The harness's own status block (model, context, usage bars), top line first. */
 	statusLines: string[];
 	/**
@@ -66,3 +73,37 @@ export interface AgentDetail extends AgentSummary {
 
 export type { Message, ToolCall } from './server/transcript/types';
 export type { Picker, PickerOption } from './server/picker';
+
+/** One pane in the session tree. A pane without an agent is a plain shell. */
+export interface PaneNode {
+	paneId: string;
+	tabId: string;
+	workspaceId: string;
+	/** Harness kind, or '' for a shell. */
+	agent: string;
+	hasAgent: boolean;
+	/** An agent's lifecycle status, or 'shell' when there is no agent. */
+	status: string;
+	title: string;
+	cwd: string;
+	focused: boolean;
+}
+
+export interface TabNode {
+	tabId: string;
+	workspaceId: string;
+	label: string;
+	number: number;
+	focused: boolean;
+	panes: PaneNode[];
+}
+
+export interface WorkspaceNode {
+	workspaceId: string;
+	label: string;
+	number: number;
+	focused: boolean;
+	tabs: TabNode[];
+}
+
+export type { Activity };

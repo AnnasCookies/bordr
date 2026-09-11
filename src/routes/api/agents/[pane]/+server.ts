@@ -1,10 +1,11 @@
 import { error, json } from '@sveltejs/kit';
-import { rawAgent, readPane, readVisible, toSummary } from '$lib/server/herdr';
+import { rawAgent, rawPane, readPane, readVisible, toSummary } from '$lib/server/herdr';
 import { adapterFor } from '$lib/server/transcript';
 import { backfillBlocks } from '$lib/server/transcript/types';
 import { DEFAULT_TAIL_BYTES, readTranscriptTail } from '$lib/server/transcript/tail';
 import { menuFooter, parsePicker, pendingAsk, suggestionFrom } from '$lib/server/picker';
 import { extractStatusLines } from '$lib/server/status';
+import { extractActivity } from '$lib/server/activity';
 import { stripAnsi } from '$lib/ansi';
 import { cleanSnapshot } from '$lib/server/snapshot';
 import type { AgentDetail, Message } from '$lib/types';
@@ -79,7 +80,15 @@ export const GET: RequestHandler = async ({ params, url }) => {
 	let summary: ReturnType<typeof toSummary>;
 	try {
 		raw = await rawAgent(params.pane);
-		if (!raw) throw error(404, `no agent in pane ${params.pane}`);
+		if (!raw) {
+			// A pane with no agent is a shell, not a mistake. It has a screen
+			// and takes keys; it has no transcript, status or picker, and the
+			// degraded path below already says exactly that. 404ing here made
+			// every non-agent pane unopenable.
+			const pane = await rawPane(params.pane);
+			if (!pane) throw error(404, `no pane ${params.pane}`);
+			raw = pane;
+		}
 		summary = toSummary(raw);
 		visible = await readVisible(summary.paneId);
 	} catch (e) {
@@ -179,6 +188,11 @@ export const GET: RequestHandler = async ({ params, url }) => {
 
 	// The status footer renders in the header for everyone; cleanSnapshot
 	// strips it from snapshot bodies so it never shows twice.
+	// What the harness says it is doing right now — its verb, elapsed time,
+	// tokens and tip. Painted in place on the screen, never written to the
+	// transcript, so this is the only place it can come from.
+	const activity = extractActivity(visible);
+
 	const statusLines = extractStatusLines(visible);
 
 	/**
@@ -221,6 +235,7 @@ export const GET: RequestHandler = async ({ params, url }) => {
 		menu: picker || summary.status === 'working' ? null : menuFooter(visible),
 		degraded,
 		degradedMessage: explain(degraded, summary.agent, reason),
+		activity,
 		suggestion,
 		screenTail,
 		statusLines,

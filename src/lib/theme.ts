@@ -91,3 +91,29 @@ export function harnessBubble(agent: string, dark: boolean, neutral: string): st
 	const mixed = base.map((channel, i) => Math.round(channel + (tint[i] - channel) * ratio));
 	return `#${mixed.map((c) => c.toString(16).padStart(2, '0')).join('')}`;
 }
+
+/**
+ * One glyph per harness, from the Nerd Font subset bordr ships.
+ *
+ * Claude Code draws its own model line with 󰚩; the rest are chosen to be
+ * distinguishable at 11px rather than to be logos, which do not exist as
+ * glyphs. A harness with no entry gets the generic terminal mark, which is
+ * also what a plain shell pane gets.
+ */
+const HARNESS_ICON: Record<string, string> = {
+	claude: '\u{F06A9}', // robot
+	codex: '\u{F0169}', // code-braces
+	omp: '\u{F0335}', // lightning-bolt-circle
+	pi: '\u{F03A1}', // math-compass
+	grok: '\u{F0208}', // flash
+	gemini: '\u{F0522}', // star-four-points
+	agy: '\u{F0B0C}', // rocket
+	copilot: '\u{F0A0F}' // account-supervisor
+};
+
+/** The generic pane mark: a terminal. */
+export const SHELL_ICON = '\u{F018D}';
+
+export function harnessIcon(agent: string): string {
+	return HARNESS_ICON[agent] ?? SHELL_ICON;
+}

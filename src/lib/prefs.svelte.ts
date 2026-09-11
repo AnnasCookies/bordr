@@ -6,6 +6,11 @@ export type SortBy = 'status-title' | 'title' | 'recent';
 export type PreviewMode = 'activity' | 'cwd' | 'none';
 export type Theme = 'light' | 'dark' | 'system';
 export type KeyStripMode = 'always' | 'peek';
+export type HarnessAccent = 'edge' | 'tint' | 'off';
+export type ToolDetail = 'formatted' | 'json';
+export type TreeScope = 'all' | 'agents';
+export type StatusPosition = 'header' | 'bottom';
+export type WorkControl = 'inline' | 'header';
 
 export interface Prefs {
 	v: number;
@@ -18,8 +23,42 @@ export interface Prefs {
 	keyStrip: KeyStripMode;
 	/** Show tool calls, results and thinking in a conversation by default. */
 	showWork: boolean;
-	/** Tint the agent bubble with the harness's accent when no colour is picked. */
-	harnessBubbles: boolean;
+	/**
+	 * How the harness's accent reaches a bubble. 'edge' is a stripe down the
+	 * side; 'tint' blends it into the background, which muddies every theme
+	 * colour it touches; 'off' leaves the bubble alone.
+	 */
+	harnessAccent: HarnessAccent;
+	/** Render a tool call the way a terminal shows it, or as raw JSON. */
+	toolDetail: ToolDetail;
+	/**
+	 * Whether the desktop tree lists every pane or only those with an agent.
+	 * Some people work agent-first and do not want their shells in the way.
+	 */
+	treeScope: TreeScope;
+	/** Render the harness's live verb, elapsed time and tokens while it works. */
+	showActivity: boolean;
+	/** A glyph beside each harness name. */
+	harnessIcons: boolean;
+	/** Colour code, diffs and tool input with VS Code's grammars. */
+	syntaxHighlight: boolean;
+	/** Photos collapse to a strip until tapped. */
+	compactImages: boolean;
+	/** Offer the harness's own ghost prompt above the composer. */
+	showSuggestions: boolean;
+	/**
+	 * Where the harness's status block sits. 'bottom' puts it under the
+	 * composer, where the on-screen keyboard covers it instead of the
+	 * conversation.
+	 */
+	statusPosition: StatusPosition;
+	/** Where the show-the-work control lives: with the transcript, or in the header. */
+	workControl: WorkControl;
+	/**
+	 * Which status row to show when the block is collapsed, per harness.
+	 * A claude pane and a codex pane care about different lines.
+	 */
+	statusLine: Record<string, number>;
 	enterSends: boolean;
 	dictationLang: string;
 	/**
@@ -48,7 +87,17 @@ export const DEFAULTS: Prefs = {
 	monoSize: 11,
 	keyStrip: 'peek',
 	showWork: true,
-	harnessBubbles: true,
+	harnessAccent: 'edge',
+	toolDetail: 'formatted',
+	treeScope: 'all',
+	showActivity: true,
+	harnessIcons: true,
+	syntaxHighlight: true,
+	compactImages: true,
+	showSuggestions: true,
+	statusPosition: 'header',
+	workControl: 'inline',
+	statusLine: {},
 	enterSends: false,
 	dictationLang: 'en-GB',
 	dictationHold: true,
@@ -78,6 +127,11 @@ const SORTS: SortBy[] = ['status-title', 'title', 'recent'];
 const PREVIEWS: PreviewMode[] = ['activity', 'cwd', 'none'];
 const THEMES: Theme[] = ['light', 'dark', 'system'];
 const STRIPS: KeyStripMode[] = ['always', 'peek'];
+const ACCENTS: HarnessAccent[] = ['edge', 'tint', 'off'];
+const TOOL_DETAILS: ToolDetail[] = ['formatted', 'json'];
+const TREE_SCOPES: TreeScope[] = ['all', 'agents'];
+const STATUS_POSITIONS: StatusPosition[] = ['header', 'bottom'];
+const WORK_CONTROLS: WorkControl[] = ['inline', 'header'];
 
 function pick<T extends string>(value: unknown, allowed: T[], fallback: T): T {
 	return allowed.includes(value as T) ? (value as T) : fallback;
@@ -125,7 +179,23 @@ export function normalisePrefs(raw: unknown): Prefs {
 		keyStrip:
 			stored.v === VERSION ? pick(stored.keyStrip, STRIPS, DEFAULTS.keyStrip) : DEFAULTS.keyStrip,
 		showWork: bool(stored.showWork, DEFAULTS.showWork),
-		harnessBubbles: bool(stored.harnessBubbles, DEFAULTS.harnessBubbles),
+		harnessAccent: pick(stored.harnessAccent, ACCENTS, DEFAULTS.harnessAccent),
+		toolDetail: pick(stored.toolDetail, TOOL_DETAILS, DEFAULTS.toolDetail),
+		treeScope: pick(stored.treeScope, TREE_SCOPES, DEFAULTS.treeScope),
+		showActivity: bool(stored.showActivity, DEFAULTS.showActivity),
+		harnessIcons: bool(stored.harnessIcons, DEFAULTS.harnessIcons),
+		syntaxHighlight: bool(stored.syntaxHighlight, DEFAULTS.syntaxHighlight),
+		compactImages: bool(stored.compactImages, DEFAULTS.compactImages),
+		showSuggestions: bool(stored.showSuggestions, DEFAULTS.showSuggestions),
+		statusPosition: pick(stored.statusPosition, STATUS_POSITIONS, DEFAULTS.statusPosition),
+		workControl: pick(stored.workControl, WORK_CONTROLS, DEFAULTS.workControl),
+		// Numbers only, and only sane ones: this is read back from storage a
+		// person can hand-edit, and an out-of-range index would blank the row.
+		statusLine: Object.fromEntries(
+			Object.entries((stored.statusLine ?? {}) as Record<string, unknown>).filter(
+				([, v]) => typeof v === 'number' && Number.isInteger(v) && v >= 0 && v < 12
+			)
+		) as Record<string, number>,
 		enterSends: bool(stored.enterSends, DEFAULTS.enterSends),
 		dictationLang:
 			typeof stored.dictationLang === 'string' && stored.dictationLang.trim()

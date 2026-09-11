@@ -55,7 +55,18 @@ export async function getManager(): Promise<SubscriptionManager> {
 		const created = new SubscriptionManager(getClient(), 15_000, async () =>
 			(await listAgents()).map((a) => a.paneId)
 		);
-		await created.start((await listAgents()).map((a) => a.paneId));
+		// Subscribe BEFORE the snapshot, then add the pane-scoped
+		// subscriptions the snapshot names.
+		//
+		// herdr 0.9.0 (protocol 22): "New lifecycle event subscriptions now
+		// start with live events rather than replaying retained history. API
+		// clients should subscribe before taking their initial snapshot to
+		// avoid missing changes." (#1270). Listing first left a window in
+		// which a status change was neither in the snapshot nor on the stream.
+		// The push watcher's reconcile poll would have found it eventually;
+		// this stops it going missing in the first place.
+		await created.start([]);
+		await created.sync((await listAgents()).map((a) => a.paneId));
 		manager = created;
 		return created;
 	})();
@@ -141,6 +152,19 @@ export async function rawAgent(paneId: string): Promise<Record<string, unknown> 
 	return (await rawAgents()).find((a) => a.pane_id === paneId) ?? null;
 }
 
+/**
+ * Any pane, agent or not.
+ *
+ * `agent.list` omits a pane running a plain shell, so a conversation opened
+ * on one 404'd. `pane.list` carries every pane and the same fields where an
+ * agent exists, so the caller can treat both alike.
+ */
+export async function rawPane(paneId: string): Promise<Record<string, unknown> | null> {
+	const herdr = getClient();
+	const result = await herdr.request<{ panes: Record<string, unknown>[] }>('pane.list');
+	return result.panes.find((p) => p.pane_id === paneId) ?? null;
+}
+
 export async function readVisible(paneId: string): Promise<string> {
 	return readPane(paneId, { source: 'visible' });
 }
@@ -160,14 +184,29 @@ export async function readPane(
 	opts: { source?: 'visible' | 'recent' | 'recent_unwrapped'; lines?: number; ansi?: boolean } = {}
 ): Promise<string> {
 	const herdr = getClient();
-	const result = await herdr.request<{ read?: { text?: string } }>('agent.read', {
-		target: paneId,
+	const params = {
 		source: opts.source ?? 'visible',
 		format: opts.ansi ? 'ansi' : 'text',
 		...(opts.lines ? { lines: opts.lines } : {}),
 		...(opts.ansi ? { strip_ansi: false } : {})
-	});
-	return result.read?.text ?? '';
+	};
+	try {
+		const result = await herdr.request<{ read?: { text?: string } }>('agent.read', {
+			target: paneId,
+			...params
+		});
+		return result.read?.text ?? '';
+	} catch (e) {
+		// `agent.read` resolves an AGENT, so a pane running a plain shell fails
+		// with "agent target … not found". The same screen is readable through
+		// the pane surface, which is what a shell pane needs.
+		if (!(e instanceof HerdrRequestError) && !(e instanceof Error)) throw e;
+		const result = await herdr.request<{ read?: { text?: string } }>('pane.read', {
+			pane_id: paneId,
+			...params
+		});
+		return result.read?.text ?? '';
+	}
 }
 
 /**
@@ -223,6 +262,26 @@ export async function settleScreen(
  */
 export async function promptAgent(paneId: string, text: string): Promise<void> {
 	const herdr = getClient();
+	/**
+	 * A leading `!` is a MODE SWITCH, not text.
+	 *
+	 * `agent.prompt` writes its text under bracketed paste, so a harness
+	 * receives `!pwd` as pasted characters and answers it as a question —
+	 * measured live: Claude Code replied "…branch feat/rich-transcript,
+	 * clean. What next?" instead of running anything. The `!` has to arrive as
+	 * a keystroke first, which flips the input into its shell mode (verified
+	 * by the prompt row changing from `❯` to a pink `!`), and only then is the
+	 * command pasted and submitted.
+	 */
+	const shell = text.startsWith('!');
+	if (shell) {
+		await herdr.request('pane.send_text', { pane_id: paneId, text: '!' });
+		// The TUI redraws before it will accept the rest.
+		await new Promise((r) => setTimeout(r, 250));
+		text = text.slice(1);
+		// `!` alone has nothing to run; leave the mode open for the next send.
+		if (!text.trim()) return;
+	}
 	try {
 		await herdr.request('agent.prompt', { target: paneId, text });
 	} catch (e) {

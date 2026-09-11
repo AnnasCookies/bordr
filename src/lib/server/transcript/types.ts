@@ -36,8 +36,13 @@ export type Block =
 			name: string;
 			/** One line: the argument that identifies the call. `Read(projector.ts)`. */
 			summary: string;
-			/** Pretty-printed input, shown when the row is expanded. */
-			detail: string;
+			/**
+			 * The call's arguments, as the harness recorded them. Kept as an
+			 * object rather than pre-stringified JSON so the view can render
+			 * each tool the way a terminal shows it — a Bash call as a command,
+			 * a Write as its contents — and fall back to JSON on request.
+			 */
+			input: Record<string, unknown> | null;
 			result: ToolResult | null;
 			diff: EditDiff | null;
 	  }
@@ -45,6 +50,13 @@ export type Block =
 
 export interface Message {
 	role: 'user' | 'assistant' | 'system';
+	/**
+	 * When the harness wrote this entry, epoch milliseconds, or 0 when it did
+	 * not say. Used to slot a prompt that has been sent but not yet written to
+	 * the transcript into its real place, rather than piling every unclaimed
+	 * one at the end.
+	 */
+	at?: number;
 	/**
 	 * Text of the turn, flattened. Derived from `blocks` for adapters that
 	 * emit them. Kept because the preview, search and picker all read it, and
@@ -91,12 +103,18 @@ export function flattenTools(blocks: Block[]): ToolCall[] {
 }
 
 /** Build a Message from blocks, deriving the flat fields exactly once. */
-export function fromBlocks(role: Message['role'], blocks: Block[], ask?: Message['ask']): Message {
+export function fromBlocks(
+	role: Message['role'],
+	blocks: Block[],
+	ask?: Message['ask'],
+	at = 0
+): Message {
 	return {
 		role,
 		text: flattenBlocks(blocks),
 		tools: flattenTools(blocks),
 		blocks,
+		...(at ? { at } : {}),
 		...(ask ? { ask } : {})
 	};
 }
@@ -111,7 +129,7 @@ export function backfillBlocks(message: Message): Message {
 			kind: 'tool',
 			name: tool.name,
 			summary: tool.summary,
-			detail: '',
+			input: null,
 			result: null,
 			diff: null
 		});
