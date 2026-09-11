@@ -43,6 +43,18 @@ describe('normalisePrefs', () => {
 	it('reads prefs written by a future version on the same terms', () => {
 		expect(normalisePrefs({ v: 9, groupBy: 'harness' }).groupBy).toBe('harness');
 	});
+
+	/**
+	 * Chips used to be hidden until grouping was touched, which reset on every
+	 * load and read as a bug. Anyone upgrading has no stored value, so the
+	 * default is what they get, and it has to be "visible".
+	 */
+	it('shows the grouping chips unless they were explicitly turned off', () => {
+		expect(DEFAULTS.showGrouping).toBe(true);
+		expect(normalisePrefs({}).showGrouping).toBe(true);
+		expect(normalisePrefs({ showGrouping: false }).showGrouping).toBe(false);
+		expect(normalisePrefs({ showGrouping: 'no' }).showGrouping).toBe(true);
+	});
 });
 
 describe('resolveTheme', () => {
