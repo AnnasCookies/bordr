@@ -1,0 +1,32 @@
+name: Bug report
+description: Something in bordr does not work the way it should
+labels: [bug]
+body:
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened
+      description: What you did, what happened, and what you expected instead.
+    validations:
+      required: true
+  - type: input
+    id: harness
+    attributes:
+      label: Which harness
+      description: Claude Code, codex, pi, omp, grok, copilot, agy, a plain shell, or several.
+      placeholder: claude
+  - type: input
+    id: browser
+    attributes:
+      label: Phone and browser
+      description: Most sharp edges are specific to one browser, so this matters more than usual.
+      placeholder: Pixel 8, Chrome, installed to home screen
+  - type: textarea
+    id: logs
+    attributes:
+      label: Anything in the logs
+      description: >
+        `journalctl --user -u bordr -n 50` on the host, or the browser console.
+        Optional. Check it for workspace names or paths you would rather not
+        publish before pasting.
+      render: text

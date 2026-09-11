@@ -1,0 +1,32 @@
+name: Harness support
+description: A coding agent bordr reads badly, or does not have an adapter for
+labels: [harness]
+body:
+  - type: markdown
+    attributes:
+      value: >
+        A harness with no adapter still works — it falls back to a cleaned
+        terminal snapshot. This is for one that reads badly, or that you would
+        like rendered as a proper conversation.
+  - type: input
+    id: harness
+    attributes:
+      label: Which harness
+      placeholder: opencode
+    validations:
+      required: true
+  - type: textarea
+    id: wrong
+    attributes:
+      label: What bordr gets wrong
+      description: Misread status, a dialogue it cannot drive, a transcript that renders as soup.
+    validations:
+      required: true
+  - type: textarea
+    id: session
+    attributes:
+      label: A session file, if you can share one
+      description: >
+        Where the harness stores its own transcript, and a small example.
+        This is what an adapter is written against. Strip anything identifying.
+      render: text
