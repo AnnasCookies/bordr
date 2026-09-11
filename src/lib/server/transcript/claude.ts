@@ -1,13 +1,157 @@
 import { access, readdir } from 'node:fs/promises';
 import { homedir } from 'node:os';
 import { join } from 'node:path';
-import type { Adapter, Message, ToolCall } from './types';
+import { fromBlocks, type Adapter, type Block, type Message, type ToolResult } from './types';
 
 interface ContentBlock {
 	type: string;
 	text?: string;
+	thinking?: string;
 	name?: string;
-	input?: { description?: string };
+	id?: string;
+	tool_use_id?: string;
+	is_error?: boolean;
+	content?: unknown;
+	input?: Record<string, unknown>;
+}
+
+/** Result output past this is folded away; the row says how much was dropped. */
+const MAX_RESULT_LINES = 40;
+/** A summary is one line on a phone. */
+const SUMMARY_CHARS = 72;
+
+function clip(value: string, max = SUMMARY_CHARS): string {
+	const line = value.replace(/\s+/g, ' ').trim();
+	return line.length > max ? `${line.slice(0, max - 1)}…` : line;
+}
+
+function base(path: unknown): string {
+	return typeof path === 'string' ? (path.split('/').pop() ?? path) : '';
+}
+
+function str(value: unknown): string {
+	return typeof value === 'string' ? value : '';
+}
+
+/**
+ * The one argument that identifies a call.
+ *
+ * Only Bash carries `input.description`, which is why every other tool used to
+ * render as a bare name with an empty column beside it. Everything needed was
+ * already in `input`; this just names the field per tool.
+ */
+export function toolSummary(name: string, input: Record<string, unknown> = {}): string {
+	const description = str(input.description);
+	switch (name) {
+		case 'Bash':
+			return clip(description || str(input.command));
+		case 'Read':
+		case 'Write':
+		case 'NotebookEdit':
+			return base(input.file_path ?? input.notebook_path);
+		case 'Edit':
+			return base(input.file_path);
+		case 'Grep':
+			return clip(str(input.pattern));
+		case 'Glob':
+			return clip(str(input.pattern));
+		case 'WebSearch':
+			return clip(str(input.query));
+		case 'WebFetch':
+			try {
+				return new URL(str(input.url)).hostname;
+			} catch {
+				return clip(str(input.url));
+			}
+		case 'Skill':
+			return clip(str(input.skill));
+		case 'Task':
+		case 'Agent':
+			return clip(description || str(input.subagent_type));
+		case 'ToolSearch':
+			return clip(str(input.query));
+		case 'TodoWrite': {
+			const todos = input.todos;
+			return Array.isArray(todos) ? `${todos.length} items` : '';
+		}
+		default:
+			break;
+	}
+	if (description) return clip(description);
+	// MCP tools carry arbitrary shapes; the first short string is nearly always
+	// the identifying one (a query, a path, an id) and is better than nothing.
+	for (const value of Object.values(input)) {
+		if (typeof value === 'string' && value.length > 0 && value.length <= 120) return clip(value);
+	}
+	return '';
+}
+
+/** `mcp__plugin_github_github__search_code` reads as `search_code` on a phone. */
+export function toolLabel(name: string): string {
+	if (!name.startsWith('mcp__')) return name;
+	const tail = name.split('__').pop();
+	return tail ? tail : name;
+}
+
+/**
+ * Claude Code asks through the AskUserQuestion tool rather than a terminal
+ * dialog, so nothing appears on the pane's screen for the picker parser to
+ * find. The options are in the tool input; the phone answers by typing the
+ * label back, exactly as it does for codex's request_user_input.
+ *
+ * Only the first question travels: the answer goes back as one typed line, so
+ * offering options from two questions at once would send an answer to the
+ * wrong one.
+ */
+export function askFromQuestions(input: Record<string, unknown> | undefined) {
+	const questions = input?.questions;
+	if (!Array.isArray(questions) || questions.length === 0) return null;
+	const first = questions[0] as { question?: unknown; options?: unknown };
+	const question = str(first.question);
+	const options = Array.isArray(first.options)
+		? first.options
+				.map((option) => str((option as { label?: unknown })?.label))
+				.filter((label) => label.length > 0)
+		: [];
+	if (!question || options.length === 0) return null;
+	return { question, options };
+}
+
+/** Pretty-printed input for the expanded row. */
+function toolDetail(input: Record<string, unknown> | undefined): string {
+	if (!input || Object.keys(input).length === 0) return '';
+	try {
+		return JSON.stringify(input, null, 2);
+	} catch {
+		return '';
+	}
+}
+
+/** A tool_result's content is a string or a block array; flatten either. */
+function resultText(content: unknown): string {
+	if (typeof content === 'string') return content;
+	if (!Array.isArray(content)) return '';
+	return content
+		.map((part) => {
+			if (typeof part === 'string') return part;
+			if (part && typeof part === 'object' && typeof (part as ContentBlock).text === 'string') {
+				return (part as ContentBlock).text as string;
+			}
+			return '';
+		})
+		.filter(Boolean)
+		.join('\n');
+}
+
+function toResult(block: ContentBlock): ToolResult {
+	const full = resultText(block.content).replace(/\s+$/, '');
+	const lines = full.split('\n');
+	const kept = lines.slice(0, MAX_RESULT_LINES);
+	return {
+		text: kept.join('\n'),
+		isError: block.is_error === true,
+		truncatedLines: Math.max(0, lines.length - kept.length)
+	};
 }
 
 /**
@@ -162,6 +306,14 @@ export const claudeAdapter: Adapter = {
 
 	parse(jsonl: string): Message[] {
 		const messages: Message[] = [];
+		/** tool_use id -> the block awaiting its result, which lands later. */
+		const pending = new Map<string, Block>();
+		/**
+		 * Questions asked through AskUserQuestion, with the block that carries
+		 * their answer. Resolved after the whole file is read: the result lands
+		 * in a later entry, and an answered question must not still be offered.
+		 */
+		const asked: Array<{ at: number; tool: Block }> = [];
 		for (const line of jsonl.split('\n')) {
 			if (!line.trim()) continue;
 
@@ -208,32 +360,76 @@ export const claudeAdapter: Adapter = {
 				continue;
 			}
 
-			const blocks = content;
-			if (!Array.isArray(blocks)) continue;
+			const content_blocks = content;
+			if (!Array.isArray(content_blocks)) continue;
 
-			const text: string[] = [];
-			const tools: ToolCall[] = [];
-			for (const block of blocks) {
-				if (block.type === 'text' && block.text) text.push(block.text);
-				if (block.type === 'tool_use' && block.name) {
-					tools.push({ name: block.name, summary: block.input?.description ?? '' });
+			const blocks: Block[] = [];
+			let ask: Message['ask'] | undefined;
+			for (const block of content_blocks) {
+				if (block.type === 'text' && block.text) {
+					blocks.push({ kind: 'text', text: block.text });
+				} else if (block.type === 'thinking' && block.thinking) {
+					blocks.push({ kind: 'thinking', text: block.thinking });
+				} else if (block.type === 'tool_use' && block.name) {
+					const tool: Block = {
+						kind: 'tool',
+						name: toolLabel(block.name),
+						summary: toolSummary(block.name, block.input ?? {}),
+						detail: toolDetail(block.input),
+						result: null,
+						diff:
+							block.name === 'Edit' && typeof block.input?.old_string === 'string'
+								? {
+										file: str(block.input.file_path),
+										before: str(block.input.old_string),
+										after: str(block.input.new_string)
+									}
+								: null
+					};
+					blocks.push(tool);
+					// The result arrives in a LATER entry, keyed by this id, so
+					// the block is held open until then rather than re-scanned.
+					if (block.id) pending.set(block.id, tool);
+					if (block.name === 'AskUserQuestion') {
+						const question = askFromQuestions(block.input);
+						if (question) {
+							ask = question;
+							asked.push({ at: messages.length, tool });
+						}
+					}
+				} else if (block.type === 'tool_result' && block.tool_use_id) {
+					const tool = pending.get(block.tool_use_id);
+					if (tool && tool.kind === 'tool') {
+						tool.result = toResult(block);
+						pending.delete(block.tool_use_id);
+					}
 				}
 			}
 
 			// Entries carrying only tool results or other machinery render as
-			// empty bubbles — skip them.
-			if (text.length === 0 && tools.length === 0) continue;
+			// empty bubbles — skip them. A tool_result attaches to a block that
+			// is already on screen, so it contributes nothing of its own here.
+			if (blocks.length === 0) continue;
 
 			// Block form too: skill bodies arrive as a `text` block, and a prefix
 			// check cannot catch them — the body simply starts with prose.
-			const joined = text.join('\n\n');
+			const joined = blocks
+				.filter((b) => b.kind === 'text')
+				.map((b) => (b as { text: string }).text)
+				.join('\n\n');
 			if (isInjected(isMeta, joined)) {
 				const system = injectedMessage(joined);
 				if (system) messages.push(system);
 				continue;
 			}
 
-			messages.push({ role: entry.type, text: joined, tools });
+			messages.push(fromBlocks(entry.type, blocks, ask));
+		}
+		// A question that has been answered is no longer pending. The result
+		// arrives in an entry that renders no message of its own, so nothing
+		// else would ever clear the card.
+		for (const { at, tool } of asked) {
+			if (tool.kind === 'tool' && tool.result !== null) delete messages[at]?.ask;
 		}
 		return messages;
 	}

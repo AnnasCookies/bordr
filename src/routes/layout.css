@@ -7,6 +7,56 @@
 @import '@fontsource/ibm-plex-sans/600.css';
 @import '@fontsource/ibm-plex-mono/400.css';
 @import '@fontsource/ibm-plex-mono/500.css';
+/*
+ * Nerd Font symbols, so a TUI's box drawing, braille spinners, Powerline
+ * separators and status icons are not a row of tofu on a phone that has no
+ * such font installed.
+ *
+ * THREE faces split by unicode-range, not one file. A browser downloads a
+ * face only when the page contains a codepoint in its range, so covering
+ * every Nerd Font family costs nothing for the families a given prompt does
+ * not use — which matters because every user runs a different prompt, and
+ * subsetting to what one machine happens to draw would leave everyone else
+ * with tofu. core is ~18KB and nearly always needed; icons (570KB) and mdi
+ * (431KB) are fetched only if a status line actually uses them.
+ *
+ * size-adjust matches the advance width to IBM Plex Mono. Caskaydia's is
+ * 0.5859em against Plex's 0.6em, so without it every symbol is 2.4% narrow
+ * and a status bar's columns drift apart across the line. 0.6 / 0.5859 =
+ * 1.024. Plex has no box drawing at all, so EVERY bar character comes
+ * through here — the drift was cumulative and obvious.
+ *
+ * Regenerate with scripts/build-nerd-subset.sh.
+ */
+@font-face {
+	font-family: 'Nerd Symbols';
+	src: url('/fonts/nerd-core.woff2') format('woff2');
+	font-display: swap;
+	size-adjust: 102.4%;
+	unicode-range: U+2190-2BFF, U+2500-259F, U+25A0-25FF, U+2800-28FF, U+E0A0-E0D7;
+}
+
+@font-face {
+	font-family: 'Nerd Symbols';
+	src: url('/fonts/nerd-icons.woff2') format('woff2');
+	font-display: swap;
+	size-adjust: 102.4%;
+	/* The BMP Private Use Area runs to U+F8FF, not U+EFFF. Cutting it short
+	   filtered out Font Awesome (F000-F2FF), Font Logos and Powerline Extra —
+	   the glyphs a harness status line is built from — so they stayed tofu
+	   while the font sat in the browser already holding them. */
+	unicode-range:
+		U+E000-E00A, U+E200-E2A9, U+E300-E3E3, U+E5FA-E6B7, U+E700-E8EF, U+EA60-EC1E, U+ED00-EFCE,
+		U+F000-F8FF;
+}
+
+@font-face {
+	font-family: 'Nerd Symbols';
+	src: url('/fonts/nerd-mdi.woff2') format('woff2');
+	font-display: swap;
+	size-adjust: 102.4%;
+	unicode-range: U+F0001-F1AF0;
+}
 
 /* Tailwind v4 has no `darkMode` config key; the class strategy is a variant. */
 @custom-variant dark (&:where(.dark, .dark *));
@@ -102,8 +152,9 @@
 }
 
 @theme inline {
-	--font-sans: 'IBM Plex Sans', system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
-	--font-mono: 'IBM Plex Mono', ui-monospace, SFMono-Regular, Menlo, monospace;
+	--font-sans:
+		'IBM Plex Sans', 'Nerd Symbols', system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+	--font-mono: 'IBM Plex Mono', 'Nerd Symbols', ui-monospace, SFMono-Regular, Menlo, monospace;
 
 	--color-page: var(--page);
 	--color-card: var(--card);

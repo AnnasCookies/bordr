@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { keysForOption, menuFooter, parsePicker } from './picker';
+import { keysForOption, menuFooter, parsePicker, suggestionFrom } from './picker';
 
 const ASK_USER_QUESTION = `
 ❯ Use the AskUserQuestion tool to ask me to pick a colour.
@@ -486,5 +486,34 @@ describe('menuFooter: a panel or menu with no readable options', () => {
 		]) {
 			expect(menuFooter(idle)).toBeNull();
 		}
+	});
+});
+
+describe('suggestionFrom', () => {
+	// Captured live from herdr `pane read --format ansi` across eleven panes.
+	const E = '\u001b';
+	const SUGGESTION = `\u276f ${E}[0m${E}[2myeah commit and push both${E}[0m\r`;
+	const TYPED =
+		`${E}[0m${E}[38;2;80;80;80m${E}[48;2;55;55;55m\u276f ${E}[0m` +
+		`${E}[38;2;255;255;255m${E}[48;2;55;55;55mcan we make it even better${E}[0m`;
+	const EMPTY = '\u276f \r';
+
+	it('reads the dim ghost prompt out of the input row', () => {
+		expect(suggestionFrom(SUGGESTION)).toBe('yeah commit and push both');
+	});
+
+	it('never mistakes text you actually typed for a suggestion', () => {
+		// The difference is a background: typed characters are in the buffer.
+		expect(suggestionFrom(TYPED)).toBeNull();
+	});
+
+	it('returns null for an empty box and for a screen with no input row', () => {
+		expect(suggestionFrom(EMPTY)).toBeNull();
+		expect(suggestionFrom('just some output\nand more')).toBeNull();
+	});
+
+	it('fails closed when the styling changes', () => {
+		// A restyled hint yields no suggestion rather than a wrong one.
+		expect(suggestionFrom(`\u276f ${E}[38;5;240msome new styling${E}[0m`)).toBeNull();
 	});
 });

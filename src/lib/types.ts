@@ -44,10 +44,22 @@ export interface AgentDetail extends AgentSummary {
 	degraded: 'none' | 'no-adapter' | 'no-session' | 'unreadable' | 'empty';
 	/** Operator-facing explanation of `degraded`, composed server-side; null when 'none'. */
 	degradedMessage: string | null;
+	/**
+	 * The ghost prompt the harness is offering in its own input box, which a
+	 * terminal accepts with the right arrow. Never in the transcript — nothing
+	 * is written until it is accepted — so it is read off the screen.
+	 */
+	suggestion: string | null;
 	/** Tail of the visible terminal screen — what a keypad is driving. */
 	screenTail: string;
 	/** The harness's own status block (model, context, usage bars), top line first. */
 	statusLines: string[];
+	/**
+	 * The same lines carrying their terminal colour, for display. Same length
+	 * and order as `statusLines`, which stays plain because the screen filter
+	 * and every other consumer wants text, not escapes.
+	 */
+	statusAnsi: string[];
 	/** Earlier messages exist on disk beyond the window that was read. */
 	hasMore: boolean;
 }

@@ -8,17 +8,41 @@
 	import { prefs } from '$lib/prefs.svelte';
 	import { flatOrder } from '$lib/grouping';
 	import { decideSwipe, inHorizontalScroller, neighbourPane } from '$lib/swipe';
-	import { harnessBorder, harnessText, STATUS_INK } from '$lib/theme';
+	import { harnessBorder, harnessBubble, harnessText, STATUS_INK } from '$lib/theme';
 	import { ansiToHtml } from '$lib/ansi';
 	import { termGrid } from '$lib/term-grid';
 	import { throttleTrailing } from '$lib/throttle';
 	import { rankCommands, type SlashCommand } from '$lib/commands';
 	import Icon from '$lib/components/icon.svelte';
+	import MessageBlocks from '$lib/components/message-blocks.svelte';
+	import type { Block } from '$lib/server/transcript/types';
 	let { data } = $props();
 
 	const TAIL = 80;
 
-	let showWork = $state(false);
+	/**
+	 * Tool calls, results and thinking. Starts from the persisted preference
+	 * so the choice survives leaving the conversation — it used to reset to
+	 * hidden on every open, which made the work look like it was not there.
+	 */
+	let showWork = $state(prefs.value.showWork);
+
+	/**
+	 * A bubble holds what was SAID; tool calls and thinking sit outside it.
+	 *
+	 * codex and pi routinely emit a turn with no prose at all — just a tool
+	 * call — and wrapping that in a coloured bubble drew an empty bubble with
+	 * a row inside it. The prefixed transcript has no such problem, so this
+	 * split only applies to bubbles.
+	 */
+	function prose(message: { blocks?: Block[] }): Block[] {
+		return (message.blocks ?? []).filter((b) => b.kind === 'text' || b.kind === 'image');
+	}
+
+	function work(message: { blocks?: Block[] }): Block[] {
+		return (message.blocks ?? []).filter((b) => b.kind === 'tool' || b.kind === 'thinking');
+	}
+
 	/**
 	 * The manual harness controls: the screen peek and the key strip together.
 	 * They belong together — you press a key and watch the screen react — and
@@ -131,11 +155,60 @@
 	let flashKey = $state('');
 
 	const detail = $derived(data.detail);
+
+	/**
+	 * The status footer with its terminal colour. `statusAnsi` carries the
+	 * same lines as `statusLines` with their escapes intact; the fallback
+	 * covers a payload cached on a phone that has not reloaded yet.
+	 */
+	const statusRows = $derived(detail.statusAnsi?.length ? detail.statusAnsi : detail.statusLines);
+	const statusHtml = $derived(statusRows.map((line) => ansiToHtml(line)).join('\n'));
+	const statusHtmlFirst = $derived(ansiToHtml(statusRows[0] ?? ''));
+
+	/**
+	 * The agent bubble, tinted with this harness's accent unless a colour has
+	 * been picked by hand. A picked colour always wins: it is an explicit
+	 * choice and must not be second-guessed per harness.
+	 */
+	const agentBubbleColour = $derived(
+		prefs.value.agentBubble ||
+			(prefs.value.harnessBubbles
+				? harnessBubble(
+						detail.agent,
+						prefs.resolvedTheme === 'dark',
+						prefs.bubbleColours.agentBubble
+					)
+				: prefs.bubbleColours.agentBubble)
+	);
 	const watched = $derived(data.watched);
 	const visibleMessages = $derived(detail.messages.slice(-shown));
 	const hidden = $derived(Math.max(0, detail.messages.length - shown));
 	const canShowEarlier = $derived(hidden > 0 || detail.hasMore);
 	const toolCount = $derived(visibleMessages.reduce((n, m) => n + m.tools.length, 0));
+
+	/**
+	 * Prompts that herdr has accepted but the transcript has not caught up
+	 * with yet.
+	 *
+	 * The harness writes its file when it starts the turn, which for a queued
+	 * prompt is after whatever it is already doing — so a sent message could
+	 * sit invisible for minutes and look like it never went. These are shown
+	 * as your own message straight away, and retired the moment the real one
+	 * appears.
+	 */
+	let pendingSends = $state<{ id: number; text: string }[]>([]);
+	let pendingSeq = 0;
+
+	$effect(() => {
+		if (pendingSends.length === 0) return;
+		// Matched on text rather than order: a queued prompt can land after a
+		// later one, and the harness may rewrite the tail as it goes.
+		const landed = new Set(
+			detail.messages.filter((m) => m.role === 'user').map((m) => m.text.trim())
+		);
+		const still = pendingSends.filter((p) => !landed.has(p.text.trim()));
+		if (still.length !== pendingSends.length) pendingSends = still;
+	});
 
 	/**
 	 * The list store, not a second raw EventSource: it already owns the
@@ -617,7 +690,9 @@
 				if (!sent.ok) throw await failure(sent, 'send');
 			}
 			// Only a delivered prompt clears the box; a refused one stays put
-			// to be fixed or resent.
+			// to be fixed or resent. Echo it first: herdr has accepted it, so
+			// showing it is a statement of fact, not optimism.
+			if (draft.trim()) pendingSends = [...pendingSends, { id: ++pendingSeq, text: draft }];
 			draft = '';
 		} catch (e) {
 			sendError = (e as Error).message;
@@ -755,10 +830,17 @@
 				class="flex w-full items-center gap-1 px-4 pb-1.5 text-left font-mono text-[10px] text-muted"
 				onclick={() => (statusOpen = !statusOpen)}
 			>
+				<!--
+					Safe: ansiToHtml escapes every HTML metacharacter in the payload
+					and emits only <span style="…"> wrappers for SGR colour — the
+					same guarantee the screen peek relies on, proven by the
+					escaping cases in src/lib/ansi.test.ts.
+				-->
+				<!-- eslint-disable svelte/no-at-html-tags -->
 				{#if statusOpen}
-					<span class="whitespace-pre-wrap">{detail.statusLines.join('\n')}</span>
+					<span class="whitespace-pre-wrap">{@html statusHtml}</span>
 				{:else}
-					<span class="min-w-0 flex-1 truncate">{detail.statusLines[0]}</span>
+					<span class="min-w-0 flex-1 truncate">{@html statusHtmlFirst}</span>
 					<span aria-hidden="true">▾</span>
 				{/if}
 			</button>
@@ -871,8 +953,10 @@
 								<span
 									class="max-w-[85%] rounded-2xl rounded-br-sm px-3 py-2 [overflow-wrap:anywhere] whitespace-pre-wrap"
 									style="background:{prefs.bubbleColours.userBubble}; color:{prefs.bubbleColours
-										.userText}">{message.text}</span
+										.userText}"
 								>
+									<MessageBlocks blocks={message.blocks ?? []} mono={prefs.value.monoSize} plain />
+								</span>
 							</div>
 						{:else}
 							<div class="flex gap-2">
@@ -880,13 +964,12 @@
 									class="shrink-0 font-mono text-[13px] leading-[1.7] text-working"
 									aria-hidden="true">›</span
 								>
-								<span
-									class="min-w-0 flex-1 font-medium [overflow-wrap:anywhere] whitespace-pre-wrap"
-									>{message.text}</span
-								>
+								<span class="min-w-0 flex-1 font-medium [overflow-wrap:anywhere]">
+									<MessageBlocks blocks={message.blocks ?? []} mono={prefs.value.monoSize} plain />
+								</span>
 							</div>
 						{/if}
-					{:else if message.text || (showWork && message.tools.length > 0)}
+					{:else if message.text || (showWork && (message.blocks?.length ?? 0) > 0)}
 						<!-- A turn that is only tool calls has nothing to show while the
 						     work is hidden; rendering the prefix anyway left a column of
 						     bare dots separated by empty space. -->
@@ -898,38 +981,27 @@
 								>
 							{/if}
 							<div class="min-w-0 flex-1">
-								{#if message.text}
-									{#if prefs.value.bubbles}
-										<p
-											class="max-w-[92%] rounded-2xl rounded-bl-sm px-3 py-2 [overflow-wrap:anywhere] whitespace-pre-wrap"
-											style="background:{prefs.bubbleColours.agentBubble}; color:{prefs
-												.bubbleColours.agentText}"
+								{#if prefs.value.bubbles}
+									{#if prose(message).length > 0}
+										<div
+											class="max-w-[92%] rounded-2xl rounded-bl-sm px-3 py-2 [overflow-wrap:anywhere]"
+											style="background:{agentBubbleColour}; color:{prefs.bubbleColours.agentText}"
 										>
-											{message.text}
-										</p>
-									{:else}
-										<p
-											class="border-l-2 pl-2.5 [overflow-wrap:anywhere] whitespace-pre-wrap text-body {harnessBorder(
-												detail.agent
-											)}"
-										>
-											{message.text}
-										</p>
+											<MessageBlocks blocks={prose(message)} mono={prefs.value.monoSize} />
+										</div>
 									{/if}
-								{/if}
-								{#if showWork && message.tools.length > 0}
+									<MessageBlocks blocks={work(message)} mono={prefs.value.monoSize} {showWork} />
+								{:else}
 									<div
-										class="mt-2 ml-[22px] divide-y divide-black/[.08] overflow-hidden rounded-lg border border-black/[.08] bg-card dark:divide-white/[.08] dark:border-white/[.08]"
+										class="border-l-2 pl-2.5 [overflow-wrap:anywhere] text-body {harnessBorder(
+											detail.agent
+										)}"
 									>
-										{#each message.tools as tool, n (n)}
-											<div
-												class="flex gap-2 px-2.5 py-2 font-mono"
-												style="font-size: {prefs.value.monoSize + 0.5}px"
-											>
-												<span class="shrink-0 text-muted">{tool.name}</span>
-												<span class="min-w-0 flex-1 truncate text-body">{tool.summary}</span>
-											</div>
-										{/each}
+										<MessageBlocks
+											blocks={message.blocks ?? []}
+											mono={prefs.value.monoSize}
+											{showWork}
+										/>
 									</div>
 								{/if}
 							</div>
@@ -948,13 +1020,49 @@
 						working
 					</div>
 				{/if}
+
+				<!--
+					Sent, accepted by herdr, not yet in the transcript.
+
+					BELOW the working indicator, which is where the terminal puts
+					it: the agent is still finishing the turn above, and your
+					prompt is waiting behind it. Above the spinner it read as
+					though it had already been picked up.
+				-->
+				{#each pendingSends as sent (sent.id)}
+					{#if prefs.value.bubbles}
+						<div class="flex justify-end">
+							<span
+								class="max-w-[85%] rounded-2xl rounded-br-sm px-3 py-2 [overflow-wrap:anywhere] whitespace-pre-wrap opacity-60"
+								style="background:{prefs.bubbleColours.userBubble}; color:{prefs.bubbleColours
+									.userText}">{sent.text}</span
+							>
+						</div>
+					{:else}
+						<div class="flex gap-2 opacity-60">
+							<span
+								class="shrink-0 font-mono text-[13px] leading-[1.7] text-working"
+								aria-hidden="true">›</span
+							>
+							<span class="min-w-0 flex-1 font-medium [overflow-wrap:anywhere] whitespace-pre-wrap"
+								>{sent.text}</span
+							>
+						</div>
+					{/if}
+					<p class="text-right text-[11px] text-faint">
+						{detail.status === 'working' ? 'queued behind this turn' : 'sent'}
+					</p>
+				{/each}
 			{/if}
 
 			{#if toolCount > 0}
 				<div class="flex justify-center">
 					<button
 						class="rounded-full px-3 py-1 text-[11.5px] text-working"
-						onclick={() => (showWork = !showWork)}
+						onclick={() => {
+							showWork = !showWork;
+							prefs.set('showWork', showWork);
+						}}
 					>
 						{showWork ? 'Hide' : 'Show'} the work ({toolCount})
 					</button>
@@ -1088,6 +1196,25 @@
 		class="sticky bottom-0 z-10 border-t border-hairline bg-page px-3 py-2.5"
 		style="padding-bottom: max(0.625rem, env(safe-area-inset-bottom))"
 	>
+		<!--
+			The harness's own ghost prompt. Tapping fills the box rather than
+			sending: on a phone you cannot see what you are about to commit to
+			the way you can in a terminal, and it is usually a starting point
+			worth editing. Hidden the moment you type anything of your own.
+		-->
+		{#if detail.suggestion && draft.trim() === ''}
+			<button
+				class="mb-2 flex w-full items-center gap-2 rounded-xl border border-hairline bg-card px-3 py-2 text-left"
+				onclick={() => {
+					draft = detail.suggestion ?? '';
+					textarea?.focus();
+				}}
+			>
+				<span class="shrink-0 text-[13px] text-faint" aria-hidden="true">&rarr;</span>
+				<span class="min-w-0 flex-1 truncate text-[14px] text-muted">{detail.suggestion}</span>
+			</button>
+		{/if}
+
 		{#if previews.length > 0 || preparing > 0}
 			<div class="mb-2 flex items-center gap-2 overflow-x-auto">
 				{#each previews as src, i (src)}
@@ -1165,7 +1292,13 @@
 					: 'text-muted'}"
 				aria-label="Manual controls"
 				aria-pressed={showControls}
-				onclick={() => (showControls = !showControls)}
+				onclick={() => {
+					showControls = !showControls;
+					// Remembered, not just for this conversation: the keyboard
+					// button is the only place most people will ever change
+					// this, and it used to reset on every open.
+					prefs.set('keyStrip', showControls ? 'always' : 'peek');
+				}}
 			>
 				<Icon name="keyboard" size={19} />
 			</button>
@@ -1190,7 +1323,7 @@
 				onkeydown={onKeydown}
 				rows="1"
 				placeholder={detail.picker ? 'Or type a reply…' : 'Type a reply…'}
-				class="[field-sizing:content] max-h-40 min-w-0 flex-1 resize-none bg-transparent py-1.5 text-[16px] placeholder:text-faint focus:outline-none"
+				class="[field-sizing:content] max-h-[min(10rem,22dvh)] min-w-0 flex-1 resize-none bg-transparent py-1.5 text-[16px] placeholder:text-faint focus:outline-none"
 			></textarea>
 			{#if speechSupported}
 				{#if dictating}

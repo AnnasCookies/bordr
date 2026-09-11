@@ -5,7 +5,21 @@ import { copilotAdapter } from './copilot';
 import { grokAdapter } from './grok';
 import { piAdapter } from './pi';
 import { withPhotoPrompts } from './photo';
-import type { Adapter } from './types';
+import { backfillBlocks, type Adapter } from './types';
+
+/**
+ * Give every message blocks, so the view has exactly one shape to render.
+ *
+ * Adapters emit blocks as they are migrated; the rest keep returning flat
+ * `{text, tools}` and are converted here. Doing it in one place beats a view
+ * that branches on which harness produced the turn.
+ */
+function withBlocks(adapter: Adapter): Adapter {
+	return {
+		resolve: (sessionId) => adapter.resolve(sessionId),
+		parse: (jsonl) => adapter.parse(jsonl).map(backfillBlocks)
+	};
+}
 
 /** Adapters by herdr agent kind — omp shares pi's format (it is a pi fork). */
 const ADAPTERS: Record<string, Adapter> = {
@@ -20,7 +34,7 @@ const ADAPTERS: Record<string, Adapter> = {
 
 export function adapterFor(agentKind: string): Adapter | null {
 	const adapter = ADAPTERS[agentKind];
-	return adapter ? withPhotoPrompts(adapter) : null;
+	return adapter ? withBlocks(withPhotoPrompts(adapter)) : null;
 }
 
-export type { Adapter, Message, ToolCall } from './types';
+export type { Adapter, Block, Message, ToolCall, ToolResult } from './types';

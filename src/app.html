@@ -3,8 +3,18 @@
 	<head>
 		<meta charset="utf-8" />
 		<!-- viewport-fit=cover is what makes env(safe-area-inset-*) non-zero on a
-		     notched phone; without it the sticky bars sat under the home indicator. -->
-		<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+		     notched phone; without it the sticky bars sat under the home indicator.
+
+		     interactive-widget=resizes-content is what keeps the composer above
+		     the on-screen keyboard. The default (resizes-visual) leaves the
+		     LAYOUT viewport full height when the keyboard opens, so a
+		     `sticky bottom-0` bar stays pinned to the bottom of a viewport the
+		     keyboard is now covering — the send button simply vanishes. This
+		     shrinks the layout viewport instead, and dvh units follow it. -->
+		<meta
+			name="viewport"
+			content="width=device-width, initial-scale=1, viewport-fit=cover, interactive-widget=resizes-content"
+		/>
 		<meta name="theme-color" content="#0a0a0a" />
 		<link rel="manifest" href="/manifest.webmanifest?v=5" />
 		<link rel="icon" href="/collie.svg" type="image/svg+xml" />

@@ -2,7 +2,7 @@ import { afterAll, afterEach, describe, expect, it } from 'vitest';
 import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { claudeAdapter } from './claude';
+import { askFromQuestions, claudeAdapter, toolLabel, toolSummary } from './claude';
 import { adapterFor } from './index';
 
 const jsonl = readFileSync(new URL('./fixtures/claude-session.jsonl', import.meta.url), 'utf8');
@@ -315,5 +315,149 @@ describe('claude adapter: the harness talking to itself', () => {
 				.parse(one + '\n' + three)
 				.map((m) => m.text)
 		).toEqual(['📷 photo\nlook at this', '📷 3 photos']);
+	});
+});
+
+describe('blocks', () => {
+	function entry(role: 'user' | 'assistant', content: unknown) {
+		return JSON.stringify({ type: role, message: { content } });
+	}
+
+	it('summarises every tool from its own identifying argument, not just Bash', () => {
+		// The original bug: summary came only from input.description, which
+		// only Bash has, so everything else rendered as a bare name.
+		expect(toolSummary('Read', { file_path: '/home/t/bordr/src/lib/projector.ts' })).toBe(
+			'projector.ts'
+		);
+		expect(toolSummary('Grep', { pattern: 'tool_use' })).toBe('tool_use');
+		expect(toolSummary('WebFetch', { url: 'https://tailscale.com/kb/1084/sharing' })).toBe(
+			'tailscale.com'
+		);
+		expect(toolSummary('Bash', { command: 'ls', description: 'List files' })).toBe('List files');
+		expect(toolSummary('Bash', { command: 'ls -la' })).toBe('ls -la');
+		expect(toolSummary('TodoWrite', { todos: [1, 2, 3] })).toBe('3 items');
+	});
+
+	it('shortens an MCP tool name to its verb', () => {
+		expect(toolLabel('mcp__plugin_github_github__search_code')).toBe('search_code');
+		expect(toolLabel('Read')).toBe('Read');
+	});
+
+	it('attaches a tool result to the call it belongs to, across entries', () => {
+		const jsonl = [
+			entry('assistant', [
+				{ type: 'text', text: 'Looking.' },
+				{ type: 'tool_use', id: 'tu_1', name: 'Bash', input: { command: 'echo hi' } }
+			]),
+			entry('user', [{ type: 'tool_result', tool_use_id: 'tu_1', content: 'hi' }])
+		].join('\n');
+
+		const [message] = claudeAdapter.parse(jsonl);
+		const tool = message.blocks?.find((b) => b.kind === 'tool');
+		expect(tool).toMatchObject({ name: 'Bash', summary: 'echo hi' });
+		expect(tool && tool.kind === 'tool' && tool.result).toMatchObject({
+			text: 'hi',
+			isError: false,
+			truncatedLines: 0
+		});
+	});
+
+	it('reports how many result lines it dropped rather than truncating silently', () => {
+		const long = Array.from({ length: 60 }, (_, i) => `line ${i}`).join('\n');
+		const jsonl = [
+			entry('assistant', [
+				{ type: 'tool_use', id: 'tu_2', name: 'Bash', input: { command: 'seq' } }
+			]),
+			entry('user', [{ type: 'tool_result', tool_use_id: 'tu_2', content: long }])
+		].join('\n');
+
+		const tool = claudeAdapter.parse(jsonl)[0].blocks?.find((b) => b.kind === 'tool');
+		expect(tool && tool.kind === 'tool' && tool.result?.truncatedLines).toBe(20);
+	});
+
+	it('keeps both sides of an Edit so the view can diff them', () => {
+		const jsonl = entry('assistant', [
+			{
+				type: 'tool_use',
+				id: 'tu_3',
+				name: 'Edit',
+				input: { file_path: '/a/b/enrich.ts', old_string: 'const a = 1', new_string: 'const a = 2' }
+			}
+		]);
+		const tool = claudeAdapter.parse(jsonl)[0].blocks?.find((b) => b.kind === 'tool');
+		// The full path, deliberately: the summary beside the row already
+		// carries the basename, so the diff keeps the information the summary
+		// threw away.
+		expect(tool && tool.kind === 'tool' && tool.diff).toEqual({
+			file: '/a/b/enrich.ts',
+			before: 'const a = 1',
+			after: 'const a = 2'
+		});
+	});
+
+	it('keeps thinking as its own block instead of dropping it', () => {
+		const jsonl = entry('assistant', [
+			{ type: 'thinking', thinking: 'weighing two options' },
+			{ type: 'text', text: 'Going with the first.' }
+		]);
+		const [message] = claudeAdapter.parse(jsonl);
+		expect(message.blocks?.map((b) => b.kind)).toEqual(['thinking', 'text']);
+		// The flat text stays prose-only: preview and search must not start
+		// quoting the model's reasoning back at the user.
+		expect(message.text).toBe('Going with the first.');
+	});
+});
+
+describe('AskUserQuestion', () => {
+	function entry(role: 'user' | 'assistant', content: unknown) {
+		return JSON.stringify({ type: role, message: { content } });
+	}
+
+	const question = {
+		questions: [
+			{
+				question: 'How far do you want me to take it?',
+				header: 'Scope',
+				options: [{ label: 'All four stages' }, { label: 'Stage 1 only' }]
+			}
+		]
+	};
+
+	it('offers the options while the question is unanswered', () => {
+		const jsonl = entry('assistant', [
+			{ type: 'tool_use', id: 'ask_1', name: 'AskUserQuestion', input: question }
+		]);
+		expect(claudeAdapter.parse(jsonl)[0].ask).toEqual({
+			question: 'How far do you want me to take it?',
+			options: ['All four stages', 'Stage 1 only']
+		});
+	});
+
+	it('stops offering them once the result lands', () => {
+		// The answering entry renders no message of its own, so nothing else
+		// would ever clear a stale card.
+		const jsonl = [
+			entry('assistant', [
+				{ type: 'tool_use', id: 'ask_1', name: 'AskUserQuestion', input: question }
+			]),
+			entry('user', [{ type: 'tool_result', tool_use_id: 'ask_1', content: 'All four stages' }])
+		].join('\n');
+		expect(claudeAdapter.parse(jsonl)[0].ask).toBeUndefined();
+	});
+
+	it('offers only the first question, since the answer is one typed line', () => {
+		const two = {
+			questions: [
+				{ question: 'One?', options: [{ label: 'a' }] },
+				{ question: 'Two?', options: [{ label: 'b' }] }
+			]
+		};
+		expect(askFromQuestions(two)).toEqual({ question: 'One?', options: ['a'] });
+	});
+
+	it('ignores a malformed or empty question rather than showing an empty card', () => {
+		expect(askFromQuestions({ questions: [] })).toBeNull();
+		expect(askFromQuestions({ questions: [{ question: 'Hm?', options: [] }] })).toBeNull();
+		expect(askFromQuestions(undefined)).toBeNull();
 	});
 });
