@@ -69,10 +69,28 @@ function bounds(rects: RawRect[]): RawRect | null {
  * other way, and a region a cell out matches no nested split — which silently
  * collapses that whole branch to one pane rather than failing.
  */
+/**
+ * herdr's ratio, or a half when it is not a usable number.
+ *
+ * `RawLayout` is an unchecked cast over a JSON-RPC reply, so a missing or
+ * renamed field arrives as undefined and `y + height * undefined` is NaN.
+ * Nothing is less than NaN, so every pane fell into the second half, the
+ * first came back empty, and the split collapsed to a single leaf — on a
+ * desktop that meant the tab showed one pane and, if the pane you were
+ * reading was the dropped one, no transcript and no composer at all.
+ * Guessing the middle keeps both panes on screen; the divider being slightly
+ * wrong is a far smaller failure than the conversation vanishing.
+ */
+function safeRatio(ratio: unknown): number {
+	return typeof ratio === 'number' && Number.isFinite(ratio) && ratio > 0 && ratio < 1
+		? ratio
+		: 0.5;
+}
+
 function halves(split: RawSplit, panes: RawLayout['panes']): [RawRect | null, RawRect | null] {
 	const { x, y, width, height } = split.rect;
 	const down = stacked(split);
-	const cut = down ? y + height * split.ratio : x + width * split.ratio;
+	const cut = down ? y + height * safeRatio(split.ratio) : x + width * safeRatio(split.ratio);
 	const mine = panes.filter((p) => within(p.rect, split.rect)).map((p) => p.rect);
 	// Compared at each pane's own midpoint, which never lands on the cut line.
 	const first = mine.filter((r) => (down ? r.y + r.height / 2 : r.x + r.width / 2) < cut);
@@ -119,7 +137,7 @@ function build(
 	return {
 		kind: 'split',
 		vertical: stacked(here),
-		ratio: here.ratio,
+		ratio: safeRatio(here.ratio),
 		path,
 		first: build(first, rest, panes, machineId, [...path, false]),
 		second: build(second, rest, panes, machineId, [...path, true])

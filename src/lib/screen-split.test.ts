@@ -65,3 +65,38 @@ describe('splitAtPrompt', () => {
 		expect(parts.below).toEqual([]);
 	});
 });
+
+describe('a prompt line with text already typed into it', () => {
+	/**
+	 * bordr flushes the draft into the pane before Tab/Up/Down, so the input
+	 * line is routinely non-empty. It used to stop matching at that point and
+	 * the scan climbed to the blockquote's `>` above, burying three lines of
+	 * real output — and the command about to run — in the status strip.
+	 */
+	it('splits at the filled input line, not at a blockquote above it', () => {
+		const screen = [
+			'Here is the summary:',
+			'',
+			'The build passed and I pushed the branch.',
+			'> All 42 tests are green.',
+			'│ > deploy to production',
+			'CTX 46%'
+		].join('\n');
+		const parts = splitAtPrompt(screen);
+		expect(parts.prompt).toBe('│ > deploy to production');
+		expect(parts.below).toEqual(['CTX 46%']);
+		expect(parts.above).toContain('The build passed and I pushed the branch.');
+	});
+
+	it('still prefers an empty prompt row when there is one', () => {
+		const screen = ['out > quoted', 'work done', '❯', 'CTX 9%'].join('\n');
+		const parts = splitAtPrompt(screen);
+		expect(parts.prompt).toBe('❯');
+		expect(parts.below).toEqual(['CTX 9%']);
+	});
+
+	it('does not treat quoted text deep in scrollback as a prompt', () => {
+		const screen = ['> a quote', ...Array(9).fill('plain output')].join('\n');
+		expect(splitAtPrompt(screen).prompt).toBe('');
+	});
+});

@@ -68,8 +68,8 @@ herdr server ──unix socket──> bordr (SvelteKit on Bun) ──HTTPS/SSE�
 ## Before you start
 
 **bordr has no login.** It drives coding agents that can run any command on the
-machine it is installed on, and it can read files under the directories you
-point it at. Whoever can reach its port can do both of those things. That is
+machine it is installed on, and on any machine you name in `BORDR_MACHINES`,
+and it can read files under the directories you point it at. Whoever can reach its port can do both of those things. That is
 deliberate, a tailnet is the boundary, but it means bordr must never be
 exposed to a network you do not control. It refuses to serve on a public
 address unless you explicitly override it. Read [SECURITY.md](SECURITY.md)
@@ -255,11 +255,14 @@ comes back to the foreground) and offers a "tap to reload" pill.
 ## Security model
 
 The tailnet is the entire boundary, treat bordr like an open terminal on
-every machine that can reach it. There is no login. Served artifacts render in
+every machine that can reach it, and on every machine it can reach. Other
+machines are opt-in: bordr drives only the ones `BORDR_MACHINES` names, and
+none by default. There is no login. Served artifacts render in
 a sandboxed opaque origin and cannot call bordr's APIs; the file browser is
 traversal- and symlink-proofed to its configured roots and refuses dotfiles at
 the resolver, so `.env` cannot be listed or fetched; the keypad endpoint
-accepts only inert navigation keys; uploads are size-capped and type-checked.
+accepts only inert navigation keys; uploads are size-capped and their
+declared MIME type is allow-listed.
 If you ever expose bordr beyond your tailnet, add real authentication first.
 
 ## Development
