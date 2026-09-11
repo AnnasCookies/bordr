@@ -26,7 +26,7 @@
 	import StatusBlock from '$lib/components/status-block.svelte';
 	import NewAgentSheet from '$lib/components/new-agent-sheet.svelte';
 	import type { Block } from '$lib/server/transcript/types';
-	import type { WorkspaceNode } from '$lib/types';
+	import type { SplitNode, WorkspaceNode } from '$lib/types';
 	let { data } = $props();
 
 	const TAIL = 80;
@@ -53,12 +53,26 @@
 	 */
 	let workspaces = $state<WorkspaceNode[]>([]);
 
+	/** Whether the rebuilt split actually contains a given pane. */
+	function treeHolds(node: SplitNode | undefined, paneId: string): boolean {
+		if (!node) return false;
+		if (node.kind === 'pane') return node.paneId === paneId;
+		return treeHolds(node.first, paneId) || treeHolds(node.second, paneId);
+	}
+
 	const splitLayout = $derived.by(() => {
 		if (!prefs.value.splitPanes) return undefined;
 		for (const workspace of workspaces) {
 			for (const tab of workspace.tabs) {
 				if (!tab.panes.some((p) => p.paneId === detail.paneId)) continue;
-				return tab.panes.length > 1 ? tab.layout : undefined;
+				if (tab.panes.length <= 1) return undefined;
+				// The split renders the conversation only in the tile whose leaf
+				// is this pane. If the rebuilt tree does not hold it — a layout
+				// herdr reported oddly, or a snapshot fetched a beat before a
+				// pane was added — that tile never renders and the screen has no
+				// transcript and no composer, silently. Falling back to the
+				// plain conversation loses the split and keeps the app usable.
+				return treeHolds(tab.layout?.tree, detail.paneId) ? tab.layout : undefined;
 			}
 		}
 		return undefined;
@@ -1172,6 +1186,30 @@
 	}
 </script>
 
+{#snippet uncertainBanner()}
+	{#if uncertain}
+		<p
+			role="status"
+			class="mb-3 flex items-start gap-2 rounded-[10px] border border-blocked-edge bg-blocked-surface px-3 py-2.5 text-[12.5px] text-blocked-ink"
+		>
+			<span class="font-mono" aria-hidden="true">!</span>
+			<span class="min-w-0 flex-1">{uncertain}</span>
+			<button class="shrink-0 underline" onclick={() => (uncertain = null)}>Dismiss</button>
+		</p>
+	{/if}
+{/snippet}
+
+{#snippet errorBanner()}
+	{#if sendError}
+		<p
+			role="status"
+			class="mb-2 rounded-[10px] bg-danger-bg px-3 py-2 text-[12.5px] text-danger-ink"
+		>
+			{sendError}
+		</p>
+	{/if}
+{/snippet}
+
 <svelte:head><title>{detail.title || detail.paneId} · bordr</title></svelte:head>
 
 {#snippet headerTitle()}
@@ -1264,6 +1302,16 @@
 
 		{#if terminalView}
 			<!--
+				Both banners render here as well as in the transcript view. They
+				used to live only in the {:else} branch, so in terminal mode a
+				refused keypress (409/503) and "sent but could not confirm it
+				landed" were both invisible — the screen simply did not respond.
+			-->
+			<div class="mx-auto w-full max-w-screen-sm px-4 pt-3 lg:max-w-3xl">
+				{@render uncertainBanner()}
+				{@render errorBanner()}
+			</div>
+			<!--
 				Terminal mode: the pane exactly as the machine draws it, with a
 				prompt line under it. The transcript view is the one that
 				interprets; this one shows.
@@ -1310,16 +1358,7 @@
 					</p>
 				{/if}
 
-				{#if uncertain}
-					<p
-						role="status"
-						class="mb-3 flex items-start gap-2 rounded-[10px] border border-blocked-edge bg-blocked-surface px-3 py-2.5 text-[12.5px] text-blocked-ink"
-					>
-						<span class="font-mono" aria-hidden="true">!</span>
-						<span class="min-w-0 flex-1">{uncertain}</span>
-						<button class="shrink-0 underline" onclick={() => (uncertain = null)}>Dismiss</button>
-					</p>
-				{/if}
+				{@render uncertainBanner()}
 
 				{#if canShowEarlier}
 					<div use:autoEarlier={wideScreen} class="mb-3 flex justify-center">
@@ -1706,14 +1745,7 @@
 						</div>
 					{/if}
 
-					{#if sendError}
-						<p
-							role="status"
-							class="mb-2 rounded-[10px] bg-danger-bg px-3 py-2 text-[12.5px] text-danger-ink"
-						>
-							{sendError}
-						</p>
-					{/if}
+					{@render errorBanner()}
 
 					<!--
 					A `!` draft is a SHELL command, not a message to the agent — it runs

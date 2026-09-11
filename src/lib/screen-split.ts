@@ -38,6 +38,28 @@ export function plain(line: string): string {
  */
 const PROMPT = /(?:^|[\s│┃|~\])])([❯➜›»▶>$#%])\s*$/;
 
+/**
+ * The same marker with something typed after it.
+ *
+ * "Nothing may follow the marker" holds only while the pane's own input line
+ * is empty, and bordr fills it itself: `flush()` sends the draft to the pane
+ * before Tab, Up or Down so completion and history act on the real line. From
+ * that moment the strict pattern skips the input row and the bottom-up scan
+ * keeps climbing until it finds an older line that happens to end in a marker
+ * — a markdown blockquote's `>` is enough. Everything between the two then
+ * counts as "below the prompt" and is handed to the status block, which is a
+ * single scrolling row: the output, and the command about to be run,
+ * disappear into a strip 1.9em tall.
+ *
+ * Bounded to the bottom of the screen on purpose. An input line sits just
+ * above the footer; a `>` deep in scrollback is quoted text, not a prompt,
+ * and must still lose.
+ */
+const PROMPT_FILLED = /(?:^|[\s│┃|~\])])([❯➜›»▶>$#%])\s+\S/;
+
+/** Rows above the last non-blank one that a filled prompt may still occupy. */
+const FILLED_WINDOW = 6;
+
 /** A box border or rule: furniture around the prompt, not content. */
 const RULE = /^[\s─═━╌┄┈╭╮╰╯┌┐└┘├┤┬┴┼│┃▔▁_]*$/;
 
@@ -50,7 +72,10 @@ export function splitAtPrompt(screen: string): ScreenParts {
 
 	for (let i = end - 1; i >= 0; i--) {
 		const bare = plain(lines[i]).trimEnd();
-		if (!PROMPT.test(bare)) continue;
+		// Lowest match wins, so a filled input line is preferred over any older
+		// line that merely ends in a marker.
+		const filled = i >= end - FILLED_WINDOW && PROMPT_FILLED.test(bare);
+		if (!PROMPT.test(bare) && !filled) continue;
 		// A harness pads the space between its last output and its input box
 		// with empty rows. Keeping them put that padding between the output and
 		// bordr's own box — a screenful of nothing, on every pane.

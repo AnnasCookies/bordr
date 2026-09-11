@@ -49,6 +49,26 @@
 
 	function render(source: string): string {
 		const html = marked.parse(source, { async: false, gfm: true, breaks: true });
+		// `class` has to survive for the highlighter, which reads the language
+		// off `<code class="language-ts">`. Left open it is an overlay: `div`
+		// is allowed, Tailwind's stylesheet is global, and `fixed inset-0 z-40
+		// bg-black/40` are all compiled into it because bordr uses them — so
+		// an agent could paint over bordr's own chrome and put same-origin
+		// links under it. The hook narrows `class` to the one shape the
+		// highlighter needs, and is removed straight after so the file
+		// viewer's own sanitiser is unaffected.
+		DOMPurify.addHook('uponSanitizeAttribute', (node, data) => {
+			if (data.attrName !== 'class') return;
+			data.keepAttr = node.nodeName === 'CODE' && /^language-[\w-]+$/.test(data.attrValue);
+		});
+		try {
+			return sanitise(html);
+		} finally {
+			DOMPurify.removeHook('uponSanitizeAttribute');
+		}
+	}
+
+	function sanitise(html: string): string {
 		return DOMPurify.sanitize(html, {
 			ALLOWED_TAGS,
 			ALLOWED_ATTR: ['href', 'src', 'alt', 'title', 'class', 'colspan', 'rowspan'],
