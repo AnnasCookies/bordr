@@ -1,4 +1,5 @@
 import type { Activity } from './server/activity';
+import type { Machine } from './server/herdr/machines';
 
 import type { Message } from './server/transcript/types';
 import type { Picker } from './server/picker';
@@ -100,6 +101,8 @@ export interface TabNode {
 
 export interface WorkspaceNode {
 	workspaceId: string;
+	/** The machine this workspace lives on; empty for this host. */
+	machine: string;
 	label: string;
 	number: number;
 	focused: boolean;
@@ -107,3 +110,12 @@ export interface WorkspaceNode {
 }
 
 export type { Activity };
+
+export type { Machine };
+
+/** A machine and what its connection is doing, for the sidebar. */
+export interface MachineStatus {
+	machine: Machine;
+	state: 'connected' | 'connecting' | 'unreachable';
+	error: string | null;
+}

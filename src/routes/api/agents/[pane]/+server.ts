@@ -1,6 +1,8 @@
 import { error, json } from '@sveltejs/kit';
 import { rawAgent, rawPane, readPane, readVisible, toSummary } from '$lib/server/herdr';
 import { adapterFor } from '$lib/server/transcript';
+import { parsePane } from '$lib/server/herdr/address';
+import { ensureConnection, remoteTranscriptTail } from '$lib/server/herdr/connections';
 import { backfillBlocks } from '$lib/server/transcript/types';
 import { DEFAULT_TAIL_BYTES, readTranscriptTail } from '$lib/server/transcript/tail';
 import { menuFooter, parsePicker, pendingAsk, suggestionFrom } from '$lib/server/picker';
@@ -152,27 +154,51 @@ export const GET: RequestHandler = async ({ params, url }) => {
 	} else if (!sessionId) {
 		degraded = 'no-session';
 	} else {
-		const path = await adapter.resolve(sessionId);
-		if (!path) {
-			// herdr named a session, so the contract message ("reported no
-			// session") would be untrue here — the file is what is missing.
-			degraded = 'no-session';
-			reason = `herdr reported a session for this pane but its transcript file was not found. Run \`herdr integration install ${summary.agent}\` and restart the agent; showing the terminal instead.`;
-		} else {
-			try {
-				const tail = await readTranscriptTail(path, windowBytes);
-				messages = adapter.parse(tail.text);
-				hasMore = tail.partial;
-				// A whole transcript that parses to nothing is a format we no
-				// longer understand; a partial window with nothing in it is
-				// just a window full of tool output, and paging back may help.
-				if (messages.length === 0 && !tail.partial) {
-					degraded = 'empty';
-					reportEmpty(path, summary.agent, tail.text);
+		// A pane on another machine keeps its transcript on THAT machine, so
+		// the file is read over the same SSH connection the forward uses
+		// rather than looked for on this disk.
+		const { machineId } = parsePane(params.pane);
+		if (machineId) {
+			const connection = await ensureConnection(machineId);
+			const remote = connection
+				? await remoteTranscriptTail(connection.machine, summary.agent, sessionId, windowBytes)
+				: null;
+			if (remote === null) {
+				degraded = 'no-session';
+				reason = `The transcript for this pane lives on ${connection?.machine.label ?? machineId}; bordr could not read it over ssh. Its screen is shown instead.`;
+			} else {
+				try {
+					messages = adapter.parse(remote);
+					hasMore = remote.length >= windowBytes;
+					if (messages.length === 0) degraded = 'empty';
+				} catch (e) {
+					degraded = 'unreadable';
+					reason = e instanceof Error ? e.message : String(e);
 				}
-			} catch (e) {
-				degraded = 'unreadable';
-				reason = e instanceof Error ? e.message : String(e);
+			}
+		} else {
+			const path = await adapter.resolve(sessionId);
+			if (!path) {
+				// herdr named a session, so the contract message ("reported no
+				// session") would be untrue here — the file is what is missing.
+				degraded = 'no-session';
+				reason = `herdr reported a session for this pane but its transcript file was not found. Run \`herdr integration install ${summary.agent}\` and restart the agent; showing the terminal instead.`;
+			} else {
+				try {
+					const tail = await readTranscriptTail(path, windowBytes);
+					messages = adapter.parse(tail.text);
+					hasMore = tail.partial;
+					// A whole transcript that parses to nothing is a format we no
+					// longer understand; a partial window with nothing in it is
+					// just a window full of tool output, and paging back may help.
+					if (messages.length === 0 && !tail.partial) {
+						degraded = 'empty';
+						reportEmpty(path, summary.agent, tail.text);
+					}
+				} catch (e) {
+					degraded = 'unreadable';
+					reason = e instanceof Error ? e.message : String(e);
+				}
 			}
 		}
 	}

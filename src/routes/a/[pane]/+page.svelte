@@ -39,6 +39,40 @@
 	let showWork = $state(prefs.value.showWork);
 	/** The ＋ in the desktop tree opens the same sheet the agents list uses. */
 	let showNewAgent = $state(false);
+	/** The session tree as a drawer, on a phone. */
+	let treeOpen = $state(false);
+	/** Whether the desktop sidebar has room. Matches Tailwind's lg breakpoint. */
+	let wideScreen = $state(false);
+
+	/**
+	 * The drawer closes once the new pane has loaded, NOT when the link is
+	 * tapped.
+	 *
+	 * Closing it in the click handler unmounted the anchor mid-gesture, and on
+	 * touch that cancelled the navigation outright — the tap did nothing at
+	 * all, while a mouse click completed and hid the bug.
+	 */
+	let drawerPane = '';
+	$effect(() => {
+		const pane = detail.paneId;
+		// Only when the pane actually CHANGES. `detail` is replaced on every
+		// refresh, so an effect that merely reads it fires every few seconds —
+		// which slammed the drawer shut the instant it was opened.
+		if (drawerPane && drawerPane !== pane) treeOpen = false;
+		drawerPane = pane;
+	});
+
+	$effect(() => {
+		const query = window.matchMedia('(min-width: 1024px)');
+		const sync = () => {
+			wideScreen = query.matches;
+			// A drawer left open behind a rotation would sit under the sidebar.
+			if (query.matches) treeOpen = false;
+		};
+		sync();
+		query.addEventListener('change', sync);
+		return () => query.removeEventListener('change', sync);
+	});
 
 	/**
 	 * A bubble holds what was SAID; tool calls and thinking sit outside it.
@@ -92,7 +126,7 @@
 		commandsPane = pane;
 		commandsLoading = true;
 		commandList = null;
-		fetch(`/api/agents/${pane}/commands`)
+		fetch(`/api/agents/${encodeURIComponent(pane)}/commands`)
 			.then((r) => (r.ok ? r.json() : null))
 			.then((body: { commands?: SlashCommand[] } | null) => {
 				commandList = body?.commands ?? [];
@@ -557,7 +591,7 @@
 	}
 
 	async function toggleWatch() {
-		const response = await fetch(`/api/agents/${detail.paneId}/watch`, {
+		const response = await fetch(`/api/agents/${encodeURIComponent(detail.paneId)}/watch`, {
 			method: 'POST',
 			headers: { 'content-type': 'application/json' },
 			body: JSON.stringify({ watched: !watched })
@@ -776,7 +810,9 @@
 		loadingBack = true;
 		scrollbackError = null;
 		try {
-			const r = await fetch(`/api/agents/${detail.paneId}/read?lines=${lines}&ansi=1`);
+			const r = await fetch(
+				`/api/agents/${encodeURIComponent(detail.paneId)}/read?lines=${lines}&ansi=1`
+			);
 			if (!r.ok) throw await failure(r, 'read');
 			const body: unknown = await r.json();
 			const text =
@@ -804,7 +840,7 @@
 		busy = true;
 		uncertain = null;
 		try {
-			const r = await fetch(`/api/agents/${detail.paneId}/answer`, {
+			const r = await fetch(`/api/agents/${encodeURIComponent(detail.paneId)}/answer`, {
 				method: 'POST',
 				headers: { 'content-type': 'application/json' },
 				body: JSON.stringify({ index })
@@ -835,7 +871,7 @@
 	async function sendKeys(keys: string[]): Promise<boolean> {
 		sendError = null;
 		try {
-			const r = await fetch(`/api/agents/${detail.paneId}/keys`, {
+			const r = await fetch(`/api/agents/${encodeURIComponent(detail.paneId)}/keys`, {
 				method: 'POST',
 				headers: { 'content-type': 'application/json' },
 				body: JSON.stringify({ keys })
@@ -888,7 +924,10 @@
 				form.append('text', draft);
 				let sent: Response;
 				try {
-					sent = await fetch(`/api/agents/${detail.paneId}/image`, { method: 'POST', body: form });
+					sent = await fetch(`/api/agents/${encodeURIComponent(detail.paneId)}/image`, {
+						method: 'POST',
+						body: form
+					});
 				} catch {
 					// The adapter drops an oversize body before SvelteKit runs, which
 					// the browser reports as a failed fetch rather than a status. A
@@ -904,7 +943,7 @@
 				if (!sent.ok) throw await failure(sent, 'upload');
 				clearAttachments();
 			} else {
-				const sent = await fetch(`/api/agents/${detail.paneId}/prompt`, {
+				const sent = await fetch(`/api/agents/${encodeURIComponent(detail.paneId)}/prompt`, {
 					method: 'POST',
 					headers: { 'content-type': 'application/json' },
 					body: JSON.stringify({ text: draft })
@@ -1010,9 +1049,39 @@
 	conversation component to keep in step, which is what makes this safe.
 -->
 <div class="lg:flex lg:h-dvh lg:overflow-hidden">
-	<aside class="hidden w-[276px] shrink-0 lg:block">
-		<SessionTree current={detail.paneId} onnew={() => (showNewAgent = true)} />
-	</aside>
+	<!--
+		Mounted only at desktop widths, not merely hidden: a `hidden lg:block`
+		aside still exists on a phone, which meant two trees polling /api/panes
+		and a stray copy of the drawer's markup in the DOM.
+	-->
+	{#if wideScreen}
+		<aside class="hidden w-[276px] shrink-0 lg:block">
+			<SessionTree current={detail.paneId} onnew={() => (showNewAgent = true)} />
+		</aside>
+	{/if}
+
+	<!--
+		The same tree as a drawer below lg. One component, so the phone and the
+		desktop can never drift; only how it is presented changes.
+	-->
+	{#if treeOpen}
+		<div class="fixed inset-0 z-40 lg:hidden">
+			<button
+				class="absolute inset-0 bg-black/40"
+				aria-label="Close the session list"
+				onclick={() => (treeOpen = false)}
+			></button>
+			<div class="absolute inset-y-0 left-0 w-[86%] max-w-[320px] shadow-2xl">
+				<SessionTree
+					current={detail.paneId}
+					onnew={() => {
+						treeOpen = false;
+						showNewAgent = true;
+					}}
+				/>
+			</div>
+		</div>
+	{/if}
 	<div
 		class="flex min-h-dvh flex-col lg:h-dvh lg:min-h-0 lg:flex-1 lg:overflow-y-auto"
 		bind:this={swipeRoot}
@@ -1023,6 +1092,12 @@
 					href={resolve('/')}
 					class="flex h-10 w-10 shrink-0 items-center justify-center font-mono text-base text-working"
 					aria-label="Back to agents">←</a
+				>
+				<button
+					class="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg text-muted lg:hidden"
+					aria-label="Session list"
+					aria-expanded={treeOpen}
+					onclick={() => (treeOpen = true)}>☰</button
 				>
 				<!--
 					The work switch, when it has been moved off the transcript. In
