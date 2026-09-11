@@ -97,6 +97,28 @@ export interface TabNode {
 	number: number;
 	focused: boolean;
 	panes: PaneNode[];
+	/** How herdr actually arranges those panes; absent if it did not say. */
+	layout?: TabLayout;
+}
+
+/** One node of a tab's split tree: a pane, or a division into two. */
+export type SplitNode =
+	| { kind: 'pane'; paneId: string }
+	| {
+			kind: 'split';
+			/** Stacked rather than side by side. */
+			vertical: boolean;
+			ratio: number;
+			/** Which half to descend into at each level — what herdr's layout.set_split_ratio takes. */
+			path: boolean[];
+			first: SplitNode;
+			second: SplitNode;
+	  };
+
+export interface TabLayout {
+	zoomed: boolean;
+	focusedPaneId: string;
+	tree: SplitNode;
 }
 
 export interface WorkspaceNode {

@@ -15,6 +15,9 @@
 	import { throttleTrailing } from '$lib/throttle';
 	import { rankCommands, type SlashCommand } from '$lib/commands';
 	import HarnessMark from '$lib/components/harness-mark.svelte';
+	import AppHeader from '$lib/components/app-header.svelte';
+	import PaneScreen from '$lib/components/pane-screen.svelte';
+	import PaneSplit from '$lib/components/pane-split.svelte';
 	import Icon from '$lib/components/icon.svelte';
 	import MessageBlocks from '$lib/components/message-blocks.svelte';
 	import SessionTree from '$lib/components/session-tree.svelte';
@@ -22,6 +25,7 @@
 	import StatusBlock from '$lib/components/status-block.svelte';
 	import NewAgentSheet from '$lib/components/new-agent-sheet.svelte';
 	import type { Block } from '$lib/server/transcript/types';
+	import type { WorkspaceNode } from '$lib/types';
 	let { data } = $props();
 
 	const TAIL = 80;
@@ -38,6 +42,62 @@
 	let treeOpen = $state(false);
 	/** Whether the desktop sidebar has room. Matches Tailwind's lg breakpoint. */
 	let wideScreen = $state(false);
+
+	/**
+	 * The split this pane lives in, when it shares its tab with others.
+	 *
+	 * Polled with the tree rather than carried on the pane detail: the layout
+	 * belongs to the TAB, and it changes when someone splits or closes a pane
+	 * in the terminal, not when this conversation moves on.
+	 */
+	let workspaces = $state<WorkspaceNode[]>([]);
+
+	const splitLayout = $derived.by(() => {
+		if (!prefs.value.splitPanes) return undefined;
+		for (const workspace of workspaces) {
+			for (const tab of workspace.tabs) {
+				if (!tab.panes.some((p) => p.paneId === detail.paneId)) continue;
+				return tab.panes.length > 1 ? tab.layout : undefined;
+			}
+		}
+		return undefined;
+	});
+
+	/** The tab id the split belongs to, which set_split_ratio needs. */
+	const splitTabId = $derived(
+		workspaces.flatMap((w) => w.tabs).find((t) => t.panes.some((p) => p.paneId === detail.paneId))
+			?.tabId ?? ''
+	);
+
+	async function loadLayout() {
+		try {
+			const res = await fetch('/api/panes');
+			if (res.ok) workspaces = (await res.json()).workspaces ?? [];
+		} catch {
+			// Keep the last layout rather than collapsing the split mid-turn.
+		}
+	}
+
+	$effect(() => {
+		void loadLayout();
+		const timer = setInterval(() => void loadLayout(), 5000);
+		return () => clearInterval(timer);
+	});
+
+	/** Move a divider — in herdr, not just here. */
+	async function setRatio(path: boolean[], ratio: number) {
+		if (!splitTabId) return;
+		try {
+			await fetch('/api/layout', {
+				method: 'POST',
+				headers: { 'content-type': 'application/json' },
+				body: JSON.stringify({ tabId: splitTabId, path, ratio })
+			});
+			await loadLayout();
+		} catch {
+			// herdr's real ratio comes back on the next poll either way.
+		}
+	}
 
 	/**
 	 * The drawer closes once the new pane has loaded, NOT when the link is
@@ -234,13 +294,18 @@
 	const toolCount = $derived(visibleMessages.reduce((n, m) => n + m.tools.length, 0));
 
 	/**
-	 * The transcript with any still-unclaimed prompts slotted into it by time.
+	 * The transcript, with any still-unclaimed prompts after it.
 	 *
 	 * A queued prompt is NOT written to the transcript when you send it — the
 	 * harness writes its file per turn, so it exists only on that pane's
-	 * screen until the turn processes it. The terminal still shows it in
-	 * place, above whatever ran afterwards, so collecting them all at the end
-	 * put them in the wrong order the moment any tool ran after one.
+	 * screen until the turn processes it.
+	 *
+	 * They go at the END, in the order they were sent. Slotting them by
+	 * timestamp — after the last entry written before they were sent — put a
+	 * queued prompt ABOVE the replies the agent went on to write, which reads
+	 * as though it had already been answered. A queued prompt has not happened
+	 * yet; the bottom of the transcript is where it belongs, and it moves into
+	 * place on its own when the turn claims it.
 	 */
 	type Row =
 		| { kind: 'message'; message: (typeof visibleMessages)[number]; key: string }
@@ -253,20 +318,8 @@
 			message,
 			key: `m${base + i}`
 		}));
-		for (const sent of pendingSends) {
-			// After the last entry the harness wrote before this was sent.
-			// Timestamps are only on entries the harness stamped; anything
-			// unstamped keeps its relative position by falling through.
-			let at = out.length;
-			for (let i = out.length - 1; i >= 0; i--) {
-				const row = out[i];
-				const stamp = row.kind === 'message' ? (row.message.at ?? 0) : row.sent.at;
-				if (stamp && stamp <= sent.at) {
-					at = i + 1;
-					break;
-				}
-			}
-			out.splice(at, 0, { kind: 'pending', sent, key: `p${sent.id}` });
+		for (const sent of [...pendingSends].sort((a, b) => a.at - b.at)) {
+			out.push({ kind: 'pending', sent, key: `p${sent.id}` });
 		}
 		return out;
 	});
@@ -1057,123 +1110,79 @@
 
 <svelte:head><title>{detail.title || detail.paneId} · bordr</title></svelte:head>
 
-<!--
-	Desktop adds a session tree beside the conversation; the phone gets
-	exactly what it had. Everything is one breakpoint — there is no second
-	conversation component to keep in step, which is what makes this safe.
--->
-<div class="lg:flex lg:h-dvh lg:overflow-hidden">
-	<!--
-		Mounted only at desktop widths, not merely hidden: a `hidden lg:block`
-		aside still exists on a phone, which meant two trees polling /api/panes
-		and a stray copy of the drawer's markup in the DOM.
-	-->
-	{#if wideScreen}
-		<aside class="hidden w-[276px] shrink-0 lg:block">
-			<SessionTree current={detail.paneId} onnew={() => (showNewAgent = true)} />
-		</aside>
-	{/if}
+{#snippet headerTitle()}
+	<span class="block truncate text-[15px] font-semibold">{detail.title || detail.paneId}</span>
+	<span class="block truncate font-mono text-[10.5px] text-muted">
+		<span class={STATUS_INK[detail.status] ?? 'text-faint'}>● {detail.status}</span>
+		·
+		<span class={harnessText(detail.agent)}
+			>{#if prefs.value.harnessIcons}<HarnessMark agent={detail.agent} />{/if}
+			{detail.agent}</span
+		>
+		{#if detail.workspaceLabel}· {detail.workspaceLabel}{/if}
+		{#if position >= 0 && order.length > 1}
+			· {position + 1}/{order.length}
+		{/if}
+	</span>
+{/snippet}
 
+{#snippet headerActions()}
 	<!--
-		The same tree as a drawer below lg. One component, so the phone and the
-		desktop can never drift; only how it is presented changes.
+		The work switch, when it has been moved off the transcript. Up here it is
+		a state you set once, rather than a link you re-find at the bottom of a
+		growing conversation.
 	-->
-	{#if treeOpen}
-		<div class="fixed inset-0 z-40 lg:hidden">
-			<button
-				class="absolute inset-0 bg-black/40"
-				aria-label="Close the session list"
-				onclick={() => (treeOpen = false)}
-			></button>
-			<div class="absolute inset-y-0 left-0 w-[86%] max-w-[320px] shadow-2xl">
-				<SessionTree
-					current={detail.paneId}
-					onnew={() => {
-						treeOpen = false;
-						showNewAgent = true;
-					}}
-				/>
-			</div>
-		</div>
+	{#if prefs.value.workControl === 'header' && toolCount > 0}
+		<button
+			class="flex h-8 shrink-0 items-center rounded-full px-2.5 text-[12px] {showWork
+				? 'bg-working-bg text-working'
+				: 'text-muted'}"
+			aria-pressed={showWork}
+			onclick={() => {
+				showWork = !showWork;
+				prefs.set('showWork', showWork);
+			}}
+		>
+			work {toolCount}
+		</button>
 	{/if}
+	{#if detail.status === 'working'}
+		<button
+			class="flex h-9 shrink-0 items-center gap-1.5 rounded-full border border-edge px-3 text-[13px] font-medium"
+			onclick={stop}
+		>
+			<span class="h-2 w-2 rounded-full bg-working ring-[3px] ring-working-halo" aria-hidden="true"
+			></span>
+			Stop
+		</button>
+	{/if}
+	<button
+		class="flex h-9 w-9 shrink-0 items-center justify-center rounded-full border {watched
+			? 'border-blocked-edge bg-blocked-bg text-blocked-ink'
+			: 'border-edge text-faint'}"
+		aria-label={watched ? 'Stop notifying on done' : 'Notify on every done'}
+		aria-pressed={watched}
+		onclick={toggleWatch}
+	>
+		<Icon name="bell" size={17} />
+	</button>
+{/snippet}
+
+{#snippet conversation()}
 	<div
-		class="flex min-h-dvh flex-col lg:h-dvh lg:min-h-0 lg:flex-1 lg:overflow-y-auto"
+		class="flex min-h-dvh flex-col lg:h-full lg:min-h-0 lg:flex-1 lg:overflow-y-auto"
 		bind:this={swipeRoot}
 	>
 		<header class="sticky top-0 z-10 border-b border-hairline bg-page">
-			<div class="flex items-center gap-1 px-2 pt-1 pb-1.5">
-				<a
-					href={resolve('/')}
-					class="flex h-10 w-10 shrink-0 items-center justify-center font-mono text-base text-working"
-					aria-label="Back to agents">←</a
-				>
-				<button
-					class="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg text-muted lg:hidden"
-					aria-label="Session list"
-					aria-expanded={treeOpen}
-					onclick={() => (treeOpen = true)}>☰</button
-				>
-				<!--
-					The work switch, when it has been moved off the transcript. In
-					the header it is a state you set once, rather than a link you
-					re-find at the bottom of a growing conversation.
-				-->
-				{#if prefs.value.workControl === 'header' && toolCount > 0}
-					<button
-						class="order-last flex h-8 shrink-0 items-center rounded-full px-2.5 text-[12px] {showWork
-							? 'bg-working-bg text-working'
-							: 'text-muted'}"
-						aria-pressed={showWork}
-						onclick={() => {
-							showWork = !showWork;
-							prefs.set('showWork', showWork);
-						}}
-					>
-						work {toolCount}
-					</button>
-				{/if}
-				<span class="min-w-0 flex-1">
-					<span class="block truncate text-[16px] font-semibold"
-						>{detail.title || detail.paneId}</span
-					>
-					<span class="block truncate font-mono text-[10.5px] text-muted">
-						<span class={STATUS_INK[detail.status] ?? 'text-faint'}>● {detail.status}</span>
-						·
-						<span class={harnessText(detail.agent)}
-							>{#if prefs.value.harnessIcons}<HarnessMark agent={detail.agent} />{/if}
-							{detail.agent}</span
-						>
-						{#if detail.workspaceLabel}· {detail.workspaceLabel}{/if}
-						{#if position >= 0 && order.length > 1}
-							· {position + 1}/{order.length}
-						{/if}
-					</span>
-				</span>
-				{#if detail.status === 'working'}
-					<button
-						class="flex h-9 shrink-0 items-center gap-1.5 rounded-full border border-edge px-3 text-[13px] font-medium"
-						onclick={stop}
-					>
-						<span
-							class="h-2 w-2 rounded-full bg-working ring-[3px] ring-working-halo"
-							aria-hidden="true"
-						></span>
-						Stop
-					</button>
-				{/if}
-				<button
-					class="flex h-9 w-9 shrink-0 items-center justify-center rounded-full border {watched
-						? 'border-blocked-edge bg-blocked-bg text-blocked-ink'
-						: 'border-edge text-faint'}"
-					aria-label={watched ? 'Stop notifying on done' : 'Notify on every done'}
-					aria-pressed={watched}
-					onclick={toggleWatch}
-				>
-					<Icon name="bell" size={17} />
-				</button>
-			</div>
+			{#if !wideScreen}
+				{@render paneHeader()}
+			{/if}
 
-			<WorkspaceTabs current={detail.paneId} />
+			<!--
+				The pane strip is what the split itself already is, so it appears
+				only where the split is not being drawn.
+			-->
+			<WorkspaceTabs current={detail.paneId} panes={!(wideScreen && splitLayout)} />
 
 			{#if detail.statusLines.length > 0 && prefs.value.statusPosition === 'header'}
 				<StatusBlock
@@ -1252,11 +1261,11 @@
 					>
 						{#each scrollback.split('\n') as line, i (i)}
 							<!--
-							Safe: ansiToHtml escapes every HTML metacharacter in the payload
-							and emits only <span style="…"> wrappers for SGR colour — proven
-							by the escaping cases in src/lib/ansi.test.ts. Terminal output is
-							untrusted, which is exactly why it is escaped rather than trusted.
-						-->
+								Safe: ansiToHtml escapes every HTML metacharacter in the payload
+								and emits only <span style="…"> wrappers for SGR colour — proven
+								by the escaping cases in src/lib/ansi.test.ts. Terminal output is
+								untrusted, which is exactly why it is escaped rather than trusted.
+							-->
 							<!-- eslint-disable svelte/no-at-html-tags -->
 							<div class="whitespace-pre">{@html ansiToHtml(line, true) || '&nbsp;'}</div>
 						{/each}
@@ -1348,8 +1357,8 @@
 								{/if}
 							{:else if message.text || (showWork && (message.blocks?.length ?? 0) > 0)}
 								<!-- A turn that is only tool calls has nothing to show while the
-						     work is hidden; rendering the prefix anyway left a column of
-						     bare dots separated by empty space. -->
+							     work is hidden; rendering the prefix anyway left a column of
+							     bare dots separated by empty space. -->
 								<div class="flex gap-2">
 									{#if !prefs.value.bubbles}
 										<span
@@ -1397,10 +1406,10 @@
 					{/each}
 
 					<!--
-						What the harness says it is doing, in its own words. "working"
-						was all bordr could say; the pane has always known the verb,
-						the elapsed time and the tokens spent.
-					-->
+							What the harness says it is doing, in its own words. "working"
+							was all bordr could say; the pane has always known the verb,
+							the elapsed time and the tokens spent.
+						-->
 					{#if detail.status === 'working'}
 						<div class="ml-[22px]">
 							<div class="flex items-center gap-1.5 font-mono text-[11px] text-muted">
@@ -1421,13 +1430,13 @@
 					{/if}
 
 					<!--
-					Sent, accepted by herdr, not yet in the transcript.
+						Sent, accepted by herdr, not yet in the transcript.
 
-					BELOW the working indicator, which is where the terminal puts
-					it: the agent is still finishing the turn above, and your
-					prompt is waiting behind it. Above the spinner it read as
-					though it had already been picked up.
-				-->
+						BELOW the working indicator, which is where the terminal puts
+						it: the agent is still finishing the turn above, and your
+						prompt is waiting behind it. Above the spinner it read as
+						though it had already been picked up.
+					-->
 				{/if}
 
 				{#if toolCount > 0 && prefs.value.workControl === 'inline'}
@@ -1510,7 +1519,7 @@
 
 			{#if !detail.picker && detail.menu}
 				<!-- A menu bordr could not read as options (omp's model browser,
-			     Claude Code's /config): say so, and open the key strip. -->
+				     Claude Code's /config): say so, and open the key strip. -->
 				<section
 					class="mt-4 flex overflow-hidden rounded-xl border border-blocked-edge bg-blocked-surface"
 				>
@@ -1538,10 +1547,10 @@
 			{#if showControls}
 				<div class="mt-4">
 					<!--
-					The whole pane, scrollable, held at the bottom where the prompt
-					and footer live; a long panel (Claude Code's /config) is read by
-					scrolling up inside the box rather than being cut off.
-				-->
+						The whole pane, scrollable, held at the bottom where the prompt
+						and footer live; a long panel (Claude Code's /config) is read by
+						scrolling up inside the box rather than being cut off.
+					-->
 					<div
 						use:termGrid
 						bind:this={screenBox}
@@ -1551,11 +1560,11 @@
 					>
 						{#each detail.screenTail.split('\n') as line, i (i)}
 							<!--
-							Safe: ansiToHtml escapes every HTML metacharacter in the payload
-							and emits only <span style="…"> wrappers for SGR colour — proven
-							by the escaping cases in src/lib/ansi.test.ts. Terminal output is
-							untrusted, which is exactly why it is escaped rather than trusted.
-						-->
+								Safe: ansiToHtml escapes every HTML metacharacter in the payload
+								and emits only <span style="…"> wrappers for SGR colour — proven
+								by the escaping cases in src/lib/ansi.test.ts. Terminal output is
+								untrusted, which is exactly why it is escaped rather than trusted.
+							-->
 							<!-- eslint-disable svelte/no-at-html-tags -->
 							<div class="whitespace-pre">{@html ansiToHtml(line, true) || '&nbsp;'}</div>
 						{/each}
@@ -1569,11 +1578,11 @@
 
 		<div class="sticky bottom-0 z-10">
 			<!--
-				Above the whole composer stack, never on it: the suggestion chip
-				and the input are the two things you are reaching for, and a pill
-				parked over either is worse than no pill. Absolute inside the
-				sticky wrapper, so it overlays the transcript only.
-			-->
+					Above the whole composer stack, never on it: the suggestion chip
+					and the input are the two things you are reaching for, and a pill
+					parked over either is worse than no pill. Absolute inside the
+					sticky wrapper, so it overlays the transcript only.
+				-->
 			{#if !following}
 				<div class="pointer-events-none absolute -top-9 right-0 left-0 flex justify-center">
 					<button
@@ -1589,11 +1598,11 @@
 				style="padding-bottom: max(0.625rem, env(safe-area-inset-bottom))"
 			>
 				<!--
-			The harness's own ghost prompt. Tapping fills the box rather than
-			sending: on a phone you cannot see what you are about to commit to
-			the way you can in a terminal, and it is usually a starting point
-			worth editing. Hidden the moment you type anything of your own.
-		-->
+				The harness's own ghost prompt. Tapping fills the box rather than
+				sending: on a phone you cannot see what you are about to commit to
+				the way you can in a terminal, and it is usually a starting point
+				worth editing. Hidden the moment you type anything of your own.
+			-->
 				{#if prefs.value.showSuggestions && detail.suggestion && draft.trim() === ''}
 					<button
 						class="mb-2 flex w-full items-center gap-2 rounded-xl border border-hairline bg-card px-3 py-2 text-left"
@@ -1678,10 +1687,10 @@
 				{/if}
 
 				<!--
-			A `!` draft is a SHELL command, not a message to the agent — it runs
-			on the host. The box says so before you send it, because the two are
-			one keystroke apart and only one of them is undoable.
-		-->
+				A `!` draft is a SHELL command, not a message to the agent — it runs
+				on the host. The box says so before you send it, because the two are
+				one keystroke apart and only one of them is undoable.
+			-->
 				<div
 					class="flex items-end gap-1.5 rounded-xl border p-2 {isShell
 						? 'border-working bg-working-bg'
@@ -1802,9 +1811,9 @@
 				{/if}
 			</div>
 			<!--
-				The other home for the status block: under the composer, where the
-				on-screen keyboard covers it rather than the conversation.
-			-->
+					The other home for the status block: under the composer, where the
+					on-screen keyboard covers it rather than the conversation.
+				-->
 			{#if detail.statusLines.length > 0 && prefs.value.statusPosition === 'bottom'}
 				<div class="border-t border-hairline bg-page pt-1.5">
 					<StatusBlock
@@ -1816,6 +1825,99 @@
 				</div>
 			{/if}
 		</div>
+	</div>
+{/snippet}
+{#snippet splitTile(paneId: string)}
+	{#if paneId === detail.paneId}
+		<div
+			class="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden ring-1 ring-working/50 ring-inset"
+		>
+			{@render conversation()}
+		</div>
+	{:else}
+		<PaneScreen {paneId} onopen={() => goto(resolve('/a/[pane]', { pane: paneId }))} />
+	{/if}
+{/snippet}
+
+{#snippet paneHeader()}
+	<AppHeader
+		onmenu={() =>
+			wideScreen ? prefs.set('sidebarOpen', !prefs.value.sidebarOpen) : (treeOpen = true)}
+		menuLabel={wideScreen
+			? prefs.value.sidebarOpen
+				? 'Hide the session list'
+				: 'Show the session list'
+			: 'Session list'}
+		menuExpanded={wideScreen ? prefs.value.sidebarOpen : treeOpen}
+		middle={headerTitle}
+		actions={headerActions}
+	/>
+{/snippet}
+
+<!--
+	Desktop adds a session tree beside the conversation; the phone gets
+	exactly what it had. Everything is one breakpoint — there is no second
+	conversation component to keep in step, which is what makes this safe.
+-->
+<div class="lg:flex lg:h-dvh lg:flex-col lg:overflow-hidden">
+	{#if wideScreen}
+		<header class="shrink-0 border-b border-hairline bg-page">
+			{@render paneHeader()}
+		</header>
+	{/if}
+	<div class="lg:flex lg:min-h-0 lg:w-full lg:min-w-0 lg:flex-1">
+		<!--
+		Mounted only at desktop widths, not merely hidden: a `hidden lg:block`
+		aside still exists on a phone, which meant two trees polling /api/panes
+		and a stray copy of the drawer's markup in the DOM.
+	-->
+		{#if wideScreen && prefs.value.sidebarOpen}
+			<aside class="hidden w-[276px] shrink-0 lg:block">
+				<SessionTree current={detail.paneId} onnew={() => (showNewAgent = true)} />
+			</aside>
+		{/if}
+
+		<!--
+		The same tree as a drawer below lg. One component, so the phone and the
+		desktop can never drift; only how it is presented changes.
+	-->
+		{#if treeOpen}
+			<div class="fixed inset-0 z-40 lg:hidden">
+				<button
+					class="absolute inset-0 bg-black/40"
+					aria-label="Close the session list"
+					onclick={() => (treeOpen = false)}
+				></button>
+				<div class="absolute inset-y-0 left-0 w-[86%] max-w-[320px] shadow-2xl">
+					<SessionTree
+						current={detail.paneId}
+						onnew={() => {
+							treeOpen = false;
+							showNewAgent = true;
+						}}
+					/>
+				</div>
+			</div>
+		{/if}
+		{#if wideScreen && splitLayout}
+			<!--
+			The tab as herdr has it: the pane you are in holds the transcript and
+			the composer, and every other pane in the split shows its own screen.
+			A tile IS the pane, not a picture of it — which is the whole point of
+			showing the split rather than a row of chips.
+		-->
+			<!--
+				min-w-0 matters here: without it this flex item sizes to its
+				content, and a pane whose screen holds one long unwrapped line
+				pushed the whole split wider than the window rather than scrolling
+				inside its own tile.
+			-->
+			<div class="flex min-h-0 min-w-0 flex-1 overflow-hidden">
+				<PaneSplit node={splitLayout.tree} tile={splitTile} onratio={setRatio} />
+			</div>
+		{:else}
+			{@render conversation()}
+		{/if}
 	</div>
 	<NewAgentSheet open={showNewAgent} onclose={() => (showNewAgent = false)} />
 </div>

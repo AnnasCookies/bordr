@@ -9,13 +9,23 @@
 	import { harnessText, STATUS_INK, STATUS_RAIL } from '$lib/theme';
 	import AgentRow from '$lib/components/agent-row.svelte';
 	import ConnectionBanner from '$lib/components/connection-banner.svelte';
+	import AppHeader from '$lib/components/app-header.svelte';
 	import Icon from '$lib/components/icon.svelte';
 	import TabBar from '$lib/components/tab-bar.svelte';
 	import NewAgentSheet from '$lib/components/new-agent-sheet.svelte';
+	import SessionTree from '$lib/components/session-tree.svelte';
 	import { checkPush, togglePushDetailed, type PushState } from '$lib/push-client';
 	import type { AgentSummary } from '$lib/types';
 
 	const store = agentStore;
+	/**
+	 * The workspaces drawer, from the agents list.
+	 *
+	 * The tree only existed on a conversation, so on a phone the machines and
+	 * their workspaces were unreachable until you had opened an agent — and a
+	 * shell pane, which is not an agent, could not be reached at all.
+	 */
+	let treeOpen = $state(false);
 	/**
 	 * A picture shared into bordr from another app.
 	 *
@@ -109,14 +119,7 @@
 </script>
 
 <div class="flex min-h-dvh flex-col">
-	<header class="flex items-center gap-2 px-4 pt-1.5 pb-2">
-		<img
-			src="/patrl-face.png"
-			alt=""
-			class="h-7 w-7 rounded-full ring-1 ring-black/10 dark:ring-white/15"
-			style="image-rendering: pixelated"
-		/>
-		<h1 class="text-[17px] font-semibold tracking-[-0.2px]">bordr</h1>
+	{#snippet listStatus()}
 		{#if blocked > 0}
 			<span class="rounded-md bg-blocked-bg px-2 py-[3px] text-xs font-medium text-blocked-ink">
 				{blocked} blocked
@@ -126,26 +129,40 @@
 				{working} working
 			</span>
 		{/if}
+	{/snippet}
+
+	{#snippet listActions()}
 		{#if store.connection === 'reconnecting'}
 			<!-- A blip gets a spinner, not a banner: it recovers in about a second
 			     and saying "unreachable" every time made a healthy app look broken. -->
 			<span
-				class="ml-auto inline-block h-3.5 w-3.5 shrink-0 rounded-full border-2 border-hairline border-t-faint motion-safe:animate-spin"
+				class="inline-block h-3.5 w-3.5 shrink-0 rounded-full border-2 border-hairline border-t-faint motion-safe:animate-spin"
 				role="status"
 				aria-label="Reconnecting"
 			></span>
 		{/if}
 		{#if pushState !== 'unsupported'}
 			<button
-				class="flex h-11 w-11 items-center justify-center {store.connection === 'reconnecting'
-					? ''
-					: 'ml-auto'} {pushState === 'on' ? 'text-done' : 'text-faint'}"
+				class="flex h-9 w-9 items-center justify-center {pushState === 'on'
+					? 'text-done'
+					: 'text-faint'}"
 				aria-label={pushState === 'on' ? 'Disable notifications' : 'Enable notifications'}
 				onclick={onTogglePush}
 			>
-				<Icon name="bell" size={22} />
+				<Icon name="bell" size={18} />
 			</button>
 		{/if}
+	{/snippet}
+
+	<header class="border-b border-hairline">
+		<AppHeader
+			onmenu={() => (treeOpen = true)}
+			menuLabel="Workspaces"
+			menuExpanded={treeOpen}
+			wordmark="always"
+			middle={listStatus}
+			actions={listActions}
+		/>
 	</header>
 
 	{#if pushMessage}
@@ -359,6 +376,24 @@
 	>
 		<Icon name="plus" size={24} />
 	</button>
+
+	{#if treeOpen}
+		<div class="fixed inset-0 z-40">
+			<button
+				class="absolute inset-0 bg-black/40"
+				aria-label="Close the workspaces list"
+				onclick={() => (treeOpen = false)}
+			></button>
+			<div class="absolute inset-y-0 left-0 w-[86%] max-w-[320px] shadow-2xl">
+				<SessionTree
+					onnew={() => {
+						treeOpen = false;
+						showNew = true;
+					}}
+				/>
+			</div>
+		</div>
+	{/if}
 
 	<NewAgentSheet open={showNew} onclose={() => (showNew = false)} />
 
