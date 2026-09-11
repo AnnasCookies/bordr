@@ -9,18 +9,12 @@
 	import { prefs } from '$lib/prefs.svelte';
 	import { flatOrder } from '$lib/grouping';
 	import { decideSwipe, inHorizontalScroller, neighbourPane } from '$lib/swipe';
-	import {
-		harnessBorder,
-		harnessBubble,
-		harnessHex,
-		harnessIcon,
-		harnessText,
-		STATUS_INK
-	} from '$lib/theme';
+	import { harnessBorder, harnessBubble, harnessHex, harnessText, STATUS_INK } from '$lib/theme';
 	import { ansiToHtml } from '$lib/ansi';
 	import { termGrid } from '$lib/term-grid';
 	import { throttleTrailing } from '$lib/throttle';
 	import { rankCommands, type SlashCommand } from '$lib/commands';
+	import HarnessMark from '$lib/components/harness-mark.svelte';
 	import Icon from '$lib/components/icon.svelte';
 	import MessageBlocks from '$lib/components/message-blocks.svelte';
 	import SessionTree from '$lib/components/session-tree.svelte';
@@ -670,8 +664,27 @@
 		const host = scrollHost();
 		const target: HTMLElement | Window = host ?? window;
 		target.addEventListener('scroll', onScroll, { passive: true });
+
+		// `following` is geometry, and a scroll is only one of the things that
+		// changes it. The mobile keyboard opening, a rotation, the desktop
+		// column being resized and the transcript growing all move the bottom
+		// without any scroll event — which left the Latest button showing while
+		// already at the end, pointing at where you were.
+		//
+		// visualViewport as well as window: the soft keyboard resizes the
+		// visual viewport and, on iOS, fires nothing on window at all.
+		window.addEventListener('resize', onScroll);
+		window.visualViewport?.addEventListener('resize', onScroll);
+		const observer = new ResizeObserver(onScroll);
+		if (swipeRoot) observer.observe(swipeRoot);
+
 		onScroll();
-		return () => target.removeEventListener('scroll', onScroll);
+		return () => {
+			target.removeEventListener('scroll', onScroll);
+			window.removeEventListener('resize', onScroll);
+			window.visualViewport?.removeEventListener('resize', onScroll);
+			observer.disconnect();
+		};
 	});
 
 	/** Refresh from the server; keep the view pinned to the bottom unless the
@@ -1127,9 +1140,7 @@
 						<span class={STATUS_INK[detail.status] ?? 'text-faint'}>● {detail.status}</span>
 						·
 						<span class={harnessText(detail.agent)}
-							>{#if prefs.value.harnessIcons}<span class="font-mono" aria-hidden="true"
-									>{harnessIcon(detail.agent)}</span
-								>{/if}>
+							>{#if prefs.value.harnessIcons}<HarnessMark agent={detail.agent} />{/if}
 							{detail.agent}</span
 						>
 						{#if detail.workspaceLabel}· {detail.workspaceLabel}{/if}

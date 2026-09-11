@@ -2,7 +2,8 @@
 	import { resolve } from '$app/paths';
 	import { SvelteSet } from 'svelte/reactivity';
 	import { prefs, type AgentOrder } from '$lib/prefs.svelte';
-	import { STATUS_INK, harnessIcon, harnessText } from '$lib/theme';
+	import { STATUS_RAIL, harnessText } from '$lib/theme';
+	import HarnessMark from './harness-mark.svelte';
 	import type { MachineStatus, PaneNode, WorkspaceNode } from '$lib/types';
 
 	let { current = '', onnew = () => {} }: { current?: string; onnew?: () => void } = $props();
@@ -307,10 +308,15 @@
 				class="flex items-center gap-2 px-2 py-1 {pane.paneId === current ? 'bg-chip' : ''}"
 				aria-current={pane.paneId === current ? 'page' : undefined}
 			>
+				<!--
+					STATUS_RAIL, not STATUS_INK: the ink map is text colours, so a
+					dot carrying `text-working` painted nothing at all and every
+					agent in this list looked idle.
+				-->
 				<span
 					class="h-1.5 w-1.5 shrink-0 rounded-full {pane.hasAgent
-						? (STATUS_INK[pane.status] ?? 'bg-idle-rail')
-						: 'bg-idle-rail'}"
+						? (STATUS_RAIL[pane.status] ?? 'bg-idle-rail')
+						: 'bg-edge'}"
 					aria-hidden="true"
 				></span>
 				<span class="min-w-0 flex-1">
@@ -328,7 +334,7 @@
 				<span
 					class="shrink-0 font-mono text-[12px] {harnessText(pane.agent)}"
 					title={pane.hasAgent ? pane.agent : 'shell'}
-					aria-label={pane.hasAgent ? pane.agent : 'shell'}>{harnessIcon(pane.agent)}</span
+					aria-label={pane.hasAgent ? pane.agent : 'shell'}><HarnessMark agent={pane.agent} /></span
 				>
 			</a>
 		{/each}
