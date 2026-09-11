@@ -49,6 +49,23 @@ export function listMachines(): Machine[] {
 	}
 	const ssh = (raw as { ssh?: unknown })?.ssh;
 	if (!Array.isArray(ssh)) return [];
+
+	// Opt in, per machine, on bordr's side.
+	//
+	// herdr's endpoints file is a list of machines you once typed into a
+	// terminal. Inheriting it wholesale means anyone who reaches bordr can
+	// drive every one of them, and a laptop added months ago becomes remotely
+	// drivable the day this ships, silently. bordr has no login, so the list
+	// of hosts it will reach has to be a decision someone made here.
+	//
+	// Empty is the default and means local only, which is what the threat
+	// model in SECURITY.md describes.
+	const allowed = (env.BORDR_MACHINES ?? '')
+		.split(',')
+		.map((entry) => entry.trim().toLowerCase())
+		.filter(Boolean);
+	if (allowed.length === 0) return [];
+
 	return ssh
 		.map((entry) => entry as Record<string, unknown>)
 		.filter((entry) => typeof entry.label === 'string' && entry.label)
@@ -58,5 +75,9 @@ export function listMachines(): Machine[] {
 			target: String(entry.target ?? ''),
 			session: String(entry.session ?? 'default'),
 			enabled: entry.enabled !== false
-		}));
+		}))
+		.filter(
+			(machine) =>
+				allowed.includes(machine.id.toLowerCase()) || allowed.includes(machine.label.toLowerCase())
+		);
 }

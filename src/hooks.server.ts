@@ -75,7 +75,14 @@ export const handle: Handle = async ({ event, resolve }) => {
 	//
 	// Requests carrying neither header (curl, scripts on the box) pass; the
 	// tailnet is their boundary, same as ttyd.
-	if (event.request.method !== 'GET' && event.url.pathname.startsWith('/api/')) {
+	//
+	// Every non-GET, not just /api/: `/share` is a state-changing POST outside
+	// that prefix, and a cross-site form could reach it — verified against a
+	// running build, which accepted an `Origin: https://evil.example` post and
+	// staged the attacker's text in the composer while the same post to /api/
+	// was refused. A sandboxed /raw artifact reaches it too, because multipart
+	// is CORS-safelisted and needs no preflight.
+	if (event.request.method !== 'GET') {
 		const site = event.request.headers.get('sec-fetch-site');
 		if (site !== null && site !== 'same-origin' && site !== 'none') {
 			return new Response('cross-origin writes are not allowed', { status: 403 });
