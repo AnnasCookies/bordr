@@ -1,6 +1,8 @@
 import { getClient } from './index';
 import type { HerdrClient } from './client';
 import { activeConnections } from './connections';
+import { branchesFor } from './branches';
+import type { Machine } from './machines';
 import { formatPane } from './address';
 import type { PaneNode, TabNode, WorkspaceNode } from '$lib/types';
 
@@ -45,7 +47,7 @@ function refreshMachines(): void {
 				if (refreshing.has(c.machine.id)) return;
 				refreshing.add(c.machine.id);
 				try {
-					const workspaces = await treeFor(c.client, c.machine.id, c.machine.label);
+					const workspaces = await treeFor(c.client, c.machine.id, c.machine.label, c.machine);
 					cached.set(c.machine.id, { at: Date.now(), workspaces });
 				} catch (e) {
 					// Named, not swallowed: a machine that answers the forward
@@ -72,7 +74,8 @@ export async function paneTree(): Promise<WorkspaceNode[]> {
 async function treeFor(
 	herdr: HerdrClient,
 	machineId: string,
-	machineLabel: string
+	machineLabel: string,
+	machine?: Machine
 ): Promise<WorkspaceNode[]> {
 	const [workspaces, tabs, panes] = await Promise.all([
 		herdr.request<{ workspaces: Record<string, unknown>[] }>('workspace.list'),
@@ -95,7 +98,10 @@ async function treeFor(
 			hasAgent: agent !== '',
 			status: agent ? String(raw.agent_status ?? 'unknown') : 'shell',
 			title: String(raw.terminal_title_stripped ?? raw.terminal_title ?? ''),
-			cwd: String(raw.cwd ?? ''),
+			// foreground_cwd, not cwd: `cwd` is where the shell was LAUNCHED, so a
+			// pane opened in ~ and then cd'd into a repo still reported ~ — which
+			// left the workspace's branch blank and its pane chip labelled "tony".
+			cwd: String(raw.foreground_cwd || raw.cwd || ''),
 			focused: raw.focused === true
 		};
 		const list = byTab.get(node.tabId);
@@ -119,7 +125,7 @@ async function treeFor(
 		else byWorkspace.set(node.workspaceId, [node]);
 	}
 
-	return workspaces.workspaces.map((raw) => {
+	const nodes = workspaces.workspaces.map((raw) => {
 		const workspaceId = formatPane(machineId, String(raw.workspace_id ?? ''));
 		return {
 			workspaceId,
@@ -127,7 +133,22 @@ async function treeFor(
 			label: String(raw.label ?? ''),
 			number: Number(raw.number ?? 0),
 			focused: raw.focused === true,
+			branch: '',
 			tabs: (byWorkspace.get(workspaceId) ?? []).sort((a, b) => a.number - b.number)
 		} satisfies WorkspaceNode;
 	});
+
+	// herdr prints the branch under each workspace name but does not serve it
+	// over the socket (workspace.get returns label, counts and status, no
+	// branch), so bordr reads git itself from the workspace's directory.
+	const dirs = new Map(nodes.map((n) => [n.workspaceId, workspaceDir(n)]));
+	const found = await branchesFor(machine ?? null, [...dirs.values()]);
+	for (const node of nodes) node.branch = found.get(dirs.get(node.workspaceId) ?? '') ?? '';
+	return nodes;
+}
+
+/** A workspace's directory: the cwd of the first pane herdr lists under it. */
+function workspaceDir(node: WorkspaceNode): string {
+	for (const tab of node.tabs) for (const pane of tab.panes) if (pane.cwd) return pane.cwd;
+	return '';
 }
