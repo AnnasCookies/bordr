@@ -8,6 +8,10 @@ export type Theme = 'light' | 'dark' | 'system';
 export type KeyStripMode = 'always' | 'peek';
 export type HarnessAccent = 'edge' | 'tint' | 'off';
 export type ToolDetail = 'formatted' | 'json';
+export type PaneView = 'auto' | 'conversation' | 'terminal';
+export type TerminalFit = 'fit' | 'wrap' | 'native';
+export type TerminalDensity = 'compact' | 'comfortable';
+
 export type TreeScope = 'all' | 'agents';
 export type AgentOrder = 'priority' | 'workspace';
 export type StatusPosition = 'header' | 'bottom';
@@ -48,6 +52,15 @@ export interface Prefs {
 	sidebarOpen: boolean;
 	/** Draw a tab's panes as herdr's real split, rather than one pane at a time. */
 	splitPanes: boolean;
+	/**
+	 * A pane as its transcript, or as the terminal screen with a prompt line.
+	 * 'auto' picks per pane: a shell has no transcript to render.
+	 */
+	paneView: PaneView;
+	/** How a screen wider than the window is made to fit it. */
+	terminalFit: TerminalFit;
+	/** How tightly the terminal's rows are packed. */
+	terminalDensity: TerminalDensity;
 	/** The git branch under each workspace in the tree. */
 	showBranches: boolean;
 	/** Name an unnamed tab after what is in it, rather than "tab 2". */
@@ -110,6 +123,9 @@ export const DEFAULTS: Prefs = {
 	sidebarSplit: 0.4,
 	sidebarOpen: true,
 	splitPanes: true,
+	paneView: 'auto',
+	terminalFit: 'fit',
+	terminalDensity: 'comfortable',
 	showBranches: true,
 	smartTabLabels: true,
 	showActivity: true,
@@ -155,6 +171,9 @@ const TREE_SCOPES: TreeScope[] = ['all', 'agents'];
 const AGENT_ORDERS: AgentOrder[] = ['priority', 'workspace'];
 const STATUS_POSITIONS: StatusPosition[] = ['header', 'bottom'];
 const WORK_CONTROLS: WorkControl[] = ['inline', 'header'];
+const PANE_VIEWS: PaneView[] = ['auto', 'conversation', 'terminal'];
+const TERMINAL_FITS: TerminalFit[] = ['fit', 'wrap', 'native'];
+const TERMINAL_DENSITIES: TerminalDensity[] = ['compact', 'comfortable'];
 
 function pick<T extends string>(value: unknown, allowed: T[], fallback: T): T {
 	return allowed.includes(value as T) ? (value as T) : fallback;
@@ -214,6 +233,9 @@ export function normalisePrefs(raw: unknown): Prefs {
 				: DEFAULTS.sidebarSplit,
 		sidebarOpen: bool(stored.sidebarOpen, DEFAULTS.sidebarOpen),
 		splitPanes: bool(stored.splitPanes, DEFAULTS.splitPanes),
+		paneView: pick(stored.paneView, PANE_VIEWS, DEFAULTS.paneView),
+		terminalFit: pick(stored.terminalFit, TERMINAL_FITS, DEFAULTS.terminalFit),
+		terminalDensity: pick(stored.terminalDensity, TERMINAL_DENSITIES, DEFAULTS.terminalDensity),
 		showBranches: bool(stored.showBranches, DEFAULTS.showBranches),
 		smartTabLabels: bool(stored.smartTabLabels, DEFAULTS.smartTabLabels),
 		showActivity: bool(stored.showActivity, DEFAULTS.showActivity),

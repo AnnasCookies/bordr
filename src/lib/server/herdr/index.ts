@@ -338,6 +338,19 @@ export async function promptAgent(address: string, text: string): Promise<void> 
  * target tm-dev/w9:p1 not found". Going through here means a route never has
  * to know a machine exists.
  */
+/**
+ * Put text into the pane's own input line, as typing does.
+ *
+ * No Enter, no bracketed paste: this is the channel terminal mode types
+ * through, so what you type appears where the harness puts what YOU type —
+ * its input box — rather than in a separate field bordr owns.
+ */
+export async function sendText(address: string, text: string): Promise<void> {
+	const { machineId, paneId } = parsePane(address);
+	const herdr = await clientFor(machineId);
+	await herdr.request('pane.send_text', { pane_id: paneId, text });
+}
+
 export async function sendKeys(address: string, keys: string[]): Promise<void> {
 	const { machineId, paneId } = parsePane(address);
 	const herdr = await clientFor(machineId);

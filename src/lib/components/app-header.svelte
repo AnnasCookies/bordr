@@ -16,16 +16,13 @@
 		menuLabel = 'Menu',
 		menuExpanded = false,
 		middle,
-		actions,
-		wordmark = 'wide'
+		actions
 	}: {
 		onmenu: () => void;
 		menuLabel?: string;
 		menuExpanded?: boolean;
 		middle?: Snippet;
 		actions?: Snippet;
-		/** 'always' where the bar has no page title of its own to make room for. */
-		wordmark?: 'always' | 'wide';
 	} = $props();
 </script>
 
@@ -36,19 +33,30 @@
 		aria-expanded={menuExpanded}
 		onclick={onmenu}>☰</button
 	>
-	<a href={resolve('/')} class="flex shrink-0 items-center gap-2" aria-label="bordr — all agents">
+	<!--
+		The mark alone. The name is on the tab, the manifest and the address bar
+		already, and next to a pane's own title it was the least useful word on
+		the screen — so it only speaks when spoken to.
+	-->
+	<a
+		href={resolve('/')}
+		class="group relative flex shrink-0 items-center"
+		aria-label="bordr — all agents"
+	>
 		<img
 			src="/patrl-face.png"
 			alt=""
 			class="h-7 w-7 rounded-full ring-1 ring-black/10 dark:ring-white/15"
 			style="image-rendering: pixelated"
 		/>
-		<!-- The wordmark is the first thing to go when the page has its own title. -->
 		<span
-			class="text-[15px] font-semibold tracking-[-0.2px] {wordmark === 'always'
-				? ''
-				: 'hidden sm:inline'}">bordr</span
+			class="pointer-events-none absolute top-full left-1/2 z-20 mt-1.5 -translate-x-1/2 rounded-lg bg-ink px-2 py-1 text-[11px] font-medium whitespace-nowrap text-card opacity-0 transition-opacity group-hover:opacity-100 group-focus-visible:opacity-100 motion-reduce:transition-none"
+			aria-hidden="true"
 		>
+			<!-- The bubble's tail, drawn as a rotated corner of the bubble itself. -->
+			<span class="absolute -top-1 left-1/2 h-2 w-2 -translate-x-1/2 rotate-45 bg-ink"></span>
+			woof
+		</span>
 	</a>
 
 	{#if middle}

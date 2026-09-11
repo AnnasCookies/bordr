@@ -19,7 +19,10 @@
 		StatusPosition,
 		ToolDetail,
 		WorkControl,
-		KeyStripMode
+		KeyStripMode,
+		PaneView,
+		TerminalFit,
+		TerminalDensity
 	} from '$lib/prefs.svelte';
 	import MessageBlocks from '$lib/components/message-blocks.svelte';
 	// Aliased: `ToolDetail` is already the name of the preference type.
@@ -399,6 +402,105 @@
 	</div>
 {/snippet}
 
+{#snippet paneViewPreview()}
+	<div class="rounded-lg bg-page p-2">
+		{#if prefs.value.paneView === 'auto'}
+			<div class="flex gap-2 text-[11px]">
+				<div class="flex-1 rounded-md bg-card p-1.5">
+					<p class="font-mono text-[10px] text-faint">a shell</p>
+					<p class="term mt-0.5 text-[10px]">tony@tm-work ❯</p>
+					<p class="mt-1 text-working">terminal</p>
+				</div>
+				<div class="flex-1 rounded-md bg-card p-1.5">
+					<p class="font-mono text-[10px] text-faint">an agent</p>
+					<p class="mt-0.5 text-[10px]">Written and committed.</p>
+					<p class="mt-1 text-working">conversation</p>
+				</div>
+			</div>
+			<p class="mt-1 text-[11px] text-faint">
+				A shell has no transcript to render; an agent's reads back through the whole session, which
+				its screen cannot.
+			</p>
+		{:else if prefs.value.paneView === 'terminal'}
+			<div class="term rounded-md bg-card p-1.5 text-[10.5px] leading-[1.4]">
+				<div>
+					<span class="text-done">tony@tm-work</span>:<span class="text-working">~</span>$ ls
+				</div>
+				<div class="text-muted">bordr&nbsp;&nbsp;repos&nbsp;&nbsp;obsidian</div>
+				<div class="mt-1 flex items-center gap-1 border-t border-hairline pt-1">
+					<span class="text-working">&rsaquo;</span>
+					<span class="text-faint">type here, as you would in the pane</span>
+					<span class="ml-auto text-faint">mic &middot; Ctrl+;</span>
+				</div>
+			</div>
+			<p class="mt-1 text-[11px] text-faint">
+				The screen itself, so a shell, a build or a picker looks exactly as it does on the machine.
+			</p>
+		{:else}
+			<div class="rounded-md bg-card p-1.5">
+				<p class="text-[12px]">Written and committed. Two commits, both pushed.</p>
+				<p class="mt-1 rounded-lg border border-hairline px-2 py-1 text-[11px] text-faint">
+					Type a reply…
+				</p>
+			</div>
+			<p class="mt-1 text-[11px] text-faint">
+				The transcript, rendered — bubbles, tools and diffs.
+			</p>
+		{/if}
+	</div>
+{/snippet}
+
+{#snippet fitPreview()}
+	<div class="rounded-lg bg-page p-2">
+		<div class="term overflow-hidden rounded-md bg-card p-1.5 leading-[1.4]">
+			{#if prefs.value.terminalFit === 'wrap'}
+				<div class="text-[10.5px] whitespace-pre-wrap">
+					CTX ▰▰▰▱▱ 46% · 540K left · a long status row that has been allowed to wrap onto the next
+					line
+				</div>
+			{:else}
+				<div
+					class="text-[10.5px] whitespace-pre {prefs.value.terminalFit === 'native'
+						? 'overflow-x-auto'
+						: ''}"
+					style={prefs.value.terminalFit === 'fit' ? 'font-size:8px' : ''}
+				>
+					CTX ▰▰▰▱▱ 46% · 540K left · a long status row kept on one line so its columns stay put
+				</div>
+			{/if}
+		</div>
+		<p class="mt-1 text-[11px] text-faint">
+			{#if prefs.value.terminalFit === 'fit'}
+				Type shrinks until the pane's width fits, down to 8px. Columns stay lined up.
+			{:else if prefs.value.terminalFit === 'wrap'}
+				Long lines wrap. Easier to read, but tables and bars lose their columns.
+			{:else}
+				The pane's own size, scrolling sideways when it is wider than the window.
+			{/if}
+		</p>
+	</div>
+{/snippet}
+
+{#snippet densityPreview()}
+	<div class="rounded-lg bg-page p-2">
+		<div
+			class="term overflow-hidden rounded-md bg-card text-[10px] {prefs.value.terminalDensity ===
+			'compact'
+				? 'px-1.5 py-0.5 leading-[1.15]'
+				: 'px-3 py-2 leading-[1.35]'}"
+		>
+			{#each ['$ git status', 'On branch main', 'nothing to commit', '$ ls', 'bordr  repos'] as row (row)}
+				<div class="whitespace-pre">{row}</div>
+			{/each}
+		</div>
+		<p class="mt-1 text-[11px] text-faint">
+			{prefs.value.terminalDensity === 'compact'
+				? 'Tighter rows and less padding — more of the pane on screen.'
+				: "The terminal's own spacing, with room around it."}
+		</p>
+	</div>
+{/snippet}
+
 {#snippet branchPreview()}
 	<div class="rounded-lg bg-page p-2">
 		<p class="text-[12.5px]">win-vm-omarchy</p>
@@ -521,6 +623,41 @@
 				>
 					{#snippet preview()}{@render splitPreview()}{/snippet}
 				</ToggleRow>
+				<SettingRow
+					label="Pane view"
+					value={prefs.value.paneView}
+					options={[
+						{ v: 'auto' as PaneView, l: 'Auto' },
+						{ v: 'conversation' as PaneView, l: 'Conversation' },
+						{ v: 'terminal' as PaneView, l: 'Terminal' }
+					]}
+					onchange={(v) => prefs.set('paneView', v)}
+				>
+					{#snippet preview()}{@render paneViewPreview()}{/snippet}
+				</SettingRow>
+				<SettingRow
+					label="Wide screens"
+					value={prefs.value.terminalFit}
+					options={[
+						{ v: 'fit' as TerminalFit, l: 'Fit' },
+						{ v: 'wrap' as TerminalFit, l: 'Wrap' },
+						{ v: 'native' as TerminalFit, l: 'Native' }
+					]}
+					onchange={(v) => prefs.set('terminalFit', v)}
+				>
+					{#snippet preview()}{@render fitPreview()}{/snippet}
+				</SettingRow>
+				<SettingRow
+					label="Terminal density"
+					value={prefs.value.terminalDensity}
+					options={[
+						{ v: 'comfortable' as TerminalDensity, l: 'Comfortable' },
+						{ v: 'compact' as TerminalDensity, l: 'Compact' }
+					]}
+					onchange={(v) => prefs.set('terminalDensity', v)}
+				>
+					{#snippet preview()}{@render densityPreview()}{/snippet}
+				</SettingRow>
 				<ToggleRow
 					label="Git branch in the tree"
 					hint="Read from each workspace's directory; herdr does not serve it."

@@ -21,7 +21,8 @@ export const GET: RequestHandler = async ({ params, url }) => {
 	// A tile in the split shows what the pane is SHOWING, which is the visible
 	// screen; the keypad peek wants scrollback. Anything else is a typo.
 	const asked = url.searchParams.get('source');
-	const source = asked === 'visible' ? 'visible' : 'recent_unwrapped';
+	const source =
+		asked === 'visible' ? 'visible' : asked === 'recent' ? 'recent' : 'recent_unwrapped';
 
 	try {
 		const raw = await readPane(params.pane, { source, lines, ansi });

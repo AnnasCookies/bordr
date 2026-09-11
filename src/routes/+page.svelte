@@ -159,7 +159,6 @@
 			onmenu={() => (treeOpen = true)}
 			menuLabel="Workspaces"
 			menuExpanded={treeOpen}
-			wordmark="always"
 			middle={listStatus}
 			actions={listActions}
 		/>
