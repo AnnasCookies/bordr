@@ -9,6 +9,25 @@ async function swRegistration(): Promise<ServiceWorkerRegistration> {
 	);
 }
 
+/**
+ * Tell the worker, once a load, that this origin is running as an installed
+ * app. The worker cannot detect that itself, and it uses the answer to decide
+ * between launching the app and reusing an open browser tab when a
+ * notification is tapped. Safe to call repeatedly; the worker only records it.
+ */
+export async function reportStandalone(): Promise<void> {
+	if (!('serviceWorker' in navigator)) return;
+	if (!window.matchMedia('(display-mode: standalone)').matches) return;
+	try {
+		const registration = await swRegistration();
+		(registration.active ?? navigator.serviceWorker.controller)?.postMessage({
+			type: 'standalone'
+		});
+	} catch {
+		// No worker to tell. The tap falls back to opening a window, as before.
+	}
+}
+
 export async function checkPush(): Promise<PushState> {
 	if (!('serviceWorker' in navigator) || !('PushManager' in window)) return 'unsupported';
 	try {
