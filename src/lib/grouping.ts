@@ -31,6 +31,38 @@ export function collapseHome(cwd: string): string {
 	return cwd.replace(/^\/(?:home|Users)\/[^/]+/, '~');
 }
 
+/**
+ * A pane's terminal title is still the shell's.
+ *
+ * A harness renames the terminal when it starts, so a title is normally the
+ * work — "ctxc #11403". Some never do, or have not yet: an idle agy sits under
+ * `tony@tm-work:~` and reads as a stray terminal in a list of agents. The
+ * shapes below are what a shell writes and no harness would: `user@host:path`,
+ * a bare path, and the empty title of a pane that has written nothing.
+ */
+const SHELL_TITLE = /^(?:[\w.-]+@[\w.-]+(?::.*)?|~(?:\/.*)?|\/.*)$/;
+
+/**
+ * What to call an agent whose terminal still carries the shell's title —
+ * its workspace, which is at least the work it belongs to.
+ */
+export function agentTitle(
+	title: string,
+	workspaceLabel: string,
+	paneId: string,
+	agent = ''
+): string {
+	const named = title.trim();
+	if (named && !SHELL_TITLE.test(named)) return named;
+	// A workspace can be shell-shaped too: an agent started in home sits in a
+	// workspace called `~`, so falling back to it just repeats the problem.
+	const workspace = workspaceLabel.trim();
+	if (workspace && !SHELL_TITLE.test(workspace)) return workspace;
+	// The harness at least says what the row IS. The pane id, not the shell
+	// title, when even that is missing: `~` identifies nothing.
+	return agent.trim() || paneId;
+}
+
 const byTitle = (a: AgentSummary, b: AgentSummary) =>
 	(a.title || a.paneId).localeCompare(b.title || b.paneId, 'en');
 

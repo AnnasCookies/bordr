@@ -51,7 +51,7 @@
 </script>
 
 <!-- eslint-disable svelte/no-at-html-tags -->
-<div class="flex items-center gap-1 px-4 pb-1.5 font-mono text-[10px] text-muted">
+<div class="flex items-center gap-1 px-4 py-1.5 font-mono text-[10.5px] text-muted">
 	{#if open}
 		<button class="min-w-0 flex-1 text-left whitespace-pre-wrap" onclick={ontoggle}>
 			{#each rows as row, i (i)}{@html (i > 0 ? '\n' : '') + ansiToHtml(row)}{/each}
@@ -85,8 +85,12 @@
 <style>
 	.strip {
 		/* One row tall, snapping so a flick lands on a line rather than
-		   between two. */
-		height: 1.35em;
+		   between two. Roomier than the line itself: collapsed, this strip is
+		   the whole block — the thing you read at a glance, scroll to choose a
+		   row and tap to open — and at the line's own height it was a 13px
+		   sliver doing all three jobs. The row matches, because the snap
+		   arithmetic divides the scroll by exactly one row. */
+		height: 1.9em;
 		overflow-y: auto;
 		scroll-snap-type: y mandatory;
 		scrollbar-width: none;
@@ -96,8 +100,8 @@
 		display: none;
 	}
 	.row {
-		height: 1.35em;
-		line-height: 1.35em;
+		height: 1.9em;
+		line-height: 1.9em;
 		scroll-snap-align: start;
 	}
 </style>

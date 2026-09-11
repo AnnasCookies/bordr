@@ -1843,8 +1843,18 @@
 						The other home for the status block: under the composer, where the
 						on-screen keyboard covers it rather than the conversation.
 					-->
+				<!--
+					Parked under the composer, this block is the last thing on the
+					screen, so the home bar and the navigation bar are ITS problem:
+					the composer's own safe-area padding now sits above it and
+					protects nothing. Without this the rows are drawn into the
+					gesture area.
+				-->
 				{#if detail.statusLines.length > 0 && prefs.value.statusPosition === 'bottom'}
-					<div class="border-t border-hairline bg-page pt-1.5">
+					<div
+						class="border-t border-hairline bg-page pt-1.5"
+						style="padding-bottom: max(0.5rem, env(safe-area-inset-bottom))"
+					>
 						<StatusBlock
 							rows={statusRows}
 							agent={detail.agent}

@@ -20,6 +20,30 @@
 		<link rel="icon" href="/collie.svg" type="image/svg+xml" />
 		<link rel="apple-touch-icon" href="/patrl-192.png" />
 		<meta name="text-scale" content="scale" />
+		<!--
+			Stamp the theme before the first paint.
+
+			The layout does this too, but not until hydration — and the CSS
+			fallback for "no class yet" can only ask the SYSTEM. So a phone set
+			to light, running bordr set to dark, painted a white page for as long
+			as it took the bundle to arrive and then swapped. Blocking on
+			purpose: it is a few dozen bytes, and anything async is another
+			frame of the wrong colour.
+		-->
+		<script>
+			try {
+				var t = JSON.parse(localStorage.getItem('bordr-prefs') || '{}').theme || 'system';
+				var dark =
+					t === 'dark' ||
+					(t === 'system' && window.matchMedia('(prefers-color-scheme: dark)').matches);
+				document.documentElement.classList.add(dark ? 'dark' : 'light');
+				document
+					.querySelector('meta[name="theme-color"]')
+					.setAttribute('content', dark ? '#0a0a0a' : '#f4f5f7');
+			} catch (e) {
+				// A private window with storage blocked still gets the media query.
+			}
+		</script>
 		%sveltekit.head%
 	</head>
 	<!-- "tap", not "hover": hover fires on touchstart, so scrolling the agent

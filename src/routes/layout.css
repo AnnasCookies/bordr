@@ -267,25 +267,33 @@ body {
  */
 * {
 	scrollbar-width: thin;
-	scrollbar-color: var(--edge) transparent;
+	scrollbar-color: var(--idle-rail) transparent;
 }
 
 ::-webkit-scrollbar {
-	width: 7px;
-	height: 7px;
+	width: 10px;
+	height: 10px;
 }
 
 ::-webkit-scrollbar-track {
 	background: transparent;
 }
 
+/*
+ * The thumb is inset rather than thinner than its track: a 4px sliver is
+ * tidy until you try to catch it, and a horizontal bar under a terminal is
+ * something you actually drag.
+ */
 ::-webkit-scrollbar-thumb {
-	background: var(--edge);
+	background: var(--idle-rail);
+	border: 2px solid transparent;
+	background-clip: content-box;
 	border-radius: 999px;
 }
 
 ::-webkit-scrollbar-thumb:hover {
-	background: var(--idle-rail);
+	background: var(--faint);
+	background-clip: content-box;
 }
 
 /* The square where the two bars meet is the default grey otherwise. */

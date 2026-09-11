@@ -1,6 +1,7 @@
 <script lang="ts">
 	import { resolve } from '$app/paths';
 	import { SvelteSet } from 'svelte/reactivity';
+	import { agentTitle } from '$lib/grouping';
 	import { prefs, type AgentOrder } from '$lib/prefs.svelte';
 	import { STATUS_RAIL, harnessText } from '$lib/theme';
 	import HarnessMark from './harness-mark.svelte';
@@ -55,26 +56,23 @@
 	const RANK: Record<string, number> = { blocked: 0, working: 1, done: 2, idle: 3, unknown: 4 };
 
 	/**
-	 * The agent section.
+	 * The agent section: agents, ordered by whichever rule is chosen.
 	 *
-	 * Everything, ordered by whichever rule is chosen. The machines section
-	 * above navigates rather than filters, so this stays the one place every
-	 * agent can be seen at once.
+	 * Panes with no agent are left out. A section called "agents" is a list of
+	 * things that might need you, and a shell never does — it sat there
+	 * outnumbering them, one row per terminal, pushing the ones that do off
+	 * the screen. Shells are reached where they live: the machines section
+	 * above, and the pane strip inside their own tab.
 	 */
 	const agentRows = $derived.by(() => {
-		// Every pane, always. Scoping this hid the ones you were not looking
-		// at, which is the opposite of what a list of things that might need
-		// you is for — and the machines section above already reaches a
-		// specific shell, so a filter here only took choices away.
-		return [...allPanes].sort((a, b) => {
-			// Terminals below agents either way: a shell is a place you go, an
-			// agent is something that might need you.
-			if (a.hasAgent !== b.hasAgent) return a.hasAgent ? -1 : 1;
-			if (prefs.value.agentOrder === 'workspace') {
-				return a.workspaceLabel.localeCompare(b.workspaceLabel) || a.title.localeCompare(b.title);
-			}
-			return (RANK[a.status] ?? 9) - (RANK[b.status] ?? 9) || a.title.localeCompare(b.title);
-		});
+		return allPanes
+			.filter((p) => p.hasAgent)
+			.sort((a, b) => {
+				if (prefs.value.agentOrder === 'workspace') {
+					return a.workspaceLabel.localeCompare(b.workspaceLabel) || a.title.localeCompare(b.title);
+				}
+				return (RANK[a.status] ?? 9) - (RANK[b.status] ?? 9) || a.title.localeCompare(b.title);
+			});
 	});
 
 	/**
@@ -269,7 +267,7 @@
 		aria-label="Resize the machines section, currently {Math.round(
 			prefs.value.sidebarSplit * 100
 		)}% — arrow keys adjust"
-		class="group relative h-1.5 w-full shrink-0 cursor-row-resize border-y border-hairline bg-card"
+		class="group relative h-1.5 w-full shrink-0 cursor-row-resize border-y border-hairline bg-card before:absolute before:inset-x-0 before:-inset-y-2 before:content-['']"
 		onpointerdown={startDrag}
 		onkeydown={(e) => {
 			// Keyboard-resizable too, in 5% steps.
@@ -320,7 +318,9 @@
 					aria-hidden="true"
 				></span>
 				<span class="min-w-0 flex-1">
-					<span class="block truncate text-[12.5px]">{pane.title || pane.paneId}</span>
+					<span class="block truncate text-[12.5px]"
+						>{agentTitle(pane.title, pane.workspaceLabel, pane.paneId, pane.agent)}</span
+					>
 					<!--
 						Where the agent is, always — herdr's own list carries the
 						workspace on every row. Showing it only under one sort order

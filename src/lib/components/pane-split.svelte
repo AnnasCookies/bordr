@@ -96,9 +96,9 @@
 		<button
 			type="button"
 			aria-label="Resize this split, currently {Math.round(ratio * 100)}% — arrow keys adjust"
-			class="group relative shrink-0 bg-hairline {node.vertical
-				? 'h-1 w-full cursor-row-resize'
-				: 'h-full w-1 cursor-col-resize'}"
+			class="group relative shrink-0 bg-hairline before:absolute before:content-[''] {node.vertical
+				? 'h-1 w-full cursor-row-resize before:inset-x-0 before:-inset-y-2'
+				: 'h-full w-1 cursor-col-resize before:-inset-x-2 before:inset-y-0'}"
 			onpointerdown={startDrag}
 			onkeydown={nudge}
 		>
