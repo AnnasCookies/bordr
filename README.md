@@ -82,7 +82,10 @@ address unless you explicitly override it. Read [SECURITY.md](SECURITY.md)
 before installing; it is short. If I had to say one thing: Serve it with `tailscale serve`, never `tailscale funnel`. Serve keeps the
 address inside your tailnet; funnel publishes it to the whole internet, and
 because funnel proxies to loopback it walks straight past bordr's own bind
-guard. Bind ports per device in your Tailnet for extra security if you share your Tailnet with anyone.
+guard. If you share your tailnet with anyone, restrict who can reach bordr's
+host and port with [Tailscale grants](https://tailscale.com/docs/features/access-control/grants),
+and set `BORDR_ALLOWED_USERS` so bordr checks the caller's tailnet identity
+itself.
 
 ## Prerequisites
 

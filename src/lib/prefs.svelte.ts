@@ -21,6 +21,12 @@ export interface Prefs {
 	v: number;
 	groupBy: GroupBy;
 	sort: SortBy;
+	/**
+	 * The grouping chips on `/`. They used to appear only after grouping had
+	 * been changed in Settings, which meant they were invisible on a fresh
+	 * load and looked like a bug. Visible by default, and switchable.
+	 */
+	showGrouping: boolean;
 	rollup: boolean;
 	preview: PreviewMode;
 	theme: Theme;
@@ -112,6 +118,7 @@ export const DEFAULTS: Prefs = {
 	v: 2,
 	groupBy: 'workspace',
 	sort: 'status-title',
+	showGrouping: true,
 	rollup: true,
 	preview: 'activity',
 	theme: 'system',
@@ -211,6 +218,7 @@ export function normalisePrefs(raw: unknown): Prefs {
 		v: VERSION,
 		groupBy: pick(stored.groupBy, GROUPS, DEFAULTS.groupBy),
 		sort: pick(stored.sort, SORTS, DEFAULTS.sort),
+		showGrouping: bool(stored.showGrouping, DEFAULTS.showGrouping),
 		rollup: bool(stored.rollup, DEFAULTS.rollup),
 		preview: pick(stored.preview, PREVIEWS, DEFAULTS.preview),
 		theme: pick(stored.theme, THEMES, DEFAULTS.theme),
@@ -292,8 +300,6 @@ function createPrefs() {
 	let current = $state<Prefs>(load());
 	/** Tracked separately so `system` re-resolves when the OS flips. */
 	let prefersDark = $state(false);
-	/** The grouping chips on `/` appear only once grouping has been touched. */
-	let touchedGrouping = $state(false);
 
 	function persist() {
 		if (!browser) return;
@@ -326,12 +332,8 @@ function createPrefs() {
 				agentText: current.agentText || (dark ? '#e5e5e5' : '#111418')
 			};
 		},
-		get groupingTouched(): boolean {
-			return touchedGrouping;
-		},
 		set<K extends keyof Prefs>(key: K, value: Prefs[K]) {
 			current = normalisePrefs({ ...current, [key]: value });
-			if (key === 'groupBy') touchedGrouping = true;
 			persist();
 		},
 		/**

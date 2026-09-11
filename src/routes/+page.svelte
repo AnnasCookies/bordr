@@ -215,7 +215,7 @@
 			</div>
 		{/if}
 
-		{#if prefs.groupingTouched}
+		{#if prefs.value.showGrouping}
 			<div class="mb-3 flex flex-wrap gap-1.5">
 				{#each GROUP_CHIPS as chip (chip.v)}
 					<button

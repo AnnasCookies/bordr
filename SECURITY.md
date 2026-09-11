@@ -79,6 +79,31 @@ were same-origin; it matters on the plain-HTTP loopback trial and a direct
 tailnet bind, since HTTPS through `tailscale serve` already refuses a rebound
 name at the certificate.
 
+### Identity, on a shared tailnet
+
+The tailnet being the boundary is the right model for one person and their own
+devices. It is a weaker one if you share the tailnet, because every device on
+it is trusted completely.
+
+Set `BORDR_ALLOWED_USERS` to a comma-separated list of tailnet logins and bordr
+additionally checks who is calling:
+
+```
+BORDR_ALLOWED_USERS=you@example.com
+```
+
+`tailscale serve` sets a `Tailscale-User-Login` header on everything it proxies
+and strips any copy the client sent first, so the value cannot be forged from
+off the host. Someone who can reach loopback directly to forge one is already
+on the machine, and already owns every agent on it.
+
+Funnel sets no identity header at all, so a configured list refuses funnel
+traffic as a side effect. That makes "serve, never funnel" something the code
+enforces rather than something this file asks you to remember.
+
+Leaving it unset keeps the previous behaviour exactly. Setting it is not a
+login, and it does not make bordr safe to put on the open internet.
+
 ## What bordr does defend against
 
 These are implemented and tested, and they matter even inside a trusted
@@ -96,7 +121,7 @@ network, mostly because an _agent_ can be induced to write a hostile file.
 | **Transcript escaping**      | Terminal output is HTML-escaped before rendering; the ANSI renderer emits only colour spans                                                                                                                                                                                                                                                                                                                                                                   |
 | **Markdown**                 | The file viewer renders with `marked`, then sanitises with DOMPurify with `style`, `form` and `iframe` forbidden                                                                                                                                                                                                                                                                                                                                              |
 | **Transcript markdown**      | Agent messages render in bordr's own origin through a stricter allow-list: tags and attributes named explicitly, `javascript:` and `data:` URLs refused, and `class` kept only as `language-*` on a code element so agent output cannot borrow bordr's own layout utilities to paint over the app                                                                                                                                                             |
-| **Upload limits**            | Images are type-checked and size-capped, at most six per message                                                                                                                                                                                                                                                                                                                                                                                              |
+| **Upload limits**            | The browser-declared MIME type is allow-listed and the payload size-capped, at most six per message. The file's own bytes are not inspected, so a caller who lies about the type is only limited by the allow-list                                                                                                                                                                                                                                            |
 | **Frame protection**         | Every app response sends `x-frame-options: DENY` and `frame-ancestors 'none'`; only the raw artifact route is exempt, because the viewer frames it                                                                                                                                                                                                                                                                                                            |
 
 ## What it does not defend against

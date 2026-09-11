@@ -3,6 +3,7 @@
 	import { updated } from '$app/state';
 	import { onMount } from 'svelte';
 	import { prefs } from '$lib/prefs.svelte';
+	import { reportStandalone } from '$lib/push-client';
 	let { children } = $props();
 
 	/**
@@ -17,6 +18,13 @@
 		document.addEventListener('visibilitychange', onVisible);
 		return () => document.removeEventListener('visibilitychange', onVisible);
 	});
+
+	/**
+	 * Tell the service worker, once, that this origin runs as an installed app.
+	 * It cannot find that out for itself, and it decides between launching the
+	 * app and reusing an open browser tab when a notification is tapped.
+	 */
+	onMount(() => void reportStandalone());
 
 	/**
 	 * Paint the theme on <html>, not on a wrapper: the browser paints its own

@@ -104,3 +104,38 @@ export function judgeHost(hostname: string, policy: HostPolicy): boolean {
 		.filter(Boolean)
 		.includes(name);
 }
+
+export const USERS_FLAG = 'BORDR_ALLOWED_USERS';
+
+/**
+ * The third guard, and the only one that is authentication rather than
+ * confinement.
+ *
+ * `tailscale serve` sets `Tailscale-User-Login` on everything it proxies and
+ * strips any copy the client sent first, so the value cannot be forged from
+ * off the host. Anyone who can reach loopback directly to forge one is
+ * already on the machine and already owns every agent on it.
+ *
+ * Funnel sets no identity header at all. An allow-list therefore refuses
+ * funnel traffic as a side effect, which turns "serve, never funnel" from a
+ * warning in SECURITY.md into something the code actually enforces.
+ *
+ * Unset is unchanged behaviour: the tailnet stays the whole boundary, which
+ * is right for one person and their own devices. Set it and bordr also
+ * insists on who you are, which is what a shared tailnet needs.
+ *
+ * Deliberately NOT bypassed by ALLOW_FLAG. That flag says "I accept that the
+ * default has no auth"; this list says "I am adding some". Letting the
+ * acknowledgement switch off the control would be exactly the wrong way
+ * round.
+ */
+export function judgeUser(login: string | null | undefined, allowed: string | undefined): boolean {
+	const list = (allowed ?? '')
+		.split(',')
+		.map((entry) => entry.trim().toLowerCase())
+		.filter(Boolean);
+	if (list.length === 0) return true;
+	const who = (login ?? '').trim().toLowerCase();
+	if (!who) return false;
+	return list.includes(who);
+}

@@ -17,6 +17,10 @@
 		/>
 		<meta name="theme-color" content="#0a0a0a" />
 		<link rel="manifest" href="/manifest.webmanifest?v=5" />
+		<!-- Both, in this order: an SVG-capable browser takes collie.svg and
+		     ignores the .ico; everything else falls back to favicon.ico rather
+		     than requesting /favicon.ico blind and 404ing. -->
+		<link rel="icon" href="/favicon.ico" sizes="32x32" />
 		<link rel="icon" href="/collie.svg" type="image/svg+xml" />
 		<link rel="apple-touch-icon" href="/patrl-192.png" />
 		<meta name="text-scale" content="scale" />

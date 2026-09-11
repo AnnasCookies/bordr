@@ -563,6 +563,11 @@
 				>
 					{#snippet preview()}{@render groupPreview()}{/snippet}
 				</SettingRow>
+				<ToggleRow
+					label="Show grouping chips"
+					checked={prefs.value.showGrouping}
+					onchange={(v) => prefs.set('showGrouping', v)}
+				/>
 				<SettingRow
 					label="Sort within group"
 					value={prefs.value.sort}
