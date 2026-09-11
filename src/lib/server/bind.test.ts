@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { ALLOW_FLAG, judgeBind, judgeHost } from './bind';
+import { ALLOW_FLAG, judgeBind, judgeHost, judgeUser } from './bind';
 
 describe('judgeBind', () => {
 	it('allows loopback in every spelling', () => {
@@ -87,5 +87,41 @@ describe('judgeHost', () => {
 
 	it('stands down entirely under the explicit opt-in', () => {
 		expect(judgeHost('evil.example', { ...policy, allowPublic: '1' })).toBe(true);
+	});
+});
+
+describe('judgeUser', () => {
+	/** The default has to stay exactly as it was: a tailnet of one. */
+	it('allows everything when no list is configured', () => {
+		for (const allowed of [undefined, '', '   ', ',', ' , ']) {
+			expect(judgeUser('alice@example.com', allowed), JSON.stringify(allowed)).toBe(true);
+			expect(judgeUser(null, allowed), JSON.stringify(allowed)).toBe(true);
+		}
+	});
+
+	it('allows a login on the list, however it is spelled or spaced', () => {
+		const allowed = ' Alice@Example.com , bob@example.com ';
+		for (const login of ['alice@example.com', 'ALICE@EXAMPLE.COM', ' alice@example.com ']) {
+			expect(judgeUser(login, allowed), login).toBe(true);
+		}
+		expect(judgeUser('bob@example.com', allowed)).toBe(true);
+	});
+
+	it('refuses a login that is not on the list', () => {
+		const allowed = 'alice@example.com';
+		for (const login of ['mallory@example.com', 'alice@example.com.evil.test', 'alice']) {
+			expect(judgeUser(login, allowed), login).toBe(false);
+		}
+	});
+
+	/**
+	 * The funnel case, and the reason this guard is worth having: funnel
+	 * traffic carries no Tailscale identity header at all, so a configured
+	 * list refuses it without the operator having to notice.
+	 */
+	it('refuses a request carrying no identity header once a list is set', () => {
+		for (const login of [null, undefined, '', '   ']) {
+			expect(judgeUser(login, 'alice@example.com'), JSON.stringify(login)).toBe(false);
+		}
 	});
 });

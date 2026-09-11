@@ -2,7 +2,7 @@ import { building, dev } from '$app/environment';
 import { env } from '$env/dynamic/private';
 import type { Handle } from '@sveltejs/kit';
 import { startPushWatcher } from '$lib/server/push';
-import { ALLOW_FLAG, judgeBind, judgeHost } from '$lib/server/bind';
+import { ALLOW_FLAG, judgeBind, judgeHost, judgeUser, USERS_FLAG } from '$lib/server/bind';
 
 /**
  * Checked once at startup. bordr refuses to SERVE rather than refusing to
@@ -20,6 +20,9 @@ const hostPolicy = {
 	allowed: env.BORDR_ALLOWED_HOSTS,
 	allowPublic: env[ALLOW_FLAG]
 };
+
+/** Unset for a tailnet of one; see judgeUser for what setting it buys. */
+const allowedUsers = env[USERS_FLAG];
 
 // Start the blocked-agent push watcher with the server, not with the first
 // visitor — notifications must fire while every phone is in a pocket.
@@ -56,6 +59,20 @@ export const handle: Handle = async ({ event, resolve }) => {
 				`It serves loopback, its own HOST, Tailscale addresses and *.ts.net names. ` +
 				`For a proxy on your own domain, set BORDR_ALLOWED_HOSTS=that.domain in .env.\n`,
 			{ status: 421, headers: { 'content-type': 'text/plain; charset=utf-8' } }
+		);
+	}
+
+	// Identity, but only when the operator has asked for it. `tailscale serve`
+	// sets this header and strips any copy the client sent, so it cannot be
+	// forged from off the host; funnel carries none, so funnel traffic fails
+	// here too. Unset means unchanged: the tailnet is the whole boundary.
+	if (!judgeUser(event.request.headers.get('tailscale-user-login'), allowedUsers)) {
+		return new Response(
+			`bordr does not recognise you.\n\n` +
+				`${USERS_FLAG} is set, so bordr answers only the tailnet logins it names, ` +
+				`reached through \`tailscale serve\`. This request carried no Tailscale ` +
+				`identity header, or one that is not on the list.\n`,
+			{ status: 403, headers: { 'content-type': 'text/plain; charset=utf-8' } }
 		);
 	}
 
