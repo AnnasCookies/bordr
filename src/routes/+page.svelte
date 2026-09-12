@@ -26,6 +26,21 @@
 	 * shell pane, which is not an agent, could not be reached at all.
 	 */
 	let treeOpen = $state(false);
+
+	/**
+	 * Hold the page still while the drawer is over it. Same reason as the pane
+	 * page: the drawer is `fixed inset-0` and scrolls nothing itself, so a drag
+	 * on it scrolled the list underneath and moved the phone's own chrome,
+	 * which changes the height the drawer is pinned to.
+	 */
+	$effect(() => {
+		if (!treeOpen) return;
+		const previous = document.body.style.overflow;
+		document.body.style.overflow = 'hidden';
+		return () => {
+			document.body.style.overflow = previous;
+		};
+	});
 	/**
 	 * A picture shared into bordr from another app.
 	 *
@@ -156,7 +171,7 @@
 
 	<header class="border-b border-hairline">
 		<AppHeader
-			onmenu={() => (treeOpen = true)}
+			onmenu={() => (treeOpen = !treeOpen)}
 			menuLabel="Workspaces"
 			menuExpanded={treeOpen}
 			middle={listStatus}
@@ -378,13 +393,20 @@
 
 	{#if treeOpen}
 		<div class="fixed inset-0 z-40">
+			<!--
+				Presentational: the drawer's own ☰ is the labelled control, so
+				announcing this as a second way to close it would put two buttons
+				with the same job in the accessibility tree.
+			-->
 			<button
 				class="absolute inset-0 bg-black/40"
-				aria-label="Close the workspaces list"
+				aria-hidden="true"
+				tabindex="-1"
 				onclick={() => (treeOpen = false)}
 			></button>
 			<div class="absolute inset-y-0 left-0 w-[86%] max-w-[320px] shadow-2xl">
 				<SessionTree
+					onclose={() => (treeOpen = false)}
 					onnew={() => {
 						treeOpen = false;
 						showNew = true;

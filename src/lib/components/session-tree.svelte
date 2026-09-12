@@ -11,8 +11,15 @@
 	let {
 		current = '',
 		onnew = () => {},
-		onclose
-	}: { current?: string; onnew?: () => void; onclose?: () => void } = $props();
+		onclose,
+		home = false
+	}: {
+		current?: string;
+		onnew?: () => void;
+		onclose?: () => void;
+		/** Offer a way back to the agents list. Pointless on the agents list. */
+		home?: boolean;
+	} = $props();
 
 	let workspaces = $state<WorkspaceNode[]>([]);
 	let machines = $state<MachineStatus[]>([]);
@@ -188,27 +195,29 @@
 		any obvious order. An explicit button is the accessible way out.
 	-->
 	{#if onclose}
-		<div class="flex shrink-0 items-center gap-1 border-b border-hairline px-2 py-1.5">
+		<div class="flex shrink-0 items-center gap-2 border-b border-hairline px-2 py-1.5">
 			<!--
-				Close sits FIRST, on top of where the ☰ that opened the drawer is
-				drawn. The drawer covers the header, so whatever lands in that
-				corner is what your thumb hits when you go back to the control you
-				just used — and it has to be the one that undoes it. Anything else
-				there navigates you somewhere you did not ask to go.
+				The same ☰, in the same corner, on every screen. The drawer covers
+				the header, so the glyph that opened it has to be the glyph that
+				closes it — a ✕ there reads as a different control, and anything
+				that navigates there takes you somewhere you did not ask to go.
 			-->
 			<button
-				class="flex h-11 w-11 shrink-0 items-center justify-center rounded-lg text-[17px] text-muted"
+				class="flex h-11 w-11 shrink-0 items-center justify-center rounded-lg text-muted"
 				aria-label="Close the session list"
-				onclick={onclose}>✕</button
+				aria-expanded="true"
+				onclick={onclose}>☰</button
 			>
-			<a
-				href={resolve('/')}
-				class="flex h-11 min-w-11 items-center gap-2 rounded-lg px-2 text-[13px] text-muted"
-				onclick={onclose}
-			>
-				<Icon name="list" size={20} />
-				All agents
-			</a>
+			{#if home}
+				<a
+					href={resolve('/')}
+					class="flex h-9 items-center gap-1.5 rounded-full bg-chip px-3 text-[13px] text-muted"
+					onclick={onclose}
+				>
+					<Icon name="list" size={16} />
+					Home
+				</a>
+			{/if}
 		</div>
 	{/if}
 

@@ -14,7 +14,7 @@ test('the drawer offers an explicit way out and a way home', async ({ page }) =>
 
 	await page.getByRole('button', { name: 'Session list', exact: true }).click();
 	const close = page.getByRole('button', { name: 'Close the session list' });
-	const home = page.getByRole('link', { name: 'All agents', exact: true });
+	const home = page.getByRole('link', { name: 'Home', exact: true });
 	await expect(home).toBeVisible();
 	await expect(close).toBeVisible();
 
@@ -42,12 +42,12 @@ test('tapping where the menu button is closes the drawer rather than navigating'
 	const menu = page.getByRole('button', { name: 'Session list', exact: true });
 	const box = await menu.boundingBox();
 	await menu.click();
-	await expect(page.getByRole('link', { name: 'All agents', exact: true })).toBeVisible();
+	await expect(page.getByRole('link', { name: 'Home', exact: true })).toBeVisible();
 
 	const url = page.url();
 	await page.mouse.click(box!.x + box!.width / 2, box!.y + box!.height / 2);
 
-	await expect(page.getByRole('link', { name: 'All agents', exact: true })).toBeHidden();
+	await expect(page.getByRole('link', { name: 'Home', exact: true })).toBeHidden();
 	expect(page.url(), 'that corner must not navigate').toBe(url);
 });
 
@@ -64,6 +64,24 @@ test('the page underneath does not scroll while the drawer is open', async ({ pa
 
 	await page.getByRole('button', { name: 'Close the session list' }).click();
 	expect(await locked(), 'and released again afterwards').not.toBe('hidden');
+});
+
+/**
+ * The drawer is the same component on both screens, so the control that opens
+ * and closes it has to look and behave the same on both. Home is the only
+ * difference, and only because offering it on the agents list is pointless.
+ */
+test('the agents list drawer has the same toggle, and no Home of its own', async ({ page }) => {
+	await page.goto('/');
+	await page.getByRole('button', { name: 'Workspaces', exact: true }).click();
+
+	const close = page.getByRole('button', { name: 'Close the session list' });
+	await expect(close).toBeVisible();
+	await expect(close).toHaveText('☰');
+	await expect(page.getByRole('link', { name: 'Home', exact: true })).toHaveCount(0);
+
+	await close.click();
+	await expect(close).toBeHidden();
 });
 
 test('back returns to the agents list however much you moved around', async ({ page }) => {
