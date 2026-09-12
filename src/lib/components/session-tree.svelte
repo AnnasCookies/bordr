@@ -153,25 +153,53 @@
 	 * can be dragged to nothing.
 	 */
 	let shell = $state<HTMLElement | undefined>();
+	/** Live fraction while dragging; null when the pref is in charge. */
+	let dragSplit = $state<number | null>(null);
+	const split = $derived(dragSplit ?? prefs.value.sidebarSplit);
 
+	const clamp = (fraction: number) => Math.min(Math.max(fraction, 0.15), 0.75);
+
+	/**
+	 * Three things this has to get right, and it used to get none of them.
+	 *
+	 * `touch-action: none` on the handle, in CSS. `preventDefault()` on
+	 * pointerdown does NOT stop a touch from scrolling — the browser decides
+	 * that before the listener runs — so a finger on the handle scrolled the
+	 * lists instead of resizing them.
+	 *
+	 * `pointercancel`, which is what fires when the browser takes the gesture
+	 * over for a scroll. Listening only for `pointerup` meant the move handler
+	 * stayed bound to the window for the life of the page: every later scroll,
+	 * anywhere, resized the sidebar. That is the half of this that felt
+	 * haunted rather than merely broken.
+	 *
+	 * And the fraction is held locally while dragging. `prefs.set` serialises
+	 * the whole preferences object into localStorage, synchronously, and it
+	 * was doing that on every pointermove.
+	 */
 	function startDrag(event: PointerEvent) {
 		const host = shell;
 		if (!host) return;
 		event.preventDefault();
-		(event.target as HTMLElement).setPointerCapture(event.pointerId);
+		const handle = event.currentTarget as HTMLElement;
+		handle.setPointerCapture(event.pointerId);
 		const box = host.getBoundingClientRect();
 
 		const move = (e: PointerEvent) => {
-			const fraction = (e.clientY - box.top) / box.height;
-			prefs.set('sidebarSplit', Math.min(Math.max(fraction, 0.15), 0.75));
+			dragSplit = clamp((e.clientY - box.top) / box.height);
 		};
-		const stop = (e: PointerEvent) => {
-			(event.target as HTMLElement).releasePointerCapture(e.pointerId);
-			window.removeEventListener('pointermove', move);
-			window.removeEventListener('pointerup', stop);
+		const stop = () => {
+			handle.removeEventListener('pointermove', move);
+			handle.removeEventListener('pointerup', stop);
+			handle.removeEventListener('pointercancel', stop);
+			if (dragSplit !== null) prefs.set('sidebarSplit', dragSplit);
+			dragSplit = null;
 		};
-		window.addEventListener('pointermove', move);
-		window.addEventListener('pointerup', stop);
+		// On the handle, not the window: pointer capture routes the whole drag
+		// here, and a listener that cannot outlive its element cannot leak.
+		handle.addEventListener('pointermove', move);
+		handle.addEventListener('pointerup', stop);
+		handle.addEventListener('pointercancel', stop);
 	}
 
 	function paneHref(paneId: string) {
@@ -211,11 +239,11 @@
 			{#if home}
 				<a
 					href={resolve('/')}
-					class="flex h-9 items-center gap-1.5 rounded-full bg-chip px-3 text-[13px] text-muted"
+					class="flex h-11 w-11 shrink-0 items-center justify-center rounded-lg text-muted"
+					aria-label="Home — all agents"
 					onclick={onclose}
 				>
-					<Icon name="list" size={16} />
-					Home
+					<Icon name="home" size={20} />
 				</a>
 			{/if}
 		</div>
@@ -226,7 +254,7 @@
 		chooses what the bottom one is about, which is what stops them being two
 		views of the same list.
 	-->
-	<div class="flex min-h-0 flex-col" style="height: {prefs.value.sidebarSplit * 100}%; flex: none">
+	<div class="flex min-h-0 flex-col" style="height: {split * 100}%; flex: none">
 		<div class="min-h-0 flex-1 overflow-y-auto overscroll-contain py-1">
 			<p class="px-2 py-0.5 font-mono text-[10.5px] text-muted">machines</p>
 
@@ -314,9 +342,9 @@
 	<button
 		type="button"
 		aria-label="Resize the machines section, currently {Math.round(
-			prefs.value.sidebarSplit * 100
+			split * 100
 		)}% — arrow keys adjust"
-		class="group relative h-1.5 w-full shrink-0 cursor-row-resize border-y border-hairline bg-card before:absolute before:inset-x-0 before:-inset-y-2 before:content-['']"
+		class="group relative h-1.5 w-full shrink-0 cursor-row-resize touch-none border-y border-hairline bg-card before:absolute before:inset-x-0 before:-inset-y-2 before:content-['']"
 		onpointerdown={startDrag}
 		onkeydown={(e) => {
 			// Keyboard-resizable too, in 5% steps.
