@@ -255,6 +255,16 @@ const SCREEN = [
 	'  [model] | effort high | Context 24% | \ud83d\udcc1 storefront'
 ].join('\n');
 
+/** What the harness offers behind `/`, plus the operator's own skills. */
+const COMMANDS = [
+	{ name: 'model', description: 'Change the model for this session', source: 'harness' },
+	{ name: 'effort', description: 'How hard it should think', source: 'harness' },
+	{ name: 'usage', description: 'Tokens, cost and what is left', source: 'harness' },
+	{ name: 'review', description: 'Review the diff on this branch', source: 'command' },
+	{ name: 'deploy', description: 'Build, restart and smoke the service', source: 'skill' },
+	{ name: 'handoff', description: 'Write the state of play for the next session', source: 'skill' }
+];
+
 const sse =
 	`event: agents\ndata: ${JSON.stringify(AGENTS)}\n\n` +
 	`event: read\ndata: ${JSON.stringify({ 'w1:p2': 41 })}\n\n` +
@@ -287,6 +297,13 @@ export async function stub(page: Page) {
 	);
 	await page.route(/\/api\/layout/, (route) => route.fulfill(json({ ok: true })));
 	await page.route(/\/api\/tabs/, (route) => route.fulfill(json({ ok: true })));
+	// Answering must succeed, or the recording shows "no picker on screen".
+	await page.route(/\/api\/agents\/[^/]+\/(answer|prompt|keys|type)/, (route) =>
+		route.fulfill(json({ ok: true, verified: true }))
+	);
+	await page.route(/\/api\/agents\/[^/]+\/commands/, (route) =>
+		route.fulfill(json({ agent: 'claude', commands: COMMANDS }))
+	);
 	await page.route(/\/api\/agents\/[^/]+\/read/, (route) =>
 		route.fulfill(json({ text: SCREEN, lines: 24, atTop: true }))
 	);
