@@ -49,6 +49,17 @@ describe('normalisePrefs', () => {
 	 * load and read as a bug. Anyone upgrading has no stored value, so the
 	 * default is what they get, and it has to be "visible".
 	 */
+	/**
+	 * Back is the way home on a phone, so that is the default. The other value
+	 * exists for anyone who wants the browser's own retracing back.
+	 */
+	it('sends the back gesture home unless asked to retrace', () => {
+		expect(DEFAULTS.backTo).toBe('home');
+		expect(normalisePrefs({}).backTo).toBe('home');
+		expect(normalisePrefs({ backTo: 'history' }).backTo).toBe('history');
+		expect(normalisePrefs({ backTo: 'sideways' }).backTo).toBe('home');
+	});
+
 	it('shows the grouping chips unless they were explicitly turned off', () => {
 		expect(DEFAULTS.showGrouping).toBe(true);
 		expect(normalisePrefs({}).showGrouping).toBe(true);

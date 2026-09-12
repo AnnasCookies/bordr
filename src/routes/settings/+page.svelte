@@ -15,6 +15,7 @@
 	import { onMount } from 'svelte';
 	import { resolve } from '$app/paths';
 	import type {
+		BackTo,
 		HarnessAccent,
 		StatusPosition,
 		ToolDetail,
@@ -339,6 +340,18 @@
 		<span class="self-center font-mono text-[10.5px] text-muted">
 			{prefs.value.theme === 'system' ? 'follows the device' : `always ${prefs.value.theme}`}
 		</span>
+	</div>
+{/snippet}
+
+{#snippet backPreview()}
+	<div class="rounded-lg bg-page p-2 text-[12px] text-muted">
+		{#if prefs.value.backTo === 'home'}
+			One <span class="font-mono">back</span> from anywhere inside an agent returns to the agents list.
+			Move between panes with the tab strip or a swipe.
+		{:else}
+			<span class="font-mono">back</span> retraces every pane and screen you visited, one gesture at a
+			time.
+		{/if}
 	</div>
 {/snippet}
 
@@ -734,6 +747,17 @@
 				>
 					{#snippet preview()}{@render suggestionPreview()}{/snippet}
 				</ToggleRow>
+				<SettingRow
+					label="Back gesture"
+					value={prefs.value.backTo}
+					options={[
+						{ v: 'home' as BackTo, l: 'Home' },
+						{ v: 'history' as BackTo, l: 'Retrace' }
+					]}
+					onchange={(v) => prefs.set('backTo', v)}
+				>
+					{#snippet preview()}{@render backPreview()}{/snippet}
+				</SettingRow>
 				<ToggleRow
 					label="Swipe to cycle agents"
 					hint="Swipe across a conversation for the next or previous agent in the list. Swiping from either screen edge still goes back."
