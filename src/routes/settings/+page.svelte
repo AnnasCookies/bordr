@@ -309,7 +309,7 @@
 {#snippet rollupPreview()}
 	<div class="rounded-lg bg-page p-2">
 		<p class="font-mono text-[10.5px] text-muted">
-			bordr {#if prefs.value.rollup}<span class="text-faint">· 2 working · 1 idle</span>{/if}
+			storefront {#if prefs.value.rollup}<span class="text-faint">· 2 working · 1 idle</span>{/if}
 		</p>
 		<p class="pl-2 text-[12px]">checkout-flow</p>
 	</div>
