@@ -14,7 +14,7 @@ test('the drawer offers an explicit way out and a way home', async ({ page }) =>
 
 	await page.getByRole('button', { name: 'Session list', exact: true }).click();
 	const close = page.getByRole('button', { name: 'Close the session list' });
-	const home = page.getByRole('link', { name: 'Home', exact: true });
+	const home = page.getByRole('link', { name: 'Home — all agents' });
 	await expect(home).toBeVisible();
 	await expect(close).toBeVisible();
 
@@ -42,12 +42,12 @@ test('tapping where the menu button is closes the drawer rather than navigating'
 	const menu = page.getByRole('button', { name: 'Session list', exact: true });
 	const box = await menu.boundingBox();
 	await menu.click();
-	await expect(page.getByRole('link', { name: 'Home', exact: true })).toBeVisible();
+	await expect(page.getByRole('link', { name: 'Home — all agents' })).toBeVisible();
 
 	const url = page.url();
 	await page.mouse.click(box!.x + box!.width / 2, box!.y + box!.height / 2);
 
-	await expect(page.getByRole('link', { name: 'Home', exact: true })).toBeHidden();
+	await expect(page.getByRole('link', { name: 'Home — all agents' })).toBeHidden();
 	expect(page.url(), 'that corner must not navigate').toBe(url);
 });
 
@@ -78,10 +78,52 @@ test('the agents list drawer has the same toggle, and no Home of its own', async
 	const close = page.getByRole('button', { name: 'Close the session list' });
 	await expect(close).toBeVisible();
 	await expect(close).toHaveText('☰');
-	await expect(page.getByRole('link', { name: 'Home', exact: true })).toHaveCount(0);
+	await expect(page.getByRole('link', { name: 'Home — all agents' })).toHaveCount(0);
 
 	await close.click();
 	await expect(close).toBeHidden();
+});
+
+/**
+ * The divider used to leave its move handler bound to the window when the
+ * browser cancelled the gesture, so every later scroll resized the sidebar.
+ * Both halves are guarded: the gesture must be ours to begin with, and a
+ * cancelled drag must not keep listening.
+ */
+test('the sidebar divider claims the gesture and lets go when cancelled', async ({ page }) => {
+	await page.goto('/');
+	await page.getByRole('button', { name: 'Workspaces', exact: true }).click();
+
+	const handle = page.getByRole('button', { name: /Resize the machines section/ });
+	await expect(handle).toBeVisible();
+
+	// Without this the browser scrolls instead of letting us drag.
+	expect(await handle.evaluate((el) => getComputedStyle(el).touchAction)).toBe('none');
+
+	const section = page.locator('nav[aria-label="Session"] > div').first();
+	const before = (await section.boundingBox())!.height;
+
+	// A drag the browser takes over for a scroll: down, then cancel.
+	await handle.evaluate((el) => {
+		const opts = { bubbles: true, pointerId: 1, pointerType: 'touch', clientY: 300 };
+		el.dispatchEvent(new PointerEvent('pointerdown', opts));
+		el.dispatchEvent(new PointerEvent('pointercancel', opts));
+	});
+	// Anything moving afterwards must not resize it.
+	await handle.evaluate((el) => {
+		el.dispatchEvent(
+			new PointerEvent('pointermove', {
+				bubbles: true,
+				pointerId: 1,
+				pointerType: 'touch',
+				clientY: 700
+			})
+		);
+	});
+	await page.waitForTimeout(150);
+
+	const after = (await section.boundingBox())!.height;
+	expect(Math.abs(after - before), 'a cancelled drag must stop listening').toBeLessThan(2);
 });
 
 test('back returns to the agents list however much you moved around', async ({ page }) => {

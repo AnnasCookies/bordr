@@ -7,6 +7,7 @@
 	 */
 	export type IconName =
 		| 'list'
+		| 'home'
 		| 'search'
 		| 'folder'
 		| 'settings'
@@ -45,6 +46,9 @@
 >
 	{#if name === 'list'}
 		<path d="M4 6h16M4 12h16M4 18h10" />
+	{:else if name === 'home'}
+		<path d="M3 10.5 12 3l9 7.5" />
+		<path d="M5.5 9.5V20h13V9.5" />
 	{:else if name === 'search'}
 		<circle cx="11" cy="11" r="7" />
 		<path d="M20 20l-3.5-3.5" />
