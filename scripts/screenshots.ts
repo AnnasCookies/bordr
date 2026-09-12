@@ -38,9 +38,39 @@ for (const scheme of ['light', 'dark'] as const) {
 	await page.waitForTimeout(900);
 	await page.screenshot({ path: `${outDir}/conversation-${scheme}.png` });
 
-	await page.goto(`${url}/settings`, { waitUntil: 'networkidle' });
-	await page.waitForTimeout(400);
+	// The session drawer, which is how you move between machines and panes.
+	await page.getByRole('button', { name: 'Session list', exact: true }).click();
+	await page.waitForTimeout(500);
+	await page.screenshot({ path: `${outDir}/drawer-${scheme}.png` });
+	// Home, from inside the drawer: the conversation has a composer where the
+	// tab bar is, so the list is the only way back to the other screens.
+	await page.getByRole('link', { name: 'Home — all agents' }).click();
+	await page.waitForTimeout(700);
+
+	// EVERY navigation from here is client-side, through the tab bar. A goto or
+	// a reload re-runs the universal load ON THE SERVER, and a server-side
+	// fetch cannot be intercepted — the settings shot used to come back
+	// carrying the host's real workspace names and a real spend figure, off
+	// its own herdr, straight into a public README.
+	await page.getByRole('link', { name: 'Files' }).click();
+	await page.waitForTimeout(700);
+	await page.screenshot({ path: `${outDir}/files-${scheme}.png` });
+
+	await page.getByRole('link', { name: 'Settings' }).click();
+	await page.waitForTimeout(700);
 	await page.screenshot({ path: `${outDir}/settings-${scheme}.png` });
+
+	// Terminal mode is chosen in Settings, so switch it there and walk back.
+	await page
+		.getByRole('group', { name: 'Pane view' })
+		.getByRole('button', { name: 'Terminal' })
+		.click();
+	await page.waitForTimeout(300);
+	await page.getByRole('link', { name: 'Agents' }).click();
+	await page.waitForTimeout(700);
+	await page.locator('main a[href="/a/w1:p1"]').first().click();
+	await page.waitForTimeout(1100);
+	await page.screenshot({ path: `${outDir}/terminal-${scheme}.png` });
 
 	await page.close();
 	console.log(`captured ${scheme}`);

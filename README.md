@@ -5,13 +5,16 @@
 <p align="center">
   <strong>Your faithful, playful, roaming sheepdog - Herd(r) your flock from anywhere! <br>
     Read and drive every coding agent on your machine, from your phone.</strong>
-  <br> A mobile web workspace for <a href="https://herdr.dev">herdr</a>, served over Tailscale. 
+  <br> A mobile web workspace for <a href="https://herdr.dev">herdr</a>, served over Tailscale.
   <br>Waggy Tail, Happy Dev :)
 </p>
 
 <p align="center">
-  <img src=".github/media/agents-light.png" width="250" alt="The agents list: a blocked agent pinned at the top with its options inline"/>
-  <img src=".github/media/conversation-dark.png" width="250" alt="A conversation, with the picker card and the key strip"/>
+  <img src=".github/media/demo.gif" width="300" alt="Answering a blocked agent from the list, opening the conversation, swiping to the next agent, and switching to dark mode"/>
+</p>
+
+<p align="center">
+  <em>A blocked agent, answered from the list. No typing, no terminal.</em>
 </p>
 
 ## Why I made this
@@ -28,45 +31,122 @@ All you need is Tailscale, Herdr and a PC to run it on.
 
 ## What it does
 
-- **Answer a blocked agent with one tap.** Agents waiting on you are pinned to
-  the top of the list with their first options inline, so you never have to open
-  the conversation to unblock one.
-- **Read sessions as chat, not terminal soup.** Each harness's own transcript,
+### Answer without opening anything
+
+- **A blocked agent, one tap.** Agents waiting on you are pinned to the top of
+  the list with their first options inline, so you never have to open the
+  conversation to unblock one.
+- **Push the moment it blocks.** Tap the notification and it opens that
+  conversation — or answer straight from the notification's own buttons.
+- **Every harness in one list.** Claude Code, codex, pi, omp, grok, copilot and
+  agy, each with its own mark, grouped by workspace, status or harness, and a
+  line saying what it is actually doing.
+
+### Read what happened
+
+- **Sessions as chat, not terminal soup.** Each harness's own transcript,
   rendered prose first, with tool calls folded away behind a toggle.
-- **Push notifications the moment an agent needs you.** Tap the notification and
-  it opens that conversation.
-- **Every harness in one list.** Claude Code, codex, pi, omp, grok and more,
-  grouped by workspace, status or harness, each with a line saying what it is
-  actually doing.
-- **Type, dictate, or send a photo.** Attach photos or record long-form messages!
+- **Code that looks like code.** Syntax highlighting with VS Code's own
+  grammars, and tool calls you can open to see the arguments, the diff and the
+  result.
+- **Search every session at once.** Quoted phrases, `-exclusions`, and filters
+  for who said it and which harness.
+
+### Drive it properly
+
+- **Terminal mode.** The pane exactly as the machine draws it, with bordr's
+  input box where the harness draws its own.
+- **A tab's real split.** herdr splits a tab into panes; bordr shows that split
+  rather than a row of chips, and you can drag the divider from the phone.
 - **Drive a stubborn TUI.** A live screen peek plus an on-screen key strip
-  (`esc tab ↑ ↓ ← → ␣ ⏎`) for anything the terminal insists on handling itself.
+  (`esc tab ⇧⇥ ↑ ↓ ← → ␣ ⏎`) for anything the terminal insists on handling
+  itself.
 - **Slash command previews.** Type `/` and the harness's commands and your own
   skills, commands and plugins are listed with their descriptions. Print-style
   ones show their output inline; selector menus become tappable cards.
-- **Search every session at once.** Quoted phrases, `-exclusions`, and filters
-  for who said it and which harness.
-- **Browse and preview files.** Markdown, images, PDFs and text, with agent-built
-  HTML reports rendering in the phone browser, sandboxed.
+- **Type, dictate, or send a photo.** Attach photos or record long-form
+  messages, or share a picture straight into bordr from another app.
+
+### Your whole estate
+
+- **herdr's own shape.** Machines, workspaces, tabs and panes, in a side panel
+  that matches what herdr shows on the desktop.
+- **Other machines, over SSH.** Name them in `BORDR_MACHINES` and bordr drives
+  herdr on each of them too. Empty by default, because every machine you add is
+  another one anyone reaching bordr can drive.
+- **Browse and preview files.** Markdown, images, PDFs and text, with
+  agent-built HTML reports rendering in the phone browser, sandboxed.
+
+### Make it yours
+
 - **Swipe between agents.** Left and right cycle through the list in whatever
   order you sorted it.
-- **Light and dark, and your own colours** If you want chat bubbles instead of
-  the default prefixed transcript.
-- **Settings and customisation** Loads more settings to tweak the behaviour, check your connection, send test notifications and more!
+- **Back goes home.** One gesture from anywhere inside an agent returns to the
+  list, rather than retracing every pane you looked at. Switchable.
+- **Light and dark, and your own colours.** Chat bubbles instead of the default
+  prefixed transcript, if you want them.
+- **Loads more settings** to tweak the behaviour, check your connection, send a
+  test notification and more — each with a live preview of what it does.
 
 It installs to the home screen as a PWA and works on any modern phone browser.
+
+## What it looks like
+
+<table>
+  <tr>
+    <td width="33%" align="center">
+      <img src=".github/media/agents-light.png" alt="The agents list, with a blocked agent pinned at the top and its options inline"/>
+      <br/><strong>The list</strong>
+      <br/><sub>Blocked agents first, answerable in place.</sub>
+    </td>
+    <td width="33%" align="center">
+      <img src=".github/media/conversation-dark.png" alt="A conversation rendered as chat, with highlighted code, folded tool calls and the picker card"/>
+      <br/><strong>A conversation</strong>
+      <br/><sub>Prose first, code highlighted, tools folded away.</sub>
+    </td>
+    <td width="33%" align="center">
+      <img src=".github/media/terminal-light.png" alt="Terminal mode, showing the pane as the machine draws it with the key strip below"/>
+      <br/><strong>Terminal mode</strong>
+      <br/><sub>The pane as the machine draws it.</sub>
+    </td>
+  </tr>
+  <tr>
+    <td width="33%" align="center">
+      <img src=".github/media/drawer-dark.png" alt="The session panel, listing machines, workspaces and agents"/>
+      <br/><strong>The panel</strong>
+      <br/><sub>Machines, workspaces, tabs and panes.</sub>
+    </td>
+    <td width="33%" align="center">
+      <img src=".github/media/files-light.png" alt="The file browser, listing configured roots"/>
+      <br/><strong>Files</strong>
+      <br/><sub>Browse and preview, confined to roots you choose.</sub>
+    </td>
+    <td width="33%" align="center">
+      <img src=".github/media/settings-dark.png" alt="Settings, with a live preview under each control"/>
+      <br/><strong>Settings</strong>
+      <br/><sub>Every control shows what it does.</sub>
+    </td>
+  </tr>
+</table>
+
+<sub>Light and dark throughout; the shots above mix the two on purpose. Every image is captured against invented data by <code>scripts/screenshots.ts</code>.</sub>
 
 ## How it works
 
 ```
-herdr server ──unix socket──> bordr (SvelteKit on Bun) ──HTTPS/SSE──> your phone
+herdr (this host) ──unix socket──┐
+                                 ├─> bordr (SvelteKit on Bun) ──HTTPS/SSE──> your phone
+herdr (named machines) ──ssh -L──┘
 ```
 
 - **Read.** Each harness's own session transcript, straight off disk: Claude
   Code, codex, pi, omp, agy (Antigravity), grok and copilot today. Harnesses
   without an adapter fall back to a cleaned terminal snapshot.
 - **Write.** Always through herdr's socket API: `agent.prompt` for text,
-  `agent.send_keys` for pickers and the key strip.
+  `agent.send_keys` for pickers and the key strip, `pane.send_text` for typing
+  in terminal mode.
+- **Reach.** Other machines only when `BORDR_MACHINES` names them, over an SSH
+  forward to that machine's own herdr socket. Empty by default.
 - **Live.** One herdr event stream, fanned out to phones over SSE.
 - **Push.** A boot-time watcher fires a Web Push the moment any agent turns
   `blocked`.
@@ -249,6 +329,15 @@ comes back to the foreground) and offers a "tap to reload" pill.
   inline; panel-style ones (`/usage`, `/config`) render in the ⌨ peek and the
   page says a menu is open; selector menus (`/model`, `/effort`) become
   tappable cards.
+- **Terminal mode.** The pane as the machine draws it, with bordr's input box
+  where the harness draws its own and the key strip beside it. Chosen per pane
+  in Settings, or automatically for a plain shell.
+- **The panel.** ☰ opens machines, workspaces, tabs and panes — herdr's own
+  shape. Drag the divider to give the machines or the agents more room. The
+  same ☰ closes it, and 🏠 goes back to the list.
+- **Split panes.** Where herdr has split a tab, bordr shows that split rather
+  than a row of chips. The pane you are in holds the transcript and composer;
+  the others show their own screens, and a tap moves you there.
 - **Search.** 🔍 searches every live session's transcript. Multiple words must
   all appear, `"quoted"` matches a phrase, `-word` excludes. Chips narrow to
   your own messages or the agent's, and to one harness. Results are capped per
@@ -257,8 +346,6 @@ comes back to the foreground) and offers a "tap to reload" pill.
   every row and a long-press actions sheet; tap a file to view it (Markdown
   rendered, images with paging, PDF, text with line numbers). Agent-built HTML
   renders in the phone browser, sandboxed. Bytes are served from `/raw/…`.
-
-<p align="center"><img src=".github/media/settings-light.png" width="270" alt="Settings"/></p>
 
 - **Settings.** Grouping, sort, rollup, preview line, theme (light/dark/system),
   mono size, key strip, Enter behaviour, dictation language, push, and a

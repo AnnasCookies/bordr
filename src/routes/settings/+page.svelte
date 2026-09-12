@@ -262,7 +262,7 @@
 {#snippet listDetailPreview()}
 	<div class="rounded-lg bg-page p-2 text-[12px]">
 		<div class="flex items-center gap-2">
-			<span class="flex-1 font-medium">Bordr exploration</span>
+			<span class="flex-1 font-medium">checkout-flow</span>
 			{#if prefs.value.listDetail}
 				<span class="rounded bg-chip px-1 font-mono text-[9.5px] text-faint">on screen</span>
 			{/if}
@@ -273,7 +273,7 @@
 		</p>
 		{#if prefs.value.listDetail}
 			<p class="font-mono text-[10.5px] text-faint">
-				Opus 5 · high · 46% · 540K left · £248.39 · 45h40m
+				Opus 5 · high · 46% · 540K left · £12.40 · 45h40m
 			</p>
 		{/if}
 	</div>
@@ -286,7 +286,7 @@
 		{:else}
 			{@const heads =
 				prefs.value.groupBy === 'workspace'
-					? ['bordr', 'it-work']
+					? ['storefront', 'platform']
 					: prefs.value.groupBy === 'status'
 						? ['blocked', 'working']
 						: ['claude', 'codex']}
@@ -311,13 +311,13 @@
 		<p class="font-mono text-[10.5px] text-muted">
 			bordr {#if prefs.value.rollup}<span class="text-faint">· 2 working · 1 idle</span>{/if}
 		</p>
-		<p class="pl-2 text-[12px]">Bordr exploration</p>
+		<p class="pl-2 text-[12px]">checkout-flow</p>
 	</div>
 {/snippet}
 
 {#snippet previewLinePreview()}
 	<div class="rounded-lg bg-page p-2 text-[12px]">
-		<p class="font-medium">Bordr exploration</p>
+		<p class="font-medium">checkout-flow</p>
 		{#if prefs.value.preview === 'activity'}
 			<p class="font-mono text-[11px] text-muted">Channeling… (4m 36s)</p>
 		{:else if prefs.value.preview === 'cwd'}
@@ -546,9 +546,9 @@
 {#snippet tabLabelPreview()}
 	<div class="flex gap-3 rounded-lg bg-page p-2 text-[12.5px]">
 		<span class="border-b-2 border-working pb-0.5"
-			>{prefs.value.smartTabLabels ? 'Bordr exploration' : 'tab 1'}</span
+			>{prefs.value.smartTabLabels ? 'checkout-flow' : 'tab 1'}</span
 		>
-		<span class="text-muted">{prefs.value.smartTabLabels ? '~/repos/it-work' : 'tab 2'}</span>
+		<span class="text-muted">{prefs.value.smartTabLabels ? '~/code/platform' : 'tab 2'}</span>
 	</div>
 {/snippet}
 
