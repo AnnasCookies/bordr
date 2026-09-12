@@ -6,6 +6,7 @@ export type SortBy = 'status-title' | 'title' | 'recent';
 export type PreviewMode = 'activity' | 'cwd' | 'none';
 export type Theme = 'light' | 'dark' | 'system';
 export type KeyStripMode = 'always' | 'peek';
+export type BackTo = 'home' | 'history';
 export type HarnessAccent = 'edge' | 'tint' | 'off';
 export type ToolDetail = 'formatted' | 'json';
 export type PaneView = 'auto' | 'conversation' | 'terminal';
@@ -21,6 +22,19 @@ export interface Prefs {
 	v: number;
 	groupBy: GroupBy;
 	sort: SortBy;
+	/**
+	 * What the phone's back gesture does from inside an agent.
+	 *
+	 * 'home': moving between panes, tabs and screens from an agent REPLACES
+	 * the history entry, so back is always one step to the agents list. That
+	 * is what the gesture is for on a phone, and a swipe or the tab strip is
+	 * how you move sideways.
+	 *
+	 * 'history': every move pushes, and back retraces them one at a time. Ten
+	 * gestures to get home after a few minutes of switching is the behaviour
+	 * this option exists to restore, for anyone who wants it.
+	 */
+	backTo: BackTo;
 	/**
 	 * The grouping chips on `/`. They used to appear only after grouping had
 	 * been changed in Settings, which meant they were invisible on a fresh
@@ -118,6 +132,7 @@ export const DEFAULTS: Prefs = {
 	v: 2,
 	groupBy: 'workspace',
 	sort: 'status-title',
+	backTo: 'home',
 	showGrouping: true,
 	rollup: true,
 	preview: 'activity',
@@ -175,6 +190,7 @@ const SORTS: SortBy[] = ['status-title', 'title', 'recent'];
 const PREVIEWS: PreviewMode[] = ['activity', 'cwd', 'none'];
 const THEMES: Theme[] = ['light', 'dark', 'system'];
 const STRIPS: KeyStripMode[] = ['always', 'peek'];
+const BACKS: BackTo[] = ['home', 'history'];
 const ACCENTS: HarnessAccent[] = ['edge', 'tint', 'off'];
 const TOOL_DETAILS: ToolDetail[] = ['formatted', 'json'];
 const TREE_SCOPES: TreeScope[] = ['all', 'agents'];
@@ -218,6 +234,7 @@ export function normalisePrefs(raw: unknown): Prefs {
 		v: VERSION,
 		groupBy: pick(stored.groupBy, GROUPS, DEFAULTS.groupBy),
 		sort: pick(stored.sort, SORTS, DEFAULTS.sort),
+		backTo: pick(stored.backTo, BACKS, DEFAULTS.backTo),
 		showGrouping: bool(stored.showGrouping, DEFAULTS.showGrouping),
 		rollup: bool(stored.rollup, DEFAULTS.rollup),
 		preview: pick(stored.preview, PREVIEWS, DEFAULTS.preview),

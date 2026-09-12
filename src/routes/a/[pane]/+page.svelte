@@ -1971,7 +1971,13 @@
 			{@render conversation()}
 		</div>
 	{:else}
-		<PaneScreen {paneId} onopen={() => goto(resolve('/a/[pane]', { pane: paneId }))} />
+		<PaneScreen
+			{paneId}
+			onopen={() =>
+				goto(resolve('/a/[pane]', { pane: paneId }), {
+					replaceState: prefs.value.backTo === 'home'
+				})}
+		/>
 	{/if}
 {/snippet}
 
@@ -1995,7 +2001,18 @@
 	exactly what it had. Everything is one breakpoint — there is no second
 	conversation component to keep in step, which is what makes this safe.
 -->
-<div class="lg:flex lg:h-dvh lg:flex-col lg:overflow-hidden">
+<!--
+	Every link out of an agent replaces rather than pushes, unless you have
+	asked for the old behaviour. Swiping already did this; tapping a pane in
+	the drawer, a tab in the strip, or a tile in the split did not, so a few
+	minutes of switching left the back gesture ten steps from the agents list.
+	Back is the way home on a phone. Sideways is what the strip and the swipe
+	are for.
+-->
+<div
+	class="lg:flex lg:h-dvh lg:flex-col lg:overflow-hidden"
+	data-sveltekit-replacestate={prefs.value.backTo === 'home' ? '' : 'false'}
+>
 	{#if wideScreen}
 		<header class="shrink-0 border-b border-hairline bg-page">
 			{@render paneHeader()}
@@ -2019,14 +2036,23 @@
 	-->
 		{#if treeOpen}
 			<div class="fixed inset-0 z-40 lg:hidden">
+				<!--
+					The scrim closes the drawer on a tap, but it is not the control:
+					the drawer's own header has a labelled Close button now, so
+					announcing this as a second "Close the session list" would put two
+					identically named buttons in the tree for one job. Presentational,
+					and not focusable, so the real button is the one you reach.
+				-->
 				<button
 					class="absolute inset-0 bg-black/40"
-					aria-label="Close the session list"
+					aria-hidden="true"
+					tabindex="-1"
 					onclick={() => (treeOpen = false)}
 				></button>
 				<div class="absolute inset-y-0 left-0 w-[86%] max-w-[320px] shadow-2xl">
 					<SessionTree
 						current={detail.paneId}
+						onclose={() => (treeOpen = false)}
 						onnew={() => {
 							treeOpen = false;
 							showNewAgent = true;

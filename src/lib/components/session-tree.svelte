@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { resolve } from '$app/paths';
+	import Icon from './icon.svelte';
 	import { SvelteSet } from 'svelte/reactivity';
 	import { agentTitle } from '$lib/grouping';
 	import { prefs, type AgentOrder } from '$lib/prefs.svelte';
@@ -7,7 +8,11 @@
 	import HarnessMark from './harness-mark.svelte';
 	import type { MachineStatus, PaneNode, WorkspaceNode } from '$lib/types';
 
-	let { current = '', onnew = () => {} }: { current?: string; onnew?: () => void } = $props();
+	let {
+		current = '',
+		onnew = () => {},
+		onclose
+	}: { current?: string; onnew?: () => void; onclose?: () => void } = $props();
 
 	let workspaces = $state<WorkspaceNode[]>([]);
 	let machines = $state<MachineStatus[]>([]);
@@ -172,6 +177,35 @@
 	class="flex h-full flex-col border-r border-hairline bg-card"
 	aria-label="Session"
 >
+	<!--
+		Only as a drawer, where `onclose` is passed. The desktop sidebar is always
+		there and has the header's own mark to go home with, so a row of buttons
+		above it would be two controls for one job.
+
+		Tapping the exposed screen already closes the drawer, but that is a target
+		you have to know about: it is unlabelled, invisible to a screen reader as
+		anything but "Close the session list", and not reachable by keyboard in
+		any obvious order. An explicit button is the accessible way out.
+	-->
+	{#if onclose}
+		<div class="flex shrink-0 items-center gap-1 border-b border-hairline px-2 py-1.5">
+			<a
+				href={resolve('/')}
+				class="flex h-11 min-w-11 items-center gap-2 rounded-lg px-2 text-[13px] text-muted"
+				onclick={onclose}
+			>
+				<Icon name="list" size={20} />
+				All agents
+			</a>
+			<span class="flex-1"></span>
+			<button
+				class="flex h-11 w-11 items-center justify-center rounded-lg text-[17px] text-muted"
+				aria-label="Close the session list"
+				onclick={onclose}>✕</button
+			>
+		</div>
+	{/if}
+
 	<!--
 		Machines on top, agents underneath — herdr's own shape. The top section
 		chooses what the bottom one is about, which is what stops them being two
