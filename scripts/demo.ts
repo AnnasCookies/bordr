@@ -27,7 +27,8 @@ const context = await browser.newContext({
 });
 const page = await context.newPage();
 const { stub } = await import('./demo-data');
-await stub(page);
+// Start with the agent working, so the question can arrive on camera.
+const story = await stub(page, 'working');
 
 /**
  * A pointer the recording can follow.
@@ -145,13 +146,29 @@ async function tap(target: import('@playwright/test').Locator, after = 700) {
 }
 
 await page.goto(`${url}/`, { waitUntil: 'networkidle' });
-await beat(1100);
+// Everything is just running. Nothing wants you yet.
+await beat(1300);
 
-// The pitch: a blocked agent, answered from the list without opening it.
-await tap(page.getByRole('button', { name: /Rename it and write a migration/ }), 1100);
+// The agent hits a question it cannot answer for you. The reconnect carries
+// it over within about a second, so it genuinely arrives on screen: the row
+// lifts into "needs you" with its options already on it.
+story.set('blocked');
+await page.getByRole('button', { name: /Rename it and write a migration/ }).waitFor();
+await beat(1200);
 
-// Into the conversation, which is where the rest of it lives.
-await tap(page.locator('main a[href="/a/w1:p1"]').first(), 1200);
+// The pitch: answered from the list, without opening anything.
+await tap(page.getByRole('button', { name: /Rename it and write a migration/ }), 600);
+story.set('answered');
+// Wait for the reconnect to carry it, rather than guessing at a delay: the
+// row leaving "needs you" IS the confirmation.
+await page
+	.getByRole('button', { name: /Rename it and write a migration/ })
+	.waitFor({ state: 'hidden' });
+await beat(1000);
+
+// And it landed: the conversation carries your answer, and the card that was
+// waiting on you has gone.
+await tap(page.locator('main a[href="/a/w1:p1"]').first(), 1900);
 
 // `/` lists the harness's own commands and your skills, with descriptions.
 await tap(page.getByPlaceholder(/Type a reply|Or type a reply/), 400);
@@ -161,15 +178,15 @@ await page.keyboard.press('Escape');
 await beat(500);
 
 // The panel: machines, workspaces, tabs and panes, herdr's own shape.
-await tap(page.getByRole('button', { name: 'Session list', exact: true }), 1300);
+await tap(page.getByRole('button', { name: 'Session list', exact: true }), 1100);
 
 // And back to the list from inside it.
-await tap(page.getByRole('link', { name: 'Home — all agents' }), 1000);
+await tap(page.getByRole('link', { name: 'Home — all agents' }), 800);
 
 // Dark mode, because half the people looking at this will want to see it.
-await tap(page.getByRole('link', { name: 'Settings' }), 700);
+await tap(page.getByRole('link', { name: 'Settings' }), 550);
 await tap(page.getByRole('group', { name: 'Theme' }).getByRole('button', { name: 'Dark' }), 900);
-await tap(page.getByRole('link', { name: 'Agents' }), 1600);
+await tap(page.getByRole('link', { name: 'Agents' }), 1400);
 
 await page.close();
 await context.close();
@@ -193,7 +210,7 @@ execFileSync(
 		'-i',
 		join(raw, webm),
 		'-vf',
-		'fps=10,scale=320:-1:flags=lanczos,split[s0][s1];[s0]palettegen=max_colors=112[p];[s1][p]paletteuse=dither=bayer:bayer_scale=4',
+		'fps=9,scale=300:-1:flags=lanczos,split[s0][s1];[s0]palettegen=max_colors=96[p];[s1][p]paletteuse=dither=bayer:bayer_scale=4',
 		'-loop',
 		'0',
 		out
