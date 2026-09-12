@@ -1808,6 +1808,13 @@
 							class="hidden"
 							onchange={(e) => void addFiles(e.currentTarget)}
 						/>
+						<!--
+							pr-2, not scrollbar-gutter: once the draft is long enough to
+							scroll, a phone draws its scrollbar as an OVERLAY, on top of
+							the text rather than beside it, and clipped the last character
+							of every wrapped line. A reserved gutter does nothing about an
+							overlay; padding is what moves the text out from under it.
+						-->
 						<textarea
 							bind:this={textarea}
 							bind:value={draft}
@@ -1819,7 +1826,7 @@
 								: detail.picker
 									? 'Or type a reply…'
 									: 'Type a reply…'}
-							class="[field-sizing:content] max-h-[min(10rem,22dvh)] min-w-0 flex-1 resize-none bg-transparent py-1.5 text-[16px] placeholder:text-faint focus:outline-none"
+							class="[field-sizing:content] max-h-[min(10rem,22dvh)] min-w-0 flex-1 resize-none bg-transparent py-1.5 pr-2 text-[16px] placeholder:text-faint focus:outline-none"
 						></textarea>
 						{#if speechSupported}
 							{#if dictating}
@@ -2073,6 +2080,7 @@
 					<SessionTree
 						current={detail.paneId}
 						onclose={() => (treeOpen = false)}
+						home
 						onnew={() => {
 							treeOpen = false;
 							showNewAgent = true;
