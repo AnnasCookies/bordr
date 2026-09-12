@@ -41,6 +41,26 @@
 	let showNewAgent = $state(false);
 	/** The session tree as a drawer, on a phone. */
 	let treeOpen = $state(false);
+
+	/**
+	 * Hold the page still while the drawer is over it.
+	 *
+	 * The drawer is `fixed inset-0` and scrolls nothing itself, so a drag
+	 * anywhere on it scrolled the transcript underneath. On a phone that also
+	 * collapses and expands the browser's own chrome, which changes the
+	 * viewport height the drawer is pinned to — so the panel jumped about
+	 * while you were only trying to read the list. Locking the body stops
+	 * both, and the drawer's own lists carry `overscroll-contain` so reaching
+	 * the end of one does not start the page moving again.
+	 */
+	$effect(() => {
+		if (!treeOpen) return;
+		const previous = document.body.style.overflow;
+		document.body.style.overflow = 'hidden';
+		return () => {
+			document.body.style.overflow = previous;
+		};
+	});
 	/** Whether the desktop sidebar has room. Matches Tailwind's lg breakpoint. */
 	let wideScreen = $state(false);
 
@@ -1984,7 +2004,7 @@
 {#snippet paneHeader()}
 	<AppHeader
 		onmenu={() =>
-			wideScreen ? prefs.set('sidebarOpen', !prefs.value.sidebarOpen) : (treeOpen = true)}
+			wideScreen ? prefs.set('sidebarOpen', !prefs.value.sidebarOpen) : (treeOpen = !treeOpen)}
 		menuLabel={wideScreen
 			? prefs.value.sidebarOpen
 				? 'Hide the session list'

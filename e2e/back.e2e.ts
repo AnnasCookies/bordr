@@ -27,6 +27,45 @@ test('the drawer offers an explicit way out and a way home', async ({ page }) =>
 	await expect(home).toBeHidden();
 });
 
+/**
+ * The drawer covers the header, so whatever is drawn in the top-left corner is
+ * what a thumb hits when it returns to the control it just used. It landing on
+ * a link home instead of a close button is the bug this guards.
+ */
+test('tapping where the menu button is closes the drawer rather than navigating', async ({
+	page
+}) => {
+	const href = await firstPane(page);
+	test.skip(!href, 'no agents running');
+	await page.goto(href as string);
+
+	const menu = page.getByRole('button', { name: 'Session list', exact: true });
+	const box = await menu.boundingBox();
+	await menu.click();
+	await expect(page.getByRole('link', { name: 'All agents', exact: true })).toBeVisible();
+
+	const url = page.url();
+	await page.mouse.click(box!.x + box!.width / 2, box!.y + box!.height / 2);
+
+	await expect(page.getByRole('link', { name: 'All agents', exact: true })).toBeHidden();
+	expect(page.url(), 'that corner must not navigate').toBe(url);
+});
+
+test('the page underneath does not scroll while the drawer is open', async ({ page }) => {
+	const href = await firstPane(page);
+	test.skip(!href, 'no agents running');
+	await page.goto(href as string);
+
+	const locked = () => page.evaluate(() => document.body.style.overflow);
+	expect(await locked()).not.toBe('hidden');
+
+	await page.getByRole('button', { name: 'Session list', exact: true }).click();
+	expect(await locked(), 'body should be held still under the drawer').toBe('hidden');
+
+	await page.getByRole('button', { name: 'Close the session list' }).click();
+	expect(await locked(), 'and released again afterwards').not.toBe('hidden');
+});
+
 test('back returns to the agents list however much you moved around', async ({ page }) => {
 	const href = await firstPane(page);
 	test.skip(!href, 'no agents running');

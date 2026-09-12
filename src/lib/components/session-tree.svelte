@@ -189,6 +189,18 @@
 	-->
 	{#if onclose}
 		<div class="flex shrink-0 items-center gap-1 border-b border-hairline px-2 py-1.5">
+			<!--
+				Close sits FIRST, on top of where the ☰ that opened the drawer is
+				drawn. The drawer covers the header, so whatever lands in that
+				corner is what your thumb hits when you go back to the control you
+				just used — and it has to be the one that undoes it. Anything else
+				there navigates you somewhere you did not ask to go.
+			-->
+			<button
+				class="flex h-11 w-11 shrink-0 items-center justify-center rounded-lg text-[17px] text-muted"
+				aria-label="Close the session list"
+				onclick={onclose}>✕</button
+			>
 			<a
 				href={resolve('/')}
 				class="flex h-11 min-w-11 items-center gap-2 rounded-lg px-2 text-[13px] text-muted"
@@ -197,12 +209,6 @@
 				<Icon name="list" size={20} />
 				All agents
 			</a>
-			<span class="flex-1"></span>
-			<button
-				class="flex h-11 w-11 items-center justify-center rounded-lg text-[17px] text-muted"
-				aria-label="Close the session list"
-				onclick={onclose}>✕</button
-			>
 		</div>
 	{/if}
 
@@ -212,7 +218,7 @@
 		views of the same list.
 	-->
 	<div class="flex min-h-0 flex-col" style="height: {prefs.value.sidebarSplit * 100}%; flex: none">
-		<div class="min-h-0 flex-1 overflow-y-auto py-1">
+		<div class="min-h-0 flex-1 overflow-y-auto overscroll-contain py-1">
 			<p class="px-2 py-0.5 font-mono text-[10.5px] text-muted">machines</p>
 
 			{#each groups as group (group.key)}
@@ -316,7 +322,7 @@
 		></span>
 	</button>
 
-	<div class="min-h-0 flex-1 overflow-y-auto py-1">
+	<div class="min-h-0 flex-1 overflow-y-auto overscroll-contain py-1">
 		<div class="flex items-center gap-1 px-2 py-0.5">
 			<span class="flex-1 font-mono text-[10.5px] text-muted">agents</span>
 			{#each [{ v: 'priority', l: 'priority' }, { v: 'workspace', l: 'group' }] as option (option.v)}
