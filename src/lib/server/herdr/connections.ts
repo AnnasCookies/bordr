@@ -70,6 +70,32 @@ async function alive(connection: Connection): Promise<boolean> {
 	}
 }
 
+/**
+ * Tell a control master to forget a forward, so it can be asked for again.
+ *
+ * Best effort by design: no master, no forward, or an ssh too old to know
+ * `-O cancel` all mean there is nothing to undo, which is the same outcome.
+ */
+function cancelForward(
+	controlPath: string,
+	socketPath: string,
+	remote: string,
+	target: string
+): Promise<void> {
+	return new Promise((done) => {
+		if (!existsSync(controlPath)) return done();
+		const child = spawn(
+			'ssh',
+			['-o', `ControlPath=${controlPath}`, '-O', 'cancel', '-L', `${socketPath}:${remote}`, target],
+			{ stdio: 'ignore' }
+		);
+		child.on('exit', () => done());
+		child.on('error', () => done());
+		// Never let a wedged master hold up the connect that follows it.
+		setTimeout(done, 4_000);
+	});
+}
+
 async function connect(machine: Machine): Promise<Connection | null> {
 	const live = connections.get(machine.id);
 	if (live && !live.error && (await alive(live))) return live;
@@ -85,6 +111,7 @@ async function connect(machine: Machine): Promise<Connection | null> {
 
 	const attempt = (async (): Promise<Connection | null> => {
 		const socketPath = join(runtimeDir(), `${machine.id}.sock`);
+		const controlPath = join(runtimeDir(), `${machine.id}.ctl`);
 		// A socket left by a dead forward refuses connections forever.
 		rmSync(socketPath, { force: true });
 
@@ -100,6 +127,20 @@ async function connect(machine: Machine): Promise<Connection | null> {
 			return null;
 		}
 
+		const remote = remoteSocketPath(home, machine);
+		// Deleting the socket FILE is not enough while a control master is up.
+		//
+		// The master keeps its own register of forwards. Ask it for one it
+		// already believes it has and it agrees instantly and does nothing:
+		// ssh exits 0, no socket appears, and stderr is empty — so the only
+		// symptom is every machine reading "no answer", with no reason
+		// anywhere. `ControlPersist` outlives bordr, so the state that
+		// causes it survives a restart and never clears itself.
+		//
+		// Cancelling first makes the request real again. Failing is the
+		// normal case — usually there is no master — so it is ignored.
+		await cancelForward(controlPath, socketPath, remote, machine.target);
+
 		const child = spawn(
 			'ssh',
 			[
@@ -113,12 +154,12 @@ async function connect(machine: Machine): Promise<Connection | null> {
 				'-o',
 				'ControlMaster=auto',
 				'-o',
-				`ControlPath=${join(runtimeDir(), `${machine.id}.ctl`)}`,
+				`ControlPath=${controlPath}`,
 				'-o',
 				'ControlPersist=300',
 				'-fnNT',
 				'-L',
-				`${socketPath}:${remoteSocketPath(home, machine)}`,
+				`${socketPath}:${remote}`,
 				machine.target
 			],
 			{ stdio: ['ignore', 'ignore', 'pipe'] }
