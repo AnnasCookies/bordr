@@ -6,9 +6,14 @@ import { parsePane } from '$lib/server/herdr/address';
 import { branchesFor } from '$lib/server/herdr/branches';
 import { ensureConnection, remoteTranscriptTail } from '$lib/server/herdr/connections';
 import { backfillBlocks } from '$lib/server/transcript/types';
-import { DEFAULT_TAIL_BYTES, readTranscriptTail } from '$lib/server/transcript/tail';
+import {
+	DEFAULT_TAIL_BYTES,
+	readTranscriptHead,
+	readTranscriptTail
+} from '$lib/server/transcript/tail';
 import { listSubagents } from '$lib/server/transcript/subagents';
 import { parseQueue, type QueuedPrompt } from '$lib/server/transcript/queue';
+import { HEAD_BYTES, parseModel } from '$lib/server/transcript/model';
 import { menuFooter, parsePicker, pendingAsk, suggestionFrom } from '$lib/server/picker';
 import { piSessionEnded } from '$lib/server/transcript/pi';
 import { resolveLocalTranscript } from '$lib/server/transcript/resolve';
@@ -161,6 +166,8 @@ export const GET: RequestHandler = async ({ params, url }) => {
 	let subagents: Awaited<ReturnType<typeof listSubagents>> = [];
 	/** What the harness says about prompts it has queued; empty when it says nothing. */
 	let queue: QueuedPrompt[] = [];
+	/** The model the harness recorded; '' when its transcript never said. */
+	let model = '';
 
 	if (!adapter) {
 		degraded = 'no-adapter';
@@ -186,6 +193,7 @@ export const GET: RequestHandler = async ({ params, url }) => {
 					} else {
 						messages = adapter.parse(remote);
 						queue = parseQueue(remote);
+						model = parseModel(remote);
 						workingDir = agentCwd(remote);
 						hasMore = remote.length >= windowBytes;
 						if (messages.length === 0) degraded = 'empty';
@@ -218,6 +226,13 @@ export const GET: RequestHandler = async ({ params, url }) => {
 					} else {
 						messages = adapter.parse(tail.text);
 						queue = parseQueue(tail.text);
+						model = parseModel(tail.text);
+						// The tail has it for a harness that names the model on every
+						// turn. For one that declares it once and stays quiet — omp —
+						// the answer is in the opening lines instead.
+						if (!model && tail.partial) {
+							model = parseModel(await readTranscriptHead(path, HEAD_BYTES));
+						}
 						workingDir = agentCwd(tail.text);
 						hasMore = tail.partial;
 						// A whole transcript that parses to nothing is a format we no
@@ -317,6 +332,7 @@ export const GET: RequestHandler = async ({ params, url }) => {
 		messages,
 		subagents,
 		queue,
+		model,
 		// OMP options are relative-key modals: without the live highlight,
 		// transcript labels cannot be answered safely. Other harnesses here
 		// accept an absolute text label and may use the transcript fallback.

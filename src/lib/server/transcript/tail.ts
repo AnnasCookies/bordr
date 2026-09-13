@@ -119,3 +119,25 @@ export async function readTranscriptTail(
 		await handle.close();
 	}
 }
+
+/**
+ * The first `maxBytes` of a transcript, whole lines only.
+ *
+ * For the facts a harness states once, at the start — omp declares its model
+ * in the opening lines and then stays quiet about it, so the tail the
+ * conversation reads never sees one.
+ */
+export async function readTranscriptHead(path: string, maxBytes: number): Promise<string> {
+	const handle = await open(path, 'r');
+	try {
+		const size = Math.max(1, Math.floor(maxBytes));
+		const buffer = Buffer.alloc(size);
+		const { bytesRead } = await handle.read(buffer, 0, size, 0);
+		const text = buffer.subarray(0, bytesRead).toString('utf8');
+		// Drop a final partial line rather than handing back half a record.
+		const lastBreak = text.lastIndexOf('\n');
+		return lastBreak === -1 ? text : text.slice(0, lastBreak);
+	} finally {
+		await handle.close();
+	}
+}

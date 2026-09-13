@@ -107,6 +107,13 @@ export interface AgentDetail extends AgentSummary {
 	 * every message is stuck.
 	 */
 	queue: QueuedPrompt[];
+	/**
+	 * The model this session is running, as the HARNESS recorded it —
+	 * `message.model` on a Claude Code turn, a `model_change` entry in omp.
+	 * Empty when the transcript never said, which is when the status line is
+	 * worth falling back to.
+	 */
+	model: string;
 	picker: Picker | null;
 	/**
 	 * Why `messages` is scraped pane text rather than a parsed transcript;

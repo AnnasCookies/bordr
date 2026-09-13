@@ -459,14 +459,18 @@
 	 * only the plain one is free of escape sequences, which would land in the
 	 * middle of a field this has to cut at a glyph boundary.
 	 */
-	const modelLine = $derived(
-		prefs.value.headerModel === 'off'
-			? { model: '', effort: '' }
-			: (() => {
-					const parsed = parseModelLine(detail.statusLines ?? []);
-					return prefs.value.headerModel === 'model' ? { model: parsed.model, effort: '' } : parsed;
-				})()
-	);
+	const modelLine = $derived.by(() => {
+		if (prefs.value.headerModel === 'off') return { model: '', effort: '' };
+		const line = parseModelLine(detail.statusLines ?? []);
+		// The transcript is the source: the HARNESS wrote it, so it reads the
+		// same on every machine. The status line only stands in for a harness
+		// whose transcript bordr could not read — it is the USER'S line, laid
+		// out however they like, so it is a fallback and never the truth.
+		const model = detail.model || line.model;
+		// Effort exists nowhere else at all — not in either transcript, and not
+		// in herdr, whose API schema does not contain the word once.
+		return { model, effort: prefs.value.headerModel === 'model' ? '' : line.effort };
+	});
 
 	/**
 	 * How the harness shows on an agent bubble.

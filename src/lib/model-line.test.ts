@@ -39,6 +39,23 @@ describe('parseModelLine', () => {
 		expect(parseModelLine([RUN, CODEX])).toEqual({ model: 'CODEX PRO', effort: '' });
 	});
 
+	/**
+	 * The guard that makes reading a user-configurable line defensible at all:
+	 * a value that is not recognisably an effort level is discarded rather than
+	 * announced. Somebody else's layout yields nothing, not nonsense.
+	 */
+	it('refuses a value that is not an effort level', () => {
+		const odd = '\u{f06a9} Opus 5 \u{f04c5} feat/rich-transcript · \u{f07c} ~/bordr';
+		expect(parseModelLine([odd])).toEqual({ model: 'Opus 5', effort: '' });
+	});
+
+	it('accepts every level the harnesses offer, however cased', () => {
+		for (const level of ['none', 'minimal', 'low', 'medium', 'high', 'xhigh', 'max', 'auto']) {
+			const line = `\u{f06a9} Opus 5 \u{f04c5} ${level.toUpperCase()} · x`;
+			expect(parseModelLine([line]).effort).toBe(level);
+		}
+	});
+
 	it('has nothing to say about a harness that prints no status', () => {
 		expect(parseModelLine([])).toEqual({ model: '', effort: '' });
 		expect(parseModelLine([CTX, RUN])).toEqual({ model: '', effort: '' });

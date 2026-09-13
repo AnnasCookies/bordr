@@ -1518,8 +1518,10 @@
 								{#snippet preview()}{@render headerModelPreview()}{/snippet}
 							</SettingRow>
 							<p class="px-3.5 pb-2 text-[12px] text-muted">
-								Read off the harness's own status block, so it costs no extra call. A harness with
-								no effort setting simply shows its model.
+								The model comes from the transcript, where the harness records it, so it is right on
+								any machine. Effort is only ever in the status line — no harness writes it down and
+								herdr has no concept of it — so it is shown when that line clearly carries one and
+								left out when it does not.
 							</p>
 							<SettingRow
 								label="Sub-agents above the conversation"
