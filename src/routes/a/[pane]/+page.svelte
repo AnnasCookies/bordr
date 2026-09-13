@@ -1317,6 +1317,19 @@
 	 * back off halfway down.
 	 */
 	let gliding = 0;
+	/**
+	 * A glide is running, so nothing else may scroll to the bottom.
+	 *
+	 * Clicking Latest sets `following`, which unmounts the Latest button — a
+	 * layout change, which fires the ResizeObserver below, which calls the
+	 * INSTANT `scrollBottom` because following is now true. The glide was being
+	 * beaten to the bottom by its own button disappearing, every time.
+	 *
+	 * The glide re-reads the target each frame, so it already handles content
+	 * arriving mid-flight; it does not need the observer's help, only its
+	 * silence.
+	 */
+	let glideActive = $state(false);
 	function glideBottom() {
 		if (!live) return;
 		const host = scrollHost();
@@ -1331,21 +1344,49 @@
 		}
 
 		cancelAnimationFrame(gliding);
-		const duration = glideDuration(distance);
-		const started = performance.now();
+		glideActive = true;
+		let origin = from;
+		let aim = target();
+		let duration = glideDuration(distance);
+		let started = performance.now();
+		/**
+		 * How many times the ground may move before this stops chasing it.
+		 *
+		 * Scrolling up lazily loads earlier messages, so tapping Latest after
+		 * that can triple the document mid-flight — measured: 17,323px to
+		 * 49,478px, with the main thread blocked for ~560ms rendering it. The
+		 * glide's own clock runs out during that block and it snaps, which is
+		 * the "it just jumps" of it.
+		 *
+		 * Re-aiming alone was not enough, because the DISTANCE changed too: the
+		 * curve was still pacing itself for the old, shorter trip. So a target
+		 * that has moved materially restarts the glide from where it is now,
+		 * with a duration for the journey that is actually left.
+		 *
+		 * Bounded, because a transcript that keeps growing would otherwise keep
+		 * pushing the end away and the glide would never arrive.
+		 */
+		let rescues = 3;
 		programmatic = true;
 		const step = (now: number) => {
+			const moved = target();
+			if (rescues > 0 && Math.abs(moved - aim) > Math.abs(aim - origin) * 0.25 + 200) {
+				rescues -= 1;
+				origin = scrollTop();
+				aim = moved;
+				duration = glideDuration(aim - origin);
+				started = now;
+			}
 			const elapsed = now - started;
-			// The target is re-read every frame: a live transcript grows while
-			// this runs, and aiming at where the bottom WAS lands short of it.
-			const to = target();
-			const at = glidePosition(from, to, elapsed, duration);
+			const to = aim;
+			const at = glidePosition(origin, to, elapsed, duration);
 			if (host) host.scrollTop = at;
 			else window.scrollTo(0, at);
 			if (elapsed < duration) {
 				gliding = requestAnimationFrame(step);
 				return;
 			}
+			glideActive = false;
 			scrollBottom();
 			requestAnimationFrame(() => (programmatic = false));
 		};
@@ -1416,7 +1457,7 @@
 			// end of a transcript, pulling the chat fired a scroll-to-bottom into
 			// the middle of the gesture, over and over. The content fought the
 			// thumb, which is the "bugs out" of it.
-			if (following && !touching) scrollBottom();
+			if (following && !touching && !glideActive) scrollBottom();
 			else if (!touching) onScroll();
 		});
 		if (swipeRoot) observer.observe(swipeRoot);
@@ -1446,7 +1487,7 @@
 		// dragged back down by the next poll.
 		const pinned = following;
 		await invalidateAll();
-		if (pinned) requestAnimationFrame(scrollBottom);
+		if (pinned && !glideActive) requestAnimationFrame(scrollBottom);
 	}
 
 	onMount(() => {
