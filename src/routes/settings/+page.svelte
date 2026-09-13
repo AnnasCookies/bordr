@@ -1494,7 +1494,7 @@
 						>
 							<ToggleRow
 								label="Count waiting agents on the app icon"
-								hint="A badge on the installed app, like a mail app. A notification cannot still be there tomorrow; this can."
+								hint="A badge on the installed app, like a mail app. A notification cannot still be there tomorrow; this can. Chrome on Android has no badging API at all, and on macOS it needs notification permission as well."
 								checked={prefs.value.appBadge}
 								onchange={(v) => prefs.set('appBadge', v)}
 							/>

@@ -1,6 +1,7 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
 	import { page } from '$app/state';
+	import { replaceState } from '$app/navigation';
 	import { version } from '$app/environment';
 	import { resolve } from '$app/paths';
 	import { agentStore } from '$lib/agents.svelte';
@@ -9,6 +10,7 @@
 	import { harnessText, STATUS_INK, STATUS_RAIL } from '$lib/theme';
 	import AgentRow from '$lib/components/agent-row.svelte';
 	import ConnectionBanner from '$lib/components/connection-banner.svelte';
+	import InstallPrompt from '$lib/components/install-prompt.svelte';
 	import AppHeader from '$lib/components/app-header.svelte';
 	import Icon from '$lib/components/icon.svelte';
 	import Spinner from '$lib/components/spinner.svelte';
@@ -77,6 +79,29 @@
 	 */
 	let answeringIndex = $state(-1);
 	let showNew = $state(false);
+
+	/**
+	 * The manifest's "New agent" shortcut lands here with `?new=1`.
+	 *
+	 * A long press on the installed icon offers it, so it has to do something
+	 * on arrival rather than just opening the list. The parameter is stripped
+	 * straight away: leaving it in the URL would reopen the sheet on every
+	 * back-navigation to the list for the rest of the session.
+	 */
+	$effect(() => {
+		if (page.url.searchParams.get('new') !== '1') return;
+		showNew = true;
+		const clean = new URL(page.url);
+		clean.searchParams.delete('new');
+		// `replaceState`, not `goto`: nothing is being navigated to. The URL is
+		// simply losing a parameter it has already been acted on.
+		// The rule wants `resolve()` as the bare argument, which would mean
+		// dropping the rest of the query — and a share arriving at the same time
+		// carries `shared` and `text` there. The route is this page's own, and
+		// only a parameter is being removed from it.
+		// eslint-disable-next-line svelte/no-navigation-without-resolve
+		replaceState(`${resolve('/')}${clean.search}`, page.state);
+	});
 	/** paneId → what went wrong with the last inline answer, shown for a while. */
 	let uncertain = $state<Record<string, string>>({});
 
@@ -343,6 +368,8 @@
 			{/if}
 
 			<ConnectionBanner connection={store.connection} compat={store.compat} />
+
+			<InstallPrompt />
 
 			<!--
 		Capped and centred rather than run to the window edge. The rows are

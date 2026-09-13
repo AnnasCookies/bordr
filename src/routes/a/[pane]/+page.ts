@@ -79,6 +79,14 @@ export const load: PageLoad = async ({ params, url, fetch }) => {
 		throw error(503, 'bordr is unreachable. The transcript will return when it is back.');
 	}
 
+	// A 5xx is the server being unwell, not an answer about this pane — herdr
+	// restarting mid-request, or bordr itself redeployed under us. Same
+	// treatment as unreachable: hold what was on screen rather than replacing a
+	// live transcript and the draft in its composer with an error page.
+	if (detail.status >= 500) {
+		const held = lastGood.get(params.pane);
+		if (held) return { ...held, megabytes, offline: true };
+	}
 	if (!detail.ok) throw error(detail.status, await failureMessage(detail));
 	// A failed watch lookup must not block the transcript; default to off and let
 	// the next SSE-driven invalidation correct it.
