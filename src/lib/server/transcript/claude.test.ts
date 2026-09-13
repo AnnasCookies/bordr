@@ -57,6 +57,26 @@ describe('claudeAdapter.parse', () => {
 		expect(claudeAdapter.parse('null\n42\n"text"\n' + jsonl)).toHaveLength(6);
 	});
 
+	/**
+	 * The other half of the rule below, and the one that was missing.
+	 *
+	 * A sub-agent's own transcript carries the flag on EVERY entry, so the skip
+	 * that correctly keeps sidechains out of a session threw away the whole
+	 * file: opening a sub-agent showed an empty sheet, every time. Measured on
+	 * a real one — 67 turns, all of them dropped.
+	 */
+	it("keeps every turn when the file IS the sub-agent's transcript", () => {
+		const turn = (role: string, text: string) =>
+			JSON.stringify({
+				type: role,
+				isSidechain: true,
+				timestamp: '2026-01-01T00:00:00.000Z',
+				message: { content: text }
+			});
+		const text = [turn('user', 'go and look'), turn('assistant', 'found it')].join('\n');
+		expect(claudeAdapter.parse(text).map((m) => m.role)).toEqual(['user', 'assistant']);
+	});
+
 	it('leaves sidechain (sub-agent) turns out of the conversation', () => {
 		const sidechain = JSON.stringify({
 			type: 'assistant',

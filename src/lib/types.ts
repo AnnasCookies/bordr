@@ -4,6 +4,7 @@ import type { Machine } from './server/herdr/machines';
 import type { Message } from './server/transcript/types';
 import type { Picker } from './server/picker';
 import type { SubagentSummary } from './server/transcript/subagents';
+import type { QueuedPrompt } from './queue';
 
 export type AgentStatus = 'idle' | 'working' | 'blocked' | 'done' | 'unknown';
 
@@ -99,6 +100,13 @@ export interface AgentDetail extends AgentSummary {
 	 * for every harness other than Claude Code.
 	 */
 	subagents: SubagentSummary[];
+	/**
+	 * The harness's own record of prompts it has queued, and which of them it
+	 * has taken. Empty for a harness that reports no queue — which is not the
+	 * same as an empty queue, so the view falls back rather than claiming
+	 * every message is stuck.
+	 */
+	queue: QueuedPrompt[];
 	picker: Picker | null;
 	/**
 	 * Why `messages` is scraped pane text rather than a parsed transcript;

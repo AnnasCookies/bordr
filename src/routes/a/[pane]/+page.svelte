@@ -42,9 +42,11 @@
 	import SubagentSheet from '$lib/components/subagent-sheet.svelte';
 	import Spinner from '$lib/components/spinner.svelte';
 	import Ticks from '$lib/components/ticks.svelte';
+	import BubbleMeta from '$lib/components/bubble-meta.svelte';
 	import { track } from '$lib/pending.svelte';
 	import { nextFollowing } from '$lib/follow';
 	import { keepPending, onScreen, say, type PendingSend } from '$lib/pending-sends';
+	import { queueVerdict } from '$lib/queue';
 	import type { Block } from '$lib/server/transcript/types';
 	import type { SplitNode, WorkspaceNode } from '$lib/types';
 	let { data } = $props();
@@ -2298,8 +2300,12 @@
 						{#each rows as row (row.key)}
 							{#if row.kind === 'pending'}
 								{@const sent = row.sent}
+								{@const verdict = queueVerdict(sent.text, detail.queue ?? [])}
 								{@const held =
-									sent.state !== 'sending' && onScreen(sent.text, detail.screenTail ?? '')}
+									sent.state !== 'sending' &&
+									(verdict !== null
+										? verdict === 'taken'
+										: onScreen(sent.text, detail.screenTail ?? ''))}
 								{#if prefs.value.bubbles}
 									<div class="flex justify-end {tight(row.run)}">
 										<Bubble
@@ -2328,6 +2334,12 @@
 													>{sent.question}</span
 												>
 											{/if}{sent.text}
+											{#snippet meta()}
+												<BubbleMeta
+													at={sent.at}
+													state={sent.state === 'sending' ? 'sending' : held ? 'read' : 'sent'}
+												/>
+											{/snippet}
 										</Bubble>
 									</div>
 								{:else}
@@ -2350,9 +2362,11 @@
 										? 'sending…'
 										: held
 											? 'the agent has it'
-											: detail.status === 'working'
+											: verdict === 'queued'
 												? 'queued behind this turn'
-												: 'delivered · waiting to be picked up'}
+												: detail.status === 'working'
+													? 'sent · the agent is mid-turn'
+													: 'delivered · waiting to be picked up'}
 									{#if prefs.value.messageTicks}<Ticks
 											state={sent.state === 'sending' ? 'sending' : held ? 'read' : 'sent'}
 										/>{/if}
@@ -2421,13 +2435,11 @@
 													mono={prefs.value.monoSize}
 													plain
 												/>
+												{#snippet meta()}
+													<BubbleMeta at={message.at ?? 0} state="read" />
+												{/snippet}
 											</Bubble>
 										</div>
-										{#if prefs.value.messageTicks}
-											<p class="-mt-0.5 flex justify-end pr-0.5 text-faint">
-												<Ticks state="read" />
-											</p>
-										{/if}
 									{:else}
 										<div class="flex gap-2 {tight(row.run)}">
 											<span

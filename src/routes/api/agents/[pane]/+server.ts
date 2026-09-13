@@ -8,6 +8,7 @@ import { ensureConnection, remoteTranscriptTail } from '$lib/server/herdr/connec
 import { backfillBlocks } from '$lib/server/transcript/types';
 import { DEFAULT_TAIL_BYTES, readTranscriptTail } from '$lib/server/transcript/tail';
 import { listSubagents } from '$lib/server/transcript/subagents';
+import { parseQueue, type QueuedPrompt } from '$lib/server/transcript/queue';
 import { menuFooter, parsePicker, pendingAsk, suggestionFrom } from '$lib/server/picker';
 import { piSessionEnded } from '$lib/server/transcript/pi';
 import { resolveLocalTranscript } from '$lib/server/transcript/resolve';
@@ -158,6 +159,8 @@ export const GET: RequestHandler = async ({ params, url }) => {
 	/** Where the agent is working, when its transcript says. '' falls back to the pane. */
 	let workingDir = '';
 	let subagents: Awaited<ReturnType<typeof listSubagents>> = [];
+	/** What the harness says about prompts it has queued; empty when it says nothing. */
+	let queue: QueuedPrompt[] = [];
 
 	if (!adapter) {
 		degraded = 'no-adapter';
@@ -182,6 +185,7 @@ export const GET: RequestHandler = async ({ params, url }) => {
 						degraded = 'stale-session';
 					} else {
 						messages = adapter.parse(remote);
+						queue = parseQueue(remote);
 						workingDir = agentCwd(remote);
 						hasMore = remote.length >= windowBytes;
 						if (messages.length === 0) degraded = 'empty';
@@ -209,6 +213,7 @@ export const GET: RequestHandler = async ({ params, url }) => {
 						degraded = 'stale-session';
 					} else {
 						messages = adapter.parse(tail.text);
+						queue = parseQueue(tail.text);
 						workingDir = agentCwd(tail.text);
 						hasMore = tail.partial;
 						// A whole transcript that parses to nothing is a format we no
@@ -307,6 +312,7 @@ export const GET: RequestHandler = async ({ params, url }) => {
 		branchUrl: git?.url ?? '',
 		messages,
 		subagents,
+		queue,
 		// OMP options are relative-key modals: without the live highlight,
 		// transcript labels cannot be answered safely. Other harnesses here
 		// accept an absolute text label and may use the transcript fallback.

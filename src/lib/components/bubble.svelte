@@ -28,7 +28,8 @@
 		ink,
 		small = false,
 		extra = '',
-		children
+		children,
+		meta
 	}: {
 		mine?: boolean;
 		run?: RunPos;
@@ -49,6 +50,11 @@
 		small?: boolean;
 		extra?: string;
 		children: Snippet;
+		/**
+		 * The time and the ticks, tucked into the bottom-right corner the way
+		 * every messaging app puts them.
+		 */
+		meta?: Snippet;
 	} = $props();
 
 	/** The rule at its strong end — where the tail meets it, so the two match. */
@@ -118,6 +124,17 @@
 
 	const paint = $derived.by(() => {
 		const bg = fillPaint ? `background:${fillPaint}` : 'background:transparent';
+		// No border means no border BOX either — `border-width: 0` above, not a
+		// transparent 2px one.
+		//
+		// A transparent border is not invisible when the fill is a gradient.
+		// `background-origin` defaults to the padding box while
+		// `background-clip` defaults to the border box, so the gradient is
+		// measured across the padding box and then painted out over the border
+		// strip with its end colour CLAMPED — a hard step, not a fade. Measured
+		// on a bordered-off blue bubble: #2D4BC6 for exactly two pixels around
+		// an interior of #2640A8, which reads as the border you just switched
+		// off. Zero width, no strip, no step.
 		if (!border) return `${bg}; border-color:transparent`;
 		// A gradient rule needs something behind it clipped to the padding box,
 		// and `transparent` there would let the gradient show through the whole
@@ -185,9 +202,29 @@
 	class="relative {small
 		? 'px-2.5 py-1.5 text-[12.5px]'
 		: 'px-3 py-2'} [overflow-wrap:anywhere] {corners} {extra}"
-	style="border:{border ? width : 2}px solid transparent; color:{ink}; {paint}"
+	style="border:{border ? width : 0}px solid transparent; color:{ink}; {paint}"
 >
 	{@render children()}
+
+	{#if meta}
+		<!--
+			Floated, and last in the source, which is what puts it on the END of
+			the final line of text rather than on a line of its own — the trick
+			every messaging app uses. When the last line has no room for it the
+			float drops to the next line by itself, which is also what they do.
+
+			`clear-both` on the wrapper below is load-bearing: a float is out of
+			the normal flow, so without it a one-line message would leave the
+			corner hanging outside the bubble it belongs to.
+
+			`select-none` because the time is furniture — copying a message
+			should give you the message, not "14:07 ✓✓" welded to the end.
+		-->
+		<span class="float-right -mr-0.5 ml-2 translate-y-[5px] pt-px leading-none select-none">
+			{@render meta()}
+		</span>
+		<span class="clear-both block"></span>
+	{/if}
 
 	{#if tailed}
 		<!--
