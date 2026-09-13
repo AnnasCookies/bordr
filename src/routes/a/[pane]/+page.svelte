@@ -1200,12 +1200,26 @@
 	 * widening step the control could never appear at all on a long session.
 	 */
 	async function showEarlier() {
+		// Asking for the beginning is not following the end.
+		//
+		// Without this you get slammed to the bottom. Fling up from the end and
+		// your finger leaves the glass while the page is still down there, so
+		// `following` is true and the scroll events that would clear it are
+		// queued behind a main thread busy laying out the thousands of pixels
+		// this just loaded. The ResizeObserver fires on that layout, reads a
+		// `following` nobody has had a chance to update, and pins to the end —
+		// killing the fling and putting the reader back where they started.
+		following = false;
+		// The window on a phone; the conversation column on the desktop, where
+		// this measured and moved the window regardless and so held nothing.
+		const host = scrollHost();
+		const height = () => host?.scrollHeight ?? document.body.scrollHeight;
+		// Anchor on the distance from the BOTTOM: revealing older messages grows
+		// the page upward, and holding scrollY would silently carry the reader
+		// hundreds of messages away from where they were reading.
+		const fromBottom = height() - scrollTop();
 		if (hidden === 0 && detail.hasMore) {
 			loadingEarlier = true;
-			// Anchor on the distance from the BOTTOM: prepending older messages
-			// grows the page upward, and holding scrollY would silently carry the
-			// reader hundreds of messages away from where they were reading.
-			const fromBottom = document.body.scrollHeight - window.scrollY;
 			const next = Math.min(data.megabytes * 4, 64);
 			const route = resolve('/a/[pane]', { pane: detail.paneId });
 			// Still a resolved app path, just carrying the window — the cast keeps
@@ -1213,11 +1227,16 @@
 			// switching the rule off for the file.
 			const target = `${route}?w=${next}` as typeof route;
 			await goto(target, { replaceState: true, noScroll: true, keepFocus: true });
-			await tick();
-			window.scrollTo({ top: document.body.scrollHeight - fromBottom });
-			loadingEarlier = false;
 		}
+		// After the reveal, not before it. `shown` is what decides how much of
+		// the loaded transcript is actually in the DOM, so anchoring ahead of it
+		// measured a page that had not grown yet and held nothing in place.
 		shown += 200;
+		await tick();
+		const top = height() - fromBottom;
+		if (host) host.scrollTop = top;
+		else window.scrollTo(0, top);
+		loadingEarlier = false;
 	}
 
 	/**
