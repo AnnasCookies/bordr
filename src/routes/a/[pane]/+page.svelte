@@ -49,6 +49,8 @@
 	import { track } from '$lib/pending.svelte';
 	import { nextFollowing } from '$lib/follow';
 	import { swipeSequence } from '$lib/swipe-order';
+	import { widthClasses } from '$lib/conversation-width';
+	import { glideDuration, glidePosition } from '$lib/glide';
 	import { showChrome, touchPoints } from '$lib/header-chrome';
 	import { screen as layout, watchWide } from '$lib/wide.svelte';
 	import { afterClose } from '$lib/after-close';
@@ -484,6 +486,9 @@
 	 * same lines as `statusLines` with their escapes intact; the fallback
 	 * covers a payload cached on a phone that has not reloaded yet.
 	 */
+	/** One width for the transcript, its banners and the composer. */
+	const widths = $derived(widthClasses(prefs.value.conversationWidth));
+
 	const statusRows = $derived(detail.statusAnsi?.length ? detail.statusAnsi : detail.statusLines);
 
 	/**
@@ -1297,6 +1302,54 @@
 		if (host) host.scrollTop = host.scrollHeight;
 		else window.scrollTo({ top: document.body.scrollHeight });
 		requestAnimationFrame(() => (programmatic = false));
+	}
+
+	/**
+	 * The deliberate trip to the end, for the Latest button only.
+	 *
+	 * Automatic following stays an instant jump: the page is already at the
+	 * bottom and animating it would be motion nobody asked for. This is the
+	 * other case — a thousand lines up, asking to be taken to the end — where
+	 * an instant jump means the screen simply becomes somewhere else.
+	 *
+	 * `programmatic` is held for the whole glide, not one frame, or the scroll
+	 * events it generates read as the reader scrolling up and turn following
+	 * back off halfway down.
+	 */
+	let gliding = 0;
+	function glideBottom() {
+		if (!live) return;
+		const host = scrollHost();
+		const target = () =>
+			host ? host.scrollHeight - host.clientHeight : document.body.scrollHeight - innerHeight;
+		const from = scrollTop();
+		const distance = target() - from;
+		// Already there, or the reader asked for less motion: just be there.
+		if (Math.abs(distance) < 8 || matchMedia('(prefers-reduced-motion: reduce)').matches) {
+			scrollBottom();
+			return;
+		}
+
+		cancelAnimationFrame(gliding);
+		const duration = glideDuration(distance);
+		const started = performance.now();
+		programmatic = true;
+		const step = (now: number) => {
+			const elapsed = now - started;
+			// The target is re-read every frame: a live transcript grows while
+			// this runs, and aiming at where the bottom WAS lands short of it.
+			const to = target();
+			const at = glidePosition(from, to, elapsed, duration);
+			if (host) host.scrollTop = at;
+			else window.scrollTo(0, at);
+			if (elapsed < duration) {
+				gliding = requestAnimationFrame(step);
+				return;
+			}
+			scrollBottom();
+			requestAnimationFrame(() => (programmatic = false));
+		};
+		gliding = requestAnimationFrame(step);
 	}
 
 	function scrollTop(): number {
@@ -2345,7 +2398,7 @@
 				refused keypress (409/503) and "sent but could not confirm it
 				landed" were both invisible — the screen simply did not respond.
 			-->
-			<div class="mx-auto w-full max-w-screen-sm px-4 pt-3 lg:max-w-3xl">
+			<div class="mx-auto w-full px-4 pt-3 {widths}">
 				{@render uncertainBanner()}
 				{@render errorBanner()}
 			</div>
@@ -2423,7 +2476,7 @@
 				</div>
 			{/if}
 			<main
-				class="relative mx-auto w-full max-w-screen-sm flex-1 px-4 pt-3 pb-2 lg:mx-0 lg:max-w-3xl lg:px-6 xl:max-w-4xl 2xl:max-w-5xl {dragging
+				class="relative mx-auto w-full flex-1 px-4 pt-3 pb-2 lg:mx-0 lg:px-6 {widths} {dragging
 					? 'bg-page'
 					: ''} {dragging || leaving
 					? ''
@@ -2852,9 +2905,7 @@
 				{/if}
 			</main>
 
-			<div
-				class="sticky bottom-0 z-10 w-full max-w-screen-sm lg:max-w-3xl xl:max-w-4xl 2xl:max-w-5xl"
-			>
+			<div class="sticky bottom-0 z-10 w-full {widths}">
 				<!--
 						Above the whole composer stack, never on it: the suggestion chip
 						and the input are the two things you are reaching for, and a pill
@@ -2867,7 +2918,7 @@
 							class="pointer-events-auto flex items-center gap-1 rounded-full border border-hairline bg-card px-3 py-1.5 text-[12.5px] text-working shadow-[0_2px_8px_rgba(0,0,0,.18)]"
 							onclick={() => {
 								following = true;
-								scrollBottom();
+								glideBottom();
 							}}
 						>
 							<span aria-hidden="true">↓</span> Latest

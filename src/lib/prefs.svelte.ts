@@ -57,6 +57,20 @@ export type DrawerHome = 'mark' | 'icon' | 'off';
 export type ChromeWhen = 'always' | 'mobile' | 'off';
 
 /**
+ * How much of a desktop window the conversation is allowed to use.
+ *
+ * It was capped at 1024px however wide the window was: measured at 1920 the
+ * column is 1644px and the transcript took 1024 of it, leaving 620px empty;
+ * at 2560 it leaves 1260px.
+ *
+ * A cap is not wrong — prose past about 90 characters a line is harder to
+ * read, and that is why one was there — but which side of that trade you want
+ * depends on what you are reading. Diffs and terminal output want the room;
+ * long prose does not.
+ */
+export type ConversationWidth = 'comfortable' | 'wide' | 'full';
+
+/**
  * The model, and how hard it is being asked to think, in the header.
  *
  * Both are already in the harness's status block, but that is a dense row of
@@ -243,6 +257,8 @@ export interface Prefs {
 	 * already moves between the same panes.
 	 */
 	tabStrip: ChromeWhen;
+	/** How wide the transcript and composer run on a desktop. */
+	conversationWidth: ConversationWidth;
 	/** The model and effort on the conversation header's location row. */
 	headerModel: HeaderModel;
 	/** Which clock that time is written on; 'auto' follows the device. */
@@ -343,6 +359,7 @@ export const DEFAULTS: Prefs = {
 	menuButton: 'always',
 	logoButton: 'always',
 	tabStrip: 'always',
+	conversationWidth: 'wide',
 	headerModel: 'model-effort',
 	clockFormat: 'auto',
 	showTabName: true,
@@ -391,6 +408,7 @@ const MESSAGE_TIMES: MessageTime[] = ['off', 'runs', 'all'];
 const SUBAGENT_STRIPS: SubagentStrip[] = ['off', 'running', 'all'];
 const DRAWER_HOMES: DrawerHome[] = ['mark', 'icon', 'off'];
 const CHROME_WHENS: ChromeWhen[] = ['always', 'mobile', 'off'];
+const WIDTHS: ConversationWidth[] = ['comfortable', 'wide', 'full'];
 const HEADER_MODELS: HeaderModel[] = ['off', 'model', 'model-effort'];
 const CLOCKS: ClockFormat[] = ['auto', 'h24', 'h12'];
 const ACCENTS: HarnessAccent[] = ['edge', 'tint', 'fill', 'off'];
@@ -503,6 +521,7 @@ export function normalisePrefs(raw: unknown): Prefs {
 		menuButton: pick(stored.menuButton, CHROME_WHENS, DEFAULTS.menuButton),
 		logoButton: pick(stored.logoButton, CHROME_WHENS, DEFAULTS.logoButton),
 		tabStrip: pick(stored.tabStrip, CHROME_WHENS, DEFAULTS.tabStrip),
+		conversationWidth: pick(stored.conversationWidth, WIDTHS, DEFAULTS.conversationWidth),
 		headerModel: pick(stored.headerModel, HEADER_MODELS, DEFAULTS.headerModel),
 		clockFormat: pick(stored.clockFormat, CLOCKS, DEFAULTS.clockFormat),
 		showTabName: bool(stored.showTabName, DEFAULTS.showTabName),
