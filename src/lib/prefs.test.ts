@@ -50,14 +50,18 @@ describe('normalisePrefs', () => {
 	 * default is what they get, and it has to be "visible".
 	 */
 	/**
-	 * Back is the way home on a phone, so that is the default. The other value
-	 * exists for anyone who wants the browser's own retracing back.
+	 * Back retraces, because that is what back does everywhere else and a
+	 * gesture that quietly means something different here is one you stop
+	 * trusting. The header's own arrow is the one-step way to the list, so
+	 * making the gesture do it too was two controls for one job.
+	 *
+	 * 'home' is still there for anyone who prefers the short way out.
 	 */
-	it('sends the back gesture home unless asked to retrace', () => {
-		expect(DEFAULTS.backTo).toBe('home');
-		expect(normalisePrefs({}).backTo).toBe('home');
-		expect(normalisePrefs({ backTo: 'history' }).backTo).toBe('history');
-		expect(normalisePrefs({ backTo: 'sideways' }).backTo).toBe('home');
+	it('retraces on back unless asked to go straight home', () => {
+		expect(DEFAULTS.backTo).toBe('history');
+		expect(normalisePrefs({}).backTo).toBe('history');
+		expect(normalisePrefs({ backTo: 'home' }).backTo).toBe('home');
+		expect(normalisePrefs({ backTo: 'sideways' }).backTo).toBe('history');
 	});
 
 	it('shows the grouping chips unless they were explicitly turned off', () => {

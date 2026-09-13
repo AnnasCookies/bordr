@@ -13,6 +13,7 @@
 	import AppHeader from '$lib/components/app-header.svelte';
 	import SessionTree from '$lib/components/session-tree.svelte';
 	import { screen, watchWide } from '$lib/wide.svelte';
+	import { backPlacement } from '$lib/back-button';
 	import SettingsNav from '$lib/components/settings-nav.svelte';
 	import { SECTIONS } from '$lib/settings-sections';
 	import { page } from '$app/state';
@@ -214,6 +215,20 @@
 		}
 		installHidden = false;
 	}
+
+	/**
+	 * The same rule the conversation uses, so the two cannot disagree.
+	 *
+	 * Settings does have a tab bar, so this is less load-bearing here than in a
+	 * conversation — but a setting that draws an arrow on one screen and not
+	 * the other reads as a bug rather than as a choice.
+	 */
+	const showBack = $derived(
+		backPlacement(
+			prefs.value.backButton,
+			typeof navigator === 'undefined' ? 1 : navigator.maxTouchPoints
+		)
+	);
 
 	let pushState = $state<PushState>('unknown');
 	let pushMessage = $state<string | null>(null);
@@ -702,7 +717,9 @@
 		<span class="flex h-9 w-9 items-center justify-center text-[22px] leading-none text-muted"
 			>☰</span
 		>
-		<img src="/collie.svg" alt="" class="h-6 w-6" style="image-rendering: pixelated" />
+		{#if prefs.value.backButton === 'off' || prefs.value.backButton === 'both'}
+			<img src="/collie.svg" alt="" class="h-6 w-6" style="image-rendering: pixelated" />
+		{/if}
 		<span class="truncate text-[13px] font-medium">checkout-flow</span>
 	</div>
 	{#if prefs.value.backButton === 'auto'}
@@ -1020,6 +1037,7 @@
 			menuLabel="Workspaces"
 			menuExpanded={treeOpen}
 			middle={title}
+			back={showBack}
 		/>
 	</header>
 

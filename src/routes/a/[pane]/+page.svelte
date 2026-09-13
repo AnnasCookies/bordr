@@ -49,6 +49,7 @@
 	import { track } from '$lib/pending.svelte';
 	import { nextFollowing } from '$lib/follow';
 	import { afterClose } from '$lib/after-close';
+	import { backPlacement } from '$lib/back-button';
 	import { keepPending, onScreen, say, type PendingSend } from '$lib/pending-sends';
 	import { queueVerdict } from '$lib/queue';
 	import { parseModelLine } from '$lib/model-line';
@@ -412,12 +413,12 @@
 	 * `maxTouchPoints` rather than the viewport: a narrow window on a desktop
 	 * is still a desktop, and a tablet in landscape still swipes.
 	 */
-	const showBack = $derived.by(() => {
-		const mode = prefs.value.backButton;
-		if (mode !== 'auto') return mode === 'on';
-		const gesture = typeof navigator !== 'undefined' && navigator.maxTouchPoints > 0;
-		return !gesture;
-	});
+	const showBack = $derived(
+		backPlacement(
+			prefs.value.backButton,
+			typeof navigator === 'undefined' ? 1 : navigator.maxTouchPoints
+		)
+	);
 
 	let controlling = $state(false);
 	let worktrees = $state(false);

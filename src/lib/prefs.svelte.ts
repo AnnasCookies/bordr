@@ -51,11 +51,13 @@ export type DrawerHome = 'mark' | 'icon' | 'off';
  * the drawer's home. On a desktop there is no gesture, and a logo reads as a
  * logo rather than as a control.
  *
- *   auto  shown where there is no back gesture to rely on
- *   on    always
+ *   auto  shown where there is no back gesture to rely on, INSTEAD of the
+ *         mark, since the two go to the same place
+ *   on    always, instead of the mark
+ *   both  always, beside the mark, for anyone who wants the dog back
  *   off   never; the gesture and the mark are enough
  */
-export type BackButton = 'auto' | 'on' | 'off';
+export type BackButton = 'auto' | 'on' | 'both' | 'off';
 
 /**
  * The model, and how hard it is being asked to think, in the header.
@@ -132,14 +134,15 @@ export interface Prefs {
 	/**
 	 * What the phone's back gesture does from inside an agent.
 	 *
-	 * 'home': moving between panes, tabs and screens from an agent REPLACES
-	 * the history entry, so back is always one step to the agents list. That
-	 * is what the gesture is for on a phone, and a swipe or the tab strip is
-	 * how you move sideways.
+	 * 'history' is the default: every move pushes, and back retraces them one
+	 * at a time. It is what back does everywhere else, and a gesture that
+	 * quietly means something different here is a gesture you stop trusting.
+	 * The header's own arrow is the one-step way to the list.
 	 *
-	 * 'history': every move pushes, and back retraces them one at a time. Ten
-	 * gestures to get home after a few minutes of switching is the behaviour
-	 * this option exists to restore, for anyone who wants it.
+	 * 'home': moving between panes, tabs and screens from an agent REPLACES
+	 * the history entry, so back is always one step to the agents list. Fewer
+	 * gestures to get out after a few minutes of switching, at the cost of
+	 * back not meaning what it means anywhere else.
 	 */
 	backTo: BackTo;
 	/**
@@ -284,7 +287,7 @@ export const DEFAULTS: Prefs = {
 	groupBy: 'workspace',
 	listFilter: null,
 	sort: 'status-title',
-	backTo: 'home',
+	backTo: 'history',
 	showGrouping: true,
 	rollup: true,
 	preview: 'activity',
@@ -369,7 +372,7 @@ const BACKS: BackTo[] = ['home', 'history'];
 const MESSAGE_TIMES: MessageTime[] = ['off', 'runs', 'all'];
 const SUBAGENT_STRIPS: SubagentStrip[] = ['off', 'running', 'all'];
 const DRAWER_HOMES: DrawerHome[] = ['mark', 'icon', 'off'];
-const BACK_BUTTONS: BackButton[] = ['auto', 'on', 'off'];
+const BACK_BUTTONS: BackButton[] = ['auto', 'on', 'both', 'off'];
 const HEADER_MODELS: HeaderModel[] = ['off', 'model', 'model-effort'];
 const CLOCKS: ClockFormat[] = ['auto', 'h24', 'h12'];
 const ACCENTS: HarnessAccent[] = ['edge', 'tint', 'fill', 'off'];

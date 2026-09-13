@@ -33,8 +33,15 @@
 		 * and a branch. Anything that needs the room goes here.
 		 */
 		below?: Snippet;
-		/** Draw an explicit way back to the agents list. */
-		back?: boolean;
+		/**
+		 * An explicit way back to the agents list.
+		 *
+		 *   instead  the arrow replaces the mark; they go to the same place, and
+		 *            keeping both spends 56px of a 320px header saying "home"
+		 *            twice
+		 *   beside   both, for anyone who would rather keep the dog
+		 */
+		back?: 'instead' | 'beside';
 	} = $props();
 </script>
 
@@ -90,7 +97,7 @@
 		both spent 56px of a 320px header on saying "home" twice, which is what
 		pushed the actions off the end of it.
 	-->
-		{#if !back}
+		{#if back !== 'instead'}
 			<a
 				href={resolve('/')}
 				class="group relative flex shrink-0 items-center self-stretch"
