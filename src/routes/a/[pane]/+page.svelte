@@ -2318,9 +2318,7 @@
 											tail={prefs.value.bubbleTails}
 											width={prefs.value.bubbleBorderWidth}
 											ink={userInk}
-											extra="max-w-[85%] whitespace-pre-wrap {sent.state === 'sending'
-												? 'sending'
-												: 'opacity-60'}"
+											extra="max-w-[85%] {sent.state === 'sending' ? 'sending' : 'opacity-60'}"
 										>
 											{#if sent.question}
 												<!--
@@ -2333,7 +2331,7 @@
 													class="mb-1 block border-l-2 border-current/25 pl-2 text-[12.5px] opacity-70"
 													>{sent.question}</span
 												>
-											{/if}{sent.text}
+											{/if}<span class="whitespace-pre-wrap">{sent.text.trimEnd()}</span>
 											{#snippet meta()}
 												<BubbleMeta
 													at={sent.at}
@@ -2353,24 +2351,10 @@
 										>
 											{#if sent.question}<span class="block text-[12.5px] font-normal text-muted"
 													>{sent.question}</span
-												>{/if}{sent.text}
+												>{/if}{sent.text.trimEnd()}
 										</span>
 									</div>
 								{/if}
-								<p class="flex items-center justify-end gap-1.5 text-right text-[11px] text-faint">
-									{sent.state === 'sending'
-										? 'sending…'
-										: held
-											? 'the agent has it'
-											: verdict === 'queued'
-												? 'queued behind this turn'
-												: detail.status === 'working'
-													? 'sent · the agent is mid-turn'
-													: 'delivered · waiting to be picked up'}
-									{#if prefs.value.messageTicks}<Ticks
-											state={sent.state === 'sending' ? 'sending' : held ? 'read' : 'sent'}
-										/>{/if}
-								</p>
 							{:else if row.kind === 'tools'}
 								<!--
 									A folded run of tool-only turns. One row, opened on demand —
@@ -2428,7 +2412,7 @@
 												tail={prefs.value.bubbleTails}
 												width={prefs.value.bubbleBorderWidth}
 												ink={userInk}
-												extra="max-w-[85%] whitespace-pre-wrap"
+												extra="max-w-[85%]"
 											>
 												<MessageBlocks
 													blocks={message.blocks ?? []}
