@@ -8,6 +8,18 @@ describe('clockTime', () => {
 	});
 
 	/**
+	 * Each clock padded the way it is actually written. `2-digit` everywhere
+	 * gives "05:22 PM"; `numeric` everywhere gives a 24-hour "5:22" that will
+	 * not line up under "17:22". Neither is right for both.
+	 */
+	it('pads a 24-hour clock and leaves a 12-hour one alone', () => {
+		const morning = Date.UTC(2026, 0, 2, 5, 22);
+		expect(clockTime(morning, 'en-GB')).toBe('05:22');
+		expect(clockTime(Date.UTC(2026, 0, 2, 17, 22), 'en-GB')).toBe('17:22');
+		expect(clockTime(morning, 'en-US')).toMatch(/^5:22\s?AM$/);
+	});
+
+	/**
 	 * The whole reason this is a function. `Message.at` is 0 whenever the
 	 * harness wrote no timestamp, and a bubble stamped 01:00 on 1 January 1970
 	 * is worse than a bubble with no stamp at all — empty lets the caller

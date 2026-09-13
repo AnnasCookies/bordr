@@ -12,5 +12,19 @@ export function clockTime(at: number, locale?: string): string {
 	if (!Number.isFinite(at) || at <= 0) return '';
 	const when = new Date(at);
 	if (Number.isNaN(when.getTime())) return '';
-	return when.toLocaleTimeString(locale, { hour: '2-digit', minute: '2-digit' });
+	// The hour is padded on a 24-hour clock and not on a 12-hour one, because
+	// that is how each is actually written: "05:22" and "17:22" line up in a
+	// column, while "05:22 PM" is a padding no clock anywhere uses. Neither
+	// option is right for both, so the locale decides.
+	const hour = twelveHour(locale) ? 'numeric' : '2-digit';
+	return when.toLocaleTimeString(locale, { hour, minute: '2-digit' });
+}
+
+/** Whether this locale writes AM/PM. Undefined means the runtime declined to say. */
+function twelveHour(locale?: string): boolean {
+	try {
+		return new Intl.DateTimeFormat(locale, { hour: 'numeric' }).resolvedOptions().hour12 === true;
+	} catch {
+		return false;
+	}
 }

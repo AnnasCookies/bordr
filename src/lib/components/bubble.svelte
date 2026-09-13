@@ -208,22 +208,24 @@
 
 	{#if meta}
 		<!--
-			Floated, and last in the source, which is what puts it on the END of
-			the final line of text rather than on a line of its own — the trick
-			every messaging app uses. When the last line has no room for it the
-			float drops to the next line by itself, which is also what they do.
+			A tight line of its own, not a float.
 
-			`clear-both` on the wrapper below is load-bearing: a float is out of
-			the normal flow, so without it a one-line message would leave the
-			corner hanging outside the bubble it belongs to.
+			The float was the obvious way to tuck this onto the END of the last
+			line, and it does not work: a float cannot move UP past the line
+			boxes before it, so placed after the text it dropped to the next
+			line anyway — and the clearfix needed to stop it hanging out of the
+			bubble then added a second empty line under that. Two lines of blank
+			space to right-align eleven characters.
+
+			`leading-none` with the negative bottom margin pulls it back against
+			the text, so it costs the height of the mark and nothing else.
 
 			`select-none` because the time is furniture — copying a message
 			should give you the message, not "14:07 ✓✓" welded to the end.
 		-->
-		<span class="float-right -mr-0.5 ml-2 translate-y-[5px] pt-px leading-none select-none">
+		<span class="mt-0.5 -mb-1 flex justify-end leading-none select-none">
 			{@render meta()}
 		</span>
-		<span class="clear-both block"></span>
 	{/if}
 
 	{#if tailed}

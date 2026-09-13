@@ -2496,6 +2496,13 @@
 															extra="max-w-[92%] block"
 														>
 															<MessageBlocks blocks={segment.blocks} mono={prefs.value.monoSize} />
+															{#snippet meta()}
+																<!--
+																	No ticks on an agent's own turn: a tick says whether something
+																	YOU sent arrived, and this did not come from you. Time only.
+																-->
+																<BubbleMeta at={message.at ?? 0} />
+															{/snippet}
 														</Bubble>
 													{:else}
 														<MessageBlocks
