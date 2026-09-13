@@ -359,7 +359,7 @@ export const DEFAULTS: Prefs = {
 	menuButton: 'always',
 	logoButton: 'always',
 	tabStrip: 'always',
-	conversationWidth: 'wide',
+	conversationWidth: 'full',
 	headerModel: 'model-effort',
 	clockFormat: 'auto',
 	showTabName: true,

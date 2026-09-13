@@ -1906,7 +1906,7 @@
 	}
 
 	// --- swipe between agents -------------------------------------------------
-	let swipeRoot: HTMLElement | undefined;
+	let swipeRoot = $state<HTMLElement | undefined>(undefined);
 	let startX = 0;
 	let startY = 0;
 	let tracking = false;
@@ -2303,10 +2303,7 @@
 {/snippet}
 
 {#snippet conversation()}
-	<div
-		class="flex min-h-dvh flex-col lg:h-full lg:min-h-0 lg:flex-1 lg:overflow-y-auto"
-		bind:this={swipeRoot}
-	>
+	<div class="flex min-h-dvh flex-col lg:h-full lg:min-h-0 lg:flex-1">
 		<header class="sticky top-0 z-10 border-b border-hairline bg-page">
 			{#if !wideScreen}
 				{@render paneHeader()}
@@ -2475,208 +2472,125 @@
 					</span>
 				</div>
 			{/if}
-			<main
-				class="relative mx-auto w-full flex-1 px-4 pt-3 pb-2 lg:mx-0 lg:px-6 {widths} {dragging
-					? 'bg-page'
-					: ''} {dragging || leaving
-					? ''
-					: 'transition-transform duration-200 ease-out motion-reduce:transition-none'} {leaving
-					? 'transition-all duration-150 ease-in'
-					: ''}"
-				style="transform: translate3d({dragX}px, 0, 0); {leaving ? 'opacity:0' : ''}"
-				data-swiping={dragging ? 'true' : undefined}
-			>
-				{#if detail.degraded !== 'none'}
-					<p class="mb-3 flex items-center gap-2 text-[12px] text-muted">
-						<span class="min-w-0 flex-1">
-							{detail.degradedMessage}
-						</span>
-						<button
-							class="shrink-0 text-working"
-							disabled={loadingBack}
-							onclick={() => loadScrollback(scrollbackLines)}
+			<!--
+				The scroller is the transcript, not the whole pane.
+
+				With the composer inside it, the scrollbar ran the full height of the
+				window and its last stretch sat behind the composer — a track you
+				cannot grab, pointing at content that is not there. The composer is a
+				sibling below this now, so the bar ends where the transcript does.
+
+				Only at `lg`. A phone scrolls the window, which is what keeps the URL
+				bar collapsing and the keyboard handling working.
+			-->
+			<div class="flex flex-1 flex-col lg:min-h-0 lg:overflow-y-auto" bind:this={swipeRoot}>
+				<main
+					class="relative mx-auto w-full flex-1 px-4 pt-3 pb-2 lg:mx-0 lg:px-6 {widths} {dragging
+						? 'bg-page'
+						: ''} {dragging || leaving
+						? ''
+						: 'transition-transform duration-200 ease-out motion-reduce:transition-none'} {leaving
+						? 'transition-all duration-150 ease-in'
+						: ''}"
+					style="transform: translate3d({dragX}px, 0, 0); {leaving ? 'opacity:0' : ''}"
+					data-swiping={dragging ? 'true' : undefined}
+				>
+					{#if detail.degraded !== 'none'}
+						<p class="mb-3 flex items-center gap-2 text-[12px] text-muted">
+							<span class="min-w-0 flex-1">
+								{detail.degradedMessage}
+							</span>
+							<button
+								class="shrink-0 text-working"
+								disabled={loadingBack}
+								onclick={() => loadScrollback(scrollbackLines)}
+							>
+								{loadingBack
+									? 'Loading…'
+									: scrollback === null
+										? 'Load scrollback'
+										: 'Reload scrollback'}
+							</button>
+						</p>
+					{/if}
+
+					{#if scrollbackError}
+						<p
+							role="status"
+							class="mb-3 rounded-[10px] bg-danger-bg px-3 py-2 text-[12.5px] text-danger-ink"
 						>
-							{loadingBack
-								? 'Loading…'
-								: scrollback === null
-									? 'Load scrollback'
-									: 'Reload scrollback'}
-						</button>
-					</p>
-				{/if}
+							{scrollbackError}
+						</p>
+					{/if}
 
-				{#if scrollbackError}
-					<p
-						role="status"
-						class="mb-3 rounded-[10px] bg-danger-bg px-3 py-2 text-[12.5px] text-danger-ink"
-					>
-						{scrollbackError}
-					</p>
-				{/if}
+					{@render uncertainBanner()}
 
-				{@render uncertainBanner()}
+					{#if canShowEarlier}
+						<div use:autoEarlier={wideScreen} class="mb-3 flex justify-center">
+							<button
+								class="rounded-full border border-edge px-3 py-1.5 text-[11.5px] text-muted disabled:opacity-50"
+								disabled={loadingEarlier}
+								onclick={showEarlier}
+							>
+								{#if loadingEarlier}
+									Reading further back…
+								{:else if hidden > 0}
+									Show earlier ({hidden} more)
+								{:else}
+									Load earlier from disk
+								{/if}
+							</button>
+						</div>
+					{/if}
 
-				{#if canShowEarlier}
-					<div use:autoEarlier={wideScreen} class="mb-3 flex justify-center">
-						<button
-							class="rounded-full border border-edge px-3 py-1.5 text-[11.5px] text-muted disabled:opacity-50"
-							disabled={loadingEarlier}
-							onclick={showEarlier}
-						>
-							{#if loadingEarlier}
-								Reading further back…
-							{:else if hidden > 0}
-								Show earlier ({hidden} more)
-							{:else}
-								Load earlier from disk
-							{/if}
-						</button>
-					</div>
-				{/if}
-
-				<div class="flex flex-col gap-3 text-[14.5px] leading-[1.5]">
-					{#if scrollback !== null}
-						<div
-							use:termGrid
-							class="term overflow-x-auto rounded-lg border border-hairline bg-card px-3 py-2.5 text-body"
-							style="font-size: {prefs.value.monoSize}px"
-						>
-							{#each scrollback.split('\n') as line, i (i)}
-								<!--
+					<div class="flex flex-col gap-3 text-[14.5px] leading-[1.5]">
+						{#if scrollback !== null}
+							<div
+								use:termGrid
+								class="term overflow-x-auto rounded-lg border border-hairline bg-card px-3 py-2.5 text-body"
+								style="font-size: {prefs.value.monoSize}px"
+							>
+								{#each scrollback.split('\n') as line, i (i)}
+									<!--
 									Safe: ansiToHtml escapes every HTML metacharacter in the payload
 									and emits only <span style="…"> wrappers for SGR colour — proven
 									by the escaping cases in src/lib/ansi.test.ts. Terminal output is
 									untrusted, which is exactly why it is escaped rather than trusted.
 								-->
-								<!-- eslint-disable svelte/no-at-html-tags -->
-								<div class="whitespace-pre">{@html ansiToHtml(line, true) || '&nbsp;'}</div>
-							{/each}
-						</div>
-						<div class="flex justify-center gap-2">
-							<button
-								class="rounded-full border border-edge px-3 py-1.5 text-[11.5px] text-muted"
-								disabled={loadingBack}
-								onclick={() => loadScrollback(scrollbackLines + 400)}
-							>
-								Load more ({scrollbackLines} lines shown)
-							</button>
-							<!-- Scrollback is a still photograph; this is the way back to the live view. -->
-							<button
-								class="rounded-full border border-edge px-3 py-1.5 text-[11.5px] text-working"
-								onclick={() => {
-									scrollback = null;
-									following = true;
-									requestAnimationFrame(scrollBottom);
-								}}
-							>
-								Back to live view
-							</button>
-						</div>
-					{:else}
-						{#each rows as row (row.key)}
-							{#if row.kind === 'pending'}
-								{@const sent = row.sent}
-								{@const verdict = queueVerdict(sent.text, detail.queue ?? [])}
-								{@const held =
-									sent.state !== 'sending' &&
-									(verdict !== null
-										? verdict === 'taken'
-										: onScreen(sent.text, detail.screenTail ?? ''))}
-								{#if prefs.value.bubbles}
-									<div class="flex justify-end {tight(row.run)}">
-										<Bubble
-											mine
-											run={row.run}
-											border={userBorder}
-											fill={userFill}
-											fillGradient={gradient}
-											fillEnd={userEnd}
-											tail={prefs.value.bubbleTails}
-											width={prefs.value.bubbleBorderWidth}
-											ink={userInk}
-											extra="max-w-[85%] {sent.state === 'sending' ? 'sending' : 'opacity-60'}"
-										>
-											{#if sent.question}
-												<!--
-													The question, above the answer it belongs to. Quiet and
-													smaller: the answer is what you said, the question is
-													only there so it still makes sense once the card that
-													asked it has gone.
-												-->
-												<span
-													class="mb-1 block border-l-2 border-current/25 pl-2 text-[12.5px] opacity-70"
-													>{sent.question}</span
-												>
-											{/if}<span class="whitespace-pre-wrap">{sent.text.trimEnd()}</span>
-											{#snippet meta()}
-												<BubbleMeta
-													at={sent.at}
-													run={row.run}
-													state={sent.state === 'sending' ? 'sending' : held ? 'read' : 'sent'}
-												/>
-											{/snippet}
-										</Bubble>
-									</div>
-								{:else}
-									<div class="flex gap-2 opacity-60">
-										<span
-											class="shrink-0 font-mono text-[13px] leading-[1.7] text-working"
-											aria-hidden="true">›</span
-										>
-										<span
-											class="min-w-0 flex-1 font-medium [overflow-wrap:anywhere] whitespace-pre-wrap"
-										>
-											{#if sent.question}<span class="block text-[12.5px] font-normal text-muted"
-													>{sent.question}</span
-												>{/if}{sent.text.trimEnd()}
-										</span>
-									</div>
-								{/if}
-							{:else if row.kind === 'tools'}
-								<!--
-									A folded run of tool-only turns. One row, opened on demand —
-									the transcript keeps the shape of the conversation and the
-									work is still one tap away.
-
-									Guarded by showWork like every other tool row. Folding is about
-									how the work is PRESENTED; the toggle is about whether it is
-									shown at all, and a group that ignored it put tool rows back on
-									screen for anyone who had turned them off.
-								-->
-								<!--
-									The kind check stays pure so the {:else} below still narrows to
-									a message row; the toggle is checked inside it.
-								-->
-								{#if showWork}
-									<details class="group">
-										<summary
-											class="flex cursor-pointer items-baseline gap-2 rounded-lg px-2 py-1.5 font-mono text-[11.5px] text-muted transition-colors hover:bg-chip/60"
-										>
-											<span
-												class="shrink-0 self-center text-faint transition-transform group-open:rotate-90 motion-reduce:transition-none"
-												aria-hidden="true">▸</span
-											>
-											<span class="min-w-0 flex-1 truncate">
-												{#each row.tally as t, i (t.name)}{#if i > 0}<span class="mx-1 text-faint"
-															>·</span
-														>{/if}<span class="text-faint">{t.n}</span>&nbsp;{t.name}{/each}
-											</span>
-										</summary>
-										<div class="pl-2">
-											<MessageBlocks blocks={row.blocks} mono={prefs.value.monoSize} showWork />
-										</div>
-									</details>
-								{/if}
-							{:else}
-								{@const message = row.message}
-								{#if message.role === 'system'}
-									<div class="flex justify-center">
-										<span
-											class="rounded-full border border-hairline bg-card px-3 py-1 font-mono text-[11px] text-muted"
-											>{message.text}</span
-										>
-									</div>
-								{:else if message.role === 'user'}
+									<!-- eslint-disable svelte/no-at-html-tags -->
+									<div class="whitespace-pre">{@html ansiToHtml(line, true) || '&nbsp;'}</div>
+								{/each}
+							</div>
+							<div class="flex justify-center gap-2">
+								<button
+									class="rounded-full border border-edge px-3 py-1.5 text-[11.5px] text-muted"
+									disabled={loadingBack}
+									onclick={() => loadScrollback(scrollbackLines + 400)}
+								>
+									Load more ({scrollbackLines} lines shown)
+								</button>
+								<!-- Scrollback is a still photograph; this is the way back to the live view. -->
+								<button
+									class="rounded-full border border-edge px-3 py-1.5 text-[11.5px] text-working"
+									onclick={() => {
+										scrollback = null;
+										following = true;
+										requestAnimationFrame(scrollBottom);
+									}}
+								>
+									Back to live view
+								</button>
+							</div>
+						{:else}
+							{#each rows as row (row.key)}
+								{#if row.kind === 'pending'}
+									{@const sent = row.sent}
+									{@const verdict = queueVerdict(sent.text, detail.queue ?? [])}
+									{@const held =
+										sent.state !== 'sending' &&
+										(verdict !== null
+											? verdict === 'taken'
+											: onScreen(sent.text, detail.screenTail ?? ''))}
 									{#if prefs.value.bubbles}
 										<div class="flex justify-end {tight(row.run)}">
 											<Bubble
@@ -2689,38 +2603,133 @@
 												tail={prefs.value.bubbleTails}
 												width={prefs.value.bubbleBorderWidth}
 												ink={userInk}
-												extra="max-w-[85%]"
+												extra="max-w-[85%] {sent.state === 'sending' ? 'sending' : 'opacity-60'}"
 											>
-												<MessageBlocks
-													blocks={message.blocks ?? []}
-													mono={prefs.value.monoSize}
-													plain
-												/>
+												{#if sent.question}
+													<!--
+													The question, above the answer it belongs to. Quiet and
+													smaller: the answer is what you said, the question is
+													only there so it still makes sense once the card that
+													asked it has gone.
+												-->
+													<span
+														class="mb-1 block border-l-2 border-current/25 pl-2 text-[12.5px] opacity-70"
+														>{sent.question}</span
+													>
+												{/if}<span class="whitespace-pre-wrap">{sent.text.trimEnd()}</span>
 												{#snippet meta()}
-													<BubbleMeta at={message.at ?? 0} run={row.run} state="read" />
+													<BubbleMeta
+														at={sent.at}
+														run={row.run}
+														state={sent.state === 'sending' ? 'sending' : held ? 'read' : 'sent'}
+													/>
 												{/snippet}
 											</Bubble>
 										</div>
 									{:else}
-										<div class="flex gap-2 {tight(row.run)}">
+										<div class="flex gap-2 opacity-60">
 											<span
 												class="shrink-0 font-mono text-[13px] leading-[1.7] text-working"
 												aria-hidden="true">›</span
 											>
-											<span class="min-w-0 flex-1 font-medium [overflow-wrap:anywhere]">
-												<MessageBlocks
-													blocks={message.blocks ?? []}
-													mono={prefs.value.monoSize}
-													plain
-												/>
+											<span
+												class="min-w-0 flex-1 font-medium [overflow-wrap:anywhere] whitespace-pre-wrap"
+											>
+												{#if sent.question}<span class="block text-[12.5px] font-normal text-muted"
+														>{sent.question}</span
+													>{/if}{sent.text.trimEnd()}
 											</span>
-											{#if prefs.value.messageTicks}
-												<span class="mt-[3px] shrink-0 text-faint"><Ticks state="read" /></span>
-											{/if}
 										</div>
 									{/if}
-								{:else if message.text || prose(message).length > 0 || hasTodoPlan(message.blocks) || (showWork && (message.blocks?.length ?? 0) > 0)}
+								{:else if row.kind === 'tools'}
 									<!--
+									A folded run of tool-only turns. One row, opened on demand —
+									the transcript keeps the shape of the conversation and the
+									work is still one tap away.
+
+									Guarded by showWork like every other tool row. Folding is about
+									how the work is PRESENTED; the toggle is about whether it is
+									shown at all, and a group that ignored it put tool rows back on
+									screen for anyone who had turned them off.
+								-->
+									<!--
+									The kind check stays pure so the {:else} below still narrows to
+									a message row; the toggle is checked inside it.
+								-->
+									{#if showWork}
+										<details class="group">
+											<summary
+												class="flex cursor-pointer items-baseline gap-2 rounded-lg px-2 py-1.5 font-mono text-[11.5px] text-muted transition-colors hover:bg-chip/60"
+											>
+												<span
+													class="shrink-0 self-center text-faint transition-transform group-open:rotate-90 motion-reduce:transition-none"
+													aria-hidden="true">▸</span
+												>
+												<span class="min-w-0 flex-1 truncate">
+													{#each row.tally as t, i (t.name)}{#if i > 0}<span class="mx-1 text-faint"
+																>·</span
+															>{/if}<span class="text-faint">{t.n}</span>&nbsp;{t.name}{/each}
+												</span>
+											</summary>
+											<div class="pl-2">
+												<MessageBlocks blocks={row.blocks} mono={prefs.value.monoSize} showWork />
+											</div>
+										</details>
+									{/if}
+								{:else}
+									{@const message = row.message}
+									{#if message.role === 'system'}
+										<div class="flex justify-center">
+											<span
+												class="rounded-full border border-hairline bg-card px-3 py-1 font-mono text-[11px] text-muted"
+												>{message.text}</span
+											>
+										</div>
+									{:else if message.role === 'user'}
+										{#if prefs.value.bubbles}
+											<div class="flex justify-end {tight(row.run)}">
+												<Bubble
+													mine
+													run={row.run}
+													border={userBorder}
+													fill={userFill}
+													fillGradient={gradient}
+													fillEnd={userEnd}
+													tail={prefs.value.bubbleTails}
+													width={prefs.value.bubbleBorderWidth}
+													ink={userInk}
+													extra="max-w-[85%]"
+												>
+													<MessageBlocks
+														blocks={message.blocks ?? []}
+														mono={prefs.value.monoSize}
+														plain
+													/>
+													{#snippet meta()}
+														<BubbleMeta at={message.at ?? 0} run={row.run} state="read" />
+													{/snippet}
+												</Bubble>
+											</div>
+										{:else}
+											<div class="flex gap-2 {tight(row.run)}">
+												<span
+													class="shrink-0 font-mono text-[13px] leading-[1.7] text-working"
+													aria-hidden="true">›</span
+												>
+												<span class="min-w-0 flex-1 font-medium [overflow-wrap:anywhere]">
+													<MessageBlocks
+														blocks={message.blocks ?? []}
+														mono={prefs.value.monoSize}
+														plain
+													/>
+												</span>
+												{#if prefs.value.messageTicks}
+													<span class="mt-[3px] shrink-0 text-faint"><Ticks state="read" /></span>
+												{/if}
+											</div>
+										{/if}
+									{:else if message.text || prose(message).length > 0 || hasTodoPlan(message.blocks) || (showWork && (message.blocks?.length ?? 0) > 0)}
+										<!--
 										A turn that is only tool calls has nothing to show while the
 										work is hidden; rendering the prefix anyway left a column of
 										bare dots separated by empty space.
@@ -2731,95 +2740,99 @@
 										the picture went with it whenever the work was hidden. An
 										image is something the agent SAID, not work it did.
 									-->
-									<div class="flex gap-2 {tight(row.run)}">
-										{#if !prefs.value.bubbles}
-											<span
-												class="shrink-0 font-mono text-[13px] leading-[1.7] {harnessText(
-													detail.agent
-												)}"
-												aria-hidden="true">·</span
-											>
-										{/if}
-										<div class="min-w-0 flex-1">
-											{#if prefs.value.bubbles}
-												{@const segments = messageSegments(message.blocks)}
-												{#each segments as segment, segmentIndex (segmentIndex)}
-													{#if segment.kind === 'prose'}
-														<Bubble
-															run={bubbleRun(row.run, segments, segmentIndex)}
-															border={agentBorder}
-															fill={agentFill}
-															fillGradient={gradient}
-															fillEnd={agentEnd}
-															tail={prefs.value.bubbleTails}
-															width={prefs.value.bubbleBorderWidth}
-															ink={agentInk}
-															extra="max-w-[92%] block"
-														>
-															<MessageBlocks blocks={segment.blocks} mono={prefs.value.monoSize} />
-															{#snippet meta()}
-																<!--
+										<div class="flex gap-2 {tight(row.run)}">
+											{#if !prefs.value.bubbles}
+												<span
+													class="shrink-0 font-mono text-[13px] leading-[1.7] {harnessText(
+														detail.agent
+													)}"
+													aria-hidden="true">·</span
+												>
+											{/if}
+											<div class="min-w-0 flex-1">
+												{#if prefs.value.bubbles}
+													{@const segments = messageSegments(message.blocks)}
+													{#each segments as segment, segmentIndex (segmentIndex)}
+														{#if segment.kind === 'prose'}
+															<Bubble
+																run={bubbleRun(row.run, segments, segmentIndex)}
+																border={agentBorder}
+																fill={agentFill}
+																fillGradient={gradient}
+																fillEnd={agentEnd}
+																tail={prefs.value.bubbleTails}
+																width={prefs.value.bubbleBorderWidth}
+																ink={agentInk}
+																extra="max-w-[92%] block"
+															>
+																<MessageBlocks
+																	blocks={segment.blocks}
+																	mono={prefs.value.monoSize}
+																/>
+																{#snippet meta()}
+																	<!--
 																	No ticks on an agent's own turn: a tick says whether something
 																	YOU sent arrived, and this did not come from you. Time only.
 																-->
-																<BubbleMeta
-																	at={message.at ?? 0}
-																	run={bubbleRun(row.run, segments, segmentIndex)}
-																/>
-															{/snippet}
-														</Bubble>
-													{:else}
+																	<BubbleMeta
+																		at={message.at ?? 0}
+																		run={bubbleRun(row.run, segments, segmentIndex)}
+																	/>
+																{/snippet}
+															</Bubble>
+														{:else}
+															<MessageBlocks
+																blocks={segment.blocks}
+																mono={prefs.value.monoSize}
+																{showWork}
+															/>
+														{/if}
+													{/each}
+												{:else}
+													<div
+														class="border-l-2 pl-2.5 [overflow-wrap:anywhere] text-body {harnessBorder(
+															detail.agent
+														)}"
+													>
 														<MessageBlocks
-															blocks={segment.blocks}
+															blocks={message.blocks ?? []}
 															mono={prefs.value.monoSize}
 															{showWork}
 														/>
-													{/if}
-												{/each}
-											{:else}
-												<div
-													class="border-l-2 pl-2.5 [overflow-wrap:anywhere] text-body {harnessBorder(
-														detail.agent
-													)}"
-												>
-													<MessageBlocks
-														blocks={message.blocks ?? []}
-														mono={prefs.value.monoSize}
-														{showWork}
-													/>
-												</div>
-											{/if}
+													</div>
+												{/if}
+											</div>
 										</div>
-									</div>
+									{/if}
 								{/if}
-							{/if}
-						{/each}
+							{/each}
 
-						<!--
+							<!--
 								What the harness says it is doing, in its own words. "working"
 								was all bordr could say; the pane has always known the verb,
 								the elapsed time and the tokens spent.
 							-->
-						{#if detail.status === 'working'}
-							<div class="ml-[22px]">
-								<div class="flex items-center gap-1.5 font-mono text-[11px] text-muted">
-									{#each [0, 1, 2] as n (n)}
-										<span
-											class="h-1 w-1 rounded-full bg-working motion-safe:animate-[bordr-pulse_1.2s_ease-in-out_infinite]"
-											style="animation-delay: {n * 0.2}s; opacity: {1 - n * 0.35}"
-										></span>
-									{/each}
-									<span class="min-w-0 truncate"
-										>{(prefs.value.showActivity ? detail.activity?.text : null) ?? 'working'}</span
-									>
+							{#if detail.status === 'working'}
+								<div class="ml-[22px]">
+									<div class="flex items-center gap-1.5 font-mono text-[11px] text-muted">
+										{#each [0, 1, 2] as n (n)}
+											<span
+												class="h-1 w-1 rounded-full bg-working motion-safe:animate-[bordr-pulse_1.2s_ease-in-out_infinite]"
+												style="animation-delay: {n * 0.2}s; opacity: {1 - n * 0.35}"
+											></span>
+										{/each}
+										<span class="min-w-0 truncate"
+											>{(prefs.value.showActivity ? detail.activity?.text : null) ??
+												'working'}</span
+										>
+									</div>
+									{#if prefs.value.showActivity && detail.activity?.tip}
+										<p class="mt-0.5 text-[11px] text-faint">{detail.activity.tip}</p>
+									{/if}
 								</div>
-								{#if prefs.value.showActivity && detail.activity?.tip}
-									<p class="mt-0.5 text-[11px] text-faint">{detail.activity.tip}</p>
-								{/if}
-							</div>
-						{/if}
+							{/if}
 
-						<!--
+							<!--
 							Sent, accepted by herdr, not yet in the transcript.
 
 							BELOW the working indicator, which is where the terminal puts
@@ -2827,83 +2840,84 @@
 							prompt is waiting behind it. Above the spinner it read as
 							though it had already been picked up.
 						-->
-					{/if}
+						{/if}
 
-					{#if toolCount > 0 && prefs.value.workControl === 'inline'}
-						<div class="flex justify-center">
-							<button
-								class="rounded-full px-3 py-1 text-[11.5px] text-working"
-								onclick={() => {
-									showWork = !showWork;
-									prefs.set('showWork', showWork);
-								}}
-							>
-								{showWork ? 'Hide' : 'Show'} the work ({toolCount})
-							</button>
-						</div>
-					{/if}
-				</div>
-
-				{@render pickerCard()}
-
-				{#if !detail.picker && detail.menu}
-					<!-- A menu bordr could not read as options (omp's model browser,
-					     Claude Code's /config): say so, and open the key strip. -->
-					<section
-						class="mt-4 flex overflow-hidden rounded-xl border border-blocked-edge bg-blocked-surface"
-					>
-						<span class="w-1 shrink-0 self-stretch bg-blocked"></span>
-						<div class="min-w-0 flex-1 p-3">
-							<p class="font-mono text-[10.5px] tracking-[.3px] text-blocked-ink">
-								⌨ MENU OPEN ON THE TERMINAL
-							</p>
-							<p class="mt-1.5 text-[13px] [overflow-wrap:anywhere] text-muted">{detail.menu}</p>
-							{#if !showControls}
+						{#if toolCount > 0 && prefs.value.workControl === 'inline'}
+							<div class="flex justify-center">
 								<button
-									class="mt-2.5 rounded-lg bg-ink px-3.5 py-2 text-[13px] font-medium text-card"
+									class="rounded-full px-3 py-1 text-[11.5px] text-working"
 									onclick={() => {
-										showControls = true;
-										requestAnimationFrame(() => screenBox?.scrollIntoView({ block: 'start' }));
+										showWork = !showWork;
+										prefs.set('showWork', showWork);
 									}}
 								>
-									Show the screen and key strip
+									{showWork ? 'Hide' : 'Show'} the work ({toolCount})
 								</button>
-							{/if}
-						</div>
-					</section>
-				{/if}
+							</div>
+						{/if}
+					</div>
 
-				{#if showControls}
-					<div class="mt-4">
-						<!--
+					{@render pickerCard()}
+
+					{#if !detail.picker && detail.menu}
+						<!-- A menu bordr could not read as options (omp's model browser,
+					     Claude Code's /config): say so, and open the key strip. -->
+						<section
+							class="mt-4 flex overflow-hidden rounded-xl border border-blocked-edge bg-blocked-surface"
+						>
+							<span class="w-1 shrink-0 self-stretch bg-blocked"></span>
+							<div class="min-w-0 flex-1 p-3">
+								<p class="font-mono text-[10.5px] tracking-[.3px] text-blocked-ink">
+									⌨ MENU OPEN ON THE TERMINAL
+								</p>
+								<p class="mt-1.5 text-[13px] [overflow-wrap:anywhere] text-muted">{detail.menu}</p>
+								{#if !showControls}
+									<button
+										class="mt-2.5 rounded-lg bg-ink px-3.5 py-2 text-[13px] font-medium text-card"
+										onclick={() => {
+											showControls = true;
+											requestAnimationFrame(() => screenBox?.scrollIntoView({ block: 'start' }));
+										}}
+									>
+										Show the screen and key strip
+									</button>
+								{/if}
+							</div>
+						</section>
+					{/if}
+
+					{#if showControls}
+						<div class="mt-4">
+							<!--
 							The whole pane, scrollable, held at the bottom where the prompt
 							and footer live; a long panel (Claude Code's /config) is read by
 							scrolling up inside the box rather than being cut off.
 						-->
-						<div
-							use:termGrid
-							bind:this={screenBox}
-							onscroll={onScreenScroll}
-							class="term max-h-[60vh] overflow-auto rounded-[10px] border border-hairline bg-card px-3 py-2.5 text-body"
-							style="font-size: {prefs.value.monoSize}px"
-						>
-							{#each detail.screenTail.split('\n') as line, i (i)}
-								<!--
+							<div
+								use:termGrid
+								bind:this={screenBox}
+								onscroll={onScreenScroll}
+								class="term max-h-[60vh] overflow-auto rounded-[10px] border border-hairline bg-card px-3 py-2.5 text-body"
+								style="font-size: {prefs.value.monoSize}px"
+							>
+								{#each detail.screenTail.split('\n') as line, i (i)}
+									<!--
 									Safe: ansiToHtml escapes every HTML metacharacter in the payload
 									and emits only <span style="…"> wrappers for SGR colour — proven
 									by the escaping cases in src/lib/ansi.test.ts. Terminal output is
 									untrusted, which is exactly why it is escaped rather than trusted.
 								-->
-								<!-- eslint-disable svelte/no-at-html-tags -->
-								<div class="whitespace-pre">{@html ansiToHtml(line, true) || '&nbsp;'}</div>
-							{/each}
+									<!-- eslint-disable svelte/no-at-html-tags -->
+									<div class="whitespace-pre">{@html ansiToHtml(line, true) || '&nbsp;'}</div>
+								{/each}
+							</div>
+							<p class="mt-1 text-[11.5px] text-faint">
+								The pane's screen, live · scroll up inside it for the rest
+							</p>
 						</div>
-						<p class="mt-1 text-[11.5px] text-faint">
-							The pane's screen, live · scroll up inside it for the rest
-						</p>
-					</div>
-				{/if}
-			</main>
+					{/if}
+				</main>
+			</div>
 
 			<div class="sticky bottom-0 z-10 w-full {widths}">
 				<!--
