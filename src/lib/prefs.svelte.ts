@@ -30,6 +30,19 @@ export type MessageTime = 'off' | 'runs' | 'all';
  */
 export type SubagentStrip = 'off' | 'running' | 'all';
 
+/**
+ * What the drawer offers for getting home, on a phone.
+ *
+ * The drawer covers the whole screen, header included, so the mark in the
+ * header — which is a link to the agents list — cannot be reached while it is
+ * open. Something in the drawer has to stand in for it.
+ *
+ *   mark  the collie, the same control as the header's
+ *   icon  a plain home glyph
+ *   off   nothing; close the drawer and use the header
+ */
+export type DrawerHome = 'mark' | 'icon' | 'off';
+
 /** Which clock a time is written on, when the locale's own is not wanted. */
 export type ClockFormat = 'auto' | 'h24' | 'h12';
 
@@ -188,6 +201,8 @@ export interface Prefs {
 	messageTime: MessageTime;
 	/** Which sub-agents appear in the strip above a conversation. */
 	subagentStrip: SubagentStrip;
+	/** What the phone drawer offers for getting back to the agents list. */
+	drawerHome: DrawerHome;
 	/** Which clock that time is written on; 'auto' follows the device. */
 	clockFormat: ClockFormat;
 	/** The herdr tab name on list rows and in the sidebar. */
@@ -277,6 +292,7 @@ export const DEFAULTS: Prefs = {
 	messageTicks: true,
 	messageTime: 'runs',
 	subagentStrip: 'running',
+	drawerHome: 'mark',
 	clockFormat: 'auto',
 	showTabName: true,
 	showBranches: true,
@@ -322,6 +338,7 @@ const STRIPS: KeyStripMode[] = ['always', 'peek'];
 const BACKS: BackTo[] = ['home', 'history'];
 const MESSAGE_TIMES: MessageTime[] = ['off', 'runs', 'all'];
 const SUBAGENT_STRIPS: SubagentStrip[] = ['off', 'running', 'all'];
+const DRAWER_HOMES: DrawerHome[] = ['mark', 'icon', 'off'];
 const CLOCKS: ClockFormat[] = ['auto', 'h24', 'h12'];
 const ACCENTS: HarnessAccent[] = ['edge', 'tint', 'fill', 'off'];
 const INDICATORS: StatusIndicators[] = ['dot', 'symbol', 'text'];
@@ -428,6 +445,7 @@ export function normalisePrefs(raw: unknown): Prefs {
 		messageTicks: bool(stored.messageTicks, DEFAULTS.messageTicks),
 		messageTime: pick(stored.messageTime, MESSAGE_TIMES, DEFAULTS.messageTime),
 		subagentStrip: pick(stored.subagentStrip, SUBAGENT_STRIPS, DEFAULTS.subagentStrip),
+		drawerHome: pick(stored.drawerHome, DRAWER_HOMES, DEFAULTS.drawerHome),
 		clockFormat: pick(stored.clockFormat, CLOCKS, DEFAULTS.clockFormat),
 		showTabName: bool(stored.showTabName, DEFAULTS.showTabName),
 		showBranches: bool(stored.showBranches, DEFAULTS.showBranches),

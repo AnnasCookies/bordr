@@ -27,6 +27,17 @@
 
 	let workspaces = $state<WorkspaceNode[]>([]);
 	let machines = $state<MachineStatus[]>([]);
+	/**
+	 * Machines herdr knows about that bordr has not been allowed to reach.
+	 *
+	 * Only ever populated when the reachable list is empty. bordr requires each
+	 * host to be named in `BORDR_MACHINES` before it will connect — it has no
+	 * login, so inheriting every host you ever typed into a terminal would make
+	 * all of them drivable by anyone who reaches the app. That is the right
+	 * default and a silent one: the sidebar simply stopped listing machines,
+	 * with the reason in a file the app never mentions.
+	 */
+	let offered = $state<string[]>([]);
 
 	async function load() {
 		try {
@@ -35,6 +46,7 @@
 			const body = await res.json();
 			workspaces = body.workspaces ?? [];
 			machines = body.machines ?? [];
+			offered = body.offered ?? [];
 		} catch {
 			// A failed poll keeps the last tree rather than blanking it.
 		}
@@ -277,14 +289,24 @@
 				aria-expanded="true"
 				onclick={onclose}>☰</button
 			>
-			{#if home}
+			{#if home && prefs.value.drawerHome !== 'off'}
+				<!--
+					The drawer covers the header, so the mark up there — which is already
+					a link to the agents list — cannot be reached while this is open.
+					This stands in for it, and defaults to being the same mark so the two
+					read as one control rather than two ways home.
+				-->
 				<a
 					href={resolve('/')}
 					class="flex h-11 w-11 shrink-0 items-center justify-center rounded-lg text-muted"
 					aria-label="Home — all agents"
 					onclick={onclose}
 				>
-					<Icon name="home" size={20} />
+					{#if prefs.value.drawerHome === 'mark'}
+						<img src="/collie.svg" alt="" class="h-7 w-7" style="image-rendering: pixelated" />
+					{:else}
+						<Icon name="home" size={20} />
+					{/if}
 				</a>
 			{/if}
 		</div>
@@ -358,6 +380,20 @@
 				{/if}
 			{/each}
 		</div>
+
+		{#if offered.length > 0}
+			<!--
+				Names the hosts and names the fix. "Where are my other machines" is a
+				real question and the honest answer is short.
+			-->
+			<p class="shrink-0 border-t border-hairline px-2 py-1.5 text-[10.5px] text-muted">
+				{offered.join(', ')} configured in herdr.
+				<span class="text-faint"
+					>Add to <span class="font-mono">BORDR_MACHINES</span> in bordr's .env to reach
+					{offered.length === 1 ? 'it' : 'them'} from here.</span
+				>
+			</p>
+		{/if}
 
 		<!-- herdr keeps new and menu at the foot of its machines pane, not in a title bar. -->
 		<div class="flex shrink-0 items-center gap-1 border-t border-hairline px-2 py-1">

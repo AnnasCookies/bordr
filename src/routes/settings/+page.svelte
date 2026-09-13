@@ -25,6 +25,7 @@
 		ClockFormat,
 		MessageTime,
 		SubagentStrip,
+		DrawerHome,
 		FillStyle,
 		SoundAlerts,
 		GradientEnd,
@@ -676,6 +677,23 @@
 	</div>
 {/snippet}
 
+{#snippet drawerHomePreview()}
+	<div class="flex items-center gap-1 rounded-lg bg-page p-2">
+		<span class="flex h-9 w-9 items-center justify-center text-[22px] leading-none text-muted"
+			>☰</span
+		>
+		{#if prefs.value.drawerHome === 'mark'}
+			<img src="/collie.svg" alt="" class="h-6 w-6" style="image-rendering: pixelated" />
+		{:else if prefs.value.drawerHome === 'icon'}
+			<span class="flex h-9 w-9 items-center justify-center text-muted"
+				><Icon name="home" size={18} /></span
+			>
+		{:else}
+			<span class="text-[12px] text-faint">close the drawer and use the header</span>
+		{/if}
+	</div>
+{/snippet}
+
 {#snippet ticksPreview()}
 	<div class="flex items-center gap-3 rounded-lg bg-page p-2 text-[12px] text-muted">
 		<span class="flex items-center gap-1"><Ticks state="sending" /> sending</span>
@@ -1215,6 +1233,22 @@
 							>
 								{#snippet preview()}{@render backPreview()}{/snippet}
 							</SettingRow>
+							<SettingRow
+								label="Home in the drawer"
+								value={prefs.value.drawerHome}
+								options={[
+									{ v: 'mark' as DrawerHome, l: 'Mark' },
+									{ v: 'icon' as DrawerHome, l: 'Icon' },
+									{ v: 'off' as DrawerHome, l: 'Off' }
+								]}
+								onchange={(v) => prefs.set('drawerHome', v)}
+							>
+								{#snippet preview()}{@render drawerHomePreview()}{/snippet}
+							</SettingRow>
+							<p class="px-3.5 pb-2 text-[12px] text-muted">
+								Phone only, and only inside an agent. The drawer covers the header, so the mark up
+								there — already a link to this list — cannot be reached while it is open.
+							</p>
 							<ToggleRow
 								label="Swipe to cycle agents"
 								hint="Swipe across a conversation for the next or previous agent in the list. Swiping from either screen edge still goes back."

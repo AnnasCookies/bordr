@@ -81,3 +81,25 @@ export function listMachines(): Machine[] {
 				allowed.includes(machine.id.toLowerCase()) || allowed.includes(machine.label.toLowerCase())
 		);
 }
+
+/**
+ * The machines herdr knows about, whether or not bordr may reach them.
+ *
+ * Only for explaining an empty list. A sidebar that simply omits the two
+ * hosts you use every day reads as bordr having lost them, and the actual
+ * answer — an allowlist that was never set — is invisible: it lives in a file
+ * the app never mentions. Names only; nothing here is connected to.
+ */
+export function knownMachineLabels(): string[] {
+	let raw: unknown;
+	try {
+		raw = JSON.parse(readFileSync(endpointsPath(), 'utf8'));
+	} catch {
+		return [];
+	}
+	const ssh = (raw as { ssh?: unknown })?.ssh;
+	if (!Array.isArray(ssh)) return [];
+	return ssh
+		.map((entry) => (entry as Record<string, unknown>).label)
+		.filter((label): label is string => typeof label === 'string' && label.length > 0);
+}
