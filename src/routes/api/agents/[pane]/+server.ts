@@ -203,12 +203,16 @@ export const GET: RequestHandler = async ({ params, url }) => {
 				degraded = 'no-session';
 				reason = `herdr reported a session for this pane but its transcript file was not found. Run \`herdr integration install ${summary.agent}\` and restart the agent; showing the terminal instead.`;
 			} else {
-				// The sub-agents live beside this file, so its path is what finds
-				// them. Local branch only: a remote pane's transcript is on that
-				// machine and its children are with it.
-				subagents = await listSubagents(path);
 				try {
 					const tail = await readTranscriptTail(path, windowBytes);
+					// The sub-agents live beside this file, so its path is what finds
+					// them. Local branch only: a remote pane's transcript is on that
+					// machine and its children are with it.
+					//
+					// The tail goes with it: a direct child's Task result is written
+					// into THIS transcript, and that is how bordr knows which of them
+					// have finished rather than guessing from a timer.
+					subagents = await listSubagents(path, tail.text);
 					if (summary.agent === 'omp' && piSessionEnded(tail.text)) {
 						degraded = 'stale-session';
 					} else {

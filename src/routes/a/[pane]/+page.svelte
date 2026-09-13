@@ -388,6 +388,20 @@
 
 	/** Sub-agents this session has spawned, and the one being read. */
 	const subs = $derived(detail.subagents ?? []);
+	/**
+	 * Running sub-agents are live information and belong at the top; finished
+	 * ones are an archive and do not.
+	 *
+	 * The strip used to list every sub-agent a session had ever spawned, for as
+	 * long as the session lived — four research agents that finished ninety
+	 * minutes ago still sat across the header, growing the sticky bar and
+	 * pushing the transcript down, with nothing left to say. The finished ones
+	 * are still one tap away behind their count.
+	 */
+	const running = $derived(subs.filter((a) => !a.done));
+	const finished = $derived(subs.filter((a) => a.done));
+	let showFinished = $state(false);
+	const shownSubs = $derived(showFinished ? [...running, ...finished] : running);
 	const openSubAgent = $derived(subs.find((a) => a.id === openSub) ?? null);
 
 	/**
@@ -2129,22 +2143,41 @@
 				failed, none of it was reachable. Each has its own transcript, so
 				each of these opens one.
 			-->
-			{#if subs.length > 0}
+			{#if running.length > 0 || finished.length > 0}
 				<div class="flex items-center gap-1.5 overflow-x-auto border-b border-hairline px-2 py-1.5">
 					<span class="shrink-0 font-mono text-[10px] tracking-[.06em] text-faint uppercase"
 						>agents</span
 					>
-					{#each subs as sub (sub.id)}
+					{#each shownSubs as sub (sub.id)}
 						<button
-							class="flex shrink-0 items-center gap-1.5 rounded-full border border-edge px-2.5 py-1 text-[11.5px] transition-colors hover:bg-chip"
+							class="flex shrink-0 items-center gap-1.5 rounded-full border px-2.5 py-1 text-[11.5px] transition-colors hover:bg-chip {sub.done
+								? 'border-hairline opacity-60'
+								: 'border-edge'}"
 							onclick={() => (openSub = sub.id)}
 							title={sub.description || sub.agentType}
 						>
-							<span class="font-mono text-working">{sub.agentType}</span>
+							<!--
+								A running agent is marked as one. Without it the only difference
+								between working and long finished was an entry count that stops
+								moving, which you have to watch to notice.
+							-->
+							{#if !sub.done}<Spinner size={11} label="running" />{/if}
+							<span class="font-mono {sub.done ? 'text-muted' : 'text-working'}"
+								>{sub.agentType}</span
+							>
 							<span class="max-w-[9rem] truncate text-muted">{sub.description}</span>
 							<span class="font-mono text-[10px] text-faint">{sub.entries}</span>
 						</button>
 					{/each}
+					{#if finished.length > 0}
+						<button
+							class="shrink-0 rounded-full px-2 py-1 font-mono text-[10.5px] text-faint"
+							onclick={() => (showFinished = !showFinished)}
+							aria-expanded={showFinished}
+						>
+							{showFinished ? 'hide' : `+${finished.length} done`}
+						</button>
+					{/if}
 				</div>
 			{/if}
 
