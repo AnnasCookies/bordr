@@ -33,7 +33,9 @@ const agent = (paneId: string): AgentSummary => ({
 	cwd: '/',
 	seq: 1,
 	workspaceId: '1',
-	workspaceLabel: ''
+	workspaceLabel: '',
+	tabId: 't1',
+	tabLabel: ''
 });
 
 const flush = () => new Promise((r) => setTimeout(r, 0));

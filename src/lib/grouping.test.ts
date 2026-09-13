@@ -18,6 +18,8 @@ function agent(over: Partial<AgentSummary> & { paneId: string }): AgentSummary {
 		cwd: '/home/dev/dev',
 		seq: 1,
 		workspaceId: 'w1',
+		tabId: 't1',
+		tabLabel: '',
 		workspaceLabel: 'one',
 		...over
 	};

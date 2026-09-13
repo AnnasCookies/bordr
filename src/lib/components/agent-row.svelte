@@ -67,6 +67,22 @@
 				{agent.status}
 			</span>
 		</span>
+		{#if agent.tabLabel}
+			<!--
+				The name YOU gave the work, which is the thing that tells two rows
+				apart when the title cannot. Grouped by workspace, a fleet shows
+				two cards both headed "it-cli" and two both headed "bordr" — same
+				workspace, same harness, same status. The tab names are "it-cli
+				link via bun" and "Bitwarden CLI integration".
+
+				Its own line, not the preview's: the preview is already clipped,
+				and the one line on the card that says WHICH pane this is should
+				not be the one competing for width.
+			-->
+			<span class="mt-[2px] block truncate font-mono text-[11px] text-faint">
+				&#x2299; {agent.tabLabel}
+			</span>
+		{/if}
 		<!--
 			The branch shares the preview's line rather than taking one of its
 			own. A line per row is sixteen lines of scrolling on this fleet, to

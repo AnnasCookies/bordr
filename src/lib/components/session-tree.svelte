@@ -8,6 +8,7 @@
 	import { harnessText } from '$lib/theme';
 	import HarnessMark from './harness-mark.svelte';
 	import PreviewText from './preview-text.svelte';
+	import { tabName } from '$lib/tab-label';
 	import StatusMark from './status-mark.svelte';
 	import type { MachineStatus, PaneNode, WorkspaceNode } from '$lib/types';
 
@@ -69,6 +70,7 @@
 	/** Every pane, flattened, with the workspace and tab it came from. */
 	interface Row extends PaneNode {
 		workspaceLabel: string;
+		tabLabel: string;
 		machine: string;
 	}
 
@@ -78,6 +80,9 @@
 				t.panes.map((p) => ({
 					...p,
 					workspaceLabel: w.label || w.workspaceId,
+					// A default tab is labelled with its own number, which tells
+					// you nothing the pane address has not already told you.
+					tabLabel: /^\d+$/.test(tabName(t.label)) ? '' : tabName(t.label),
 					machine: w.machine
 				}))
 			)
@@ -459,8 +464,15 @@
 						still recognisable, a branch cut short is not.
 					-->
 					<span class="flex items-baseline gap-x-1 font-mono text-[10px] text-faint">
+						<!--
+							The tab name last, and inside the SAME truncating span, so a
+							long one gives way before the workspace does — herdr's own
+							row makes the same trade.
+						-->
 						<span class="min-w-0 truncate"
-							>{pane.machine ? `${pane.machine} · ` : ''}{pane.workspaceLabel}</span
+							>{pane.machine ? `${pane.machine} · ` : ''}{pane.workspaceLabel}{pane.tabLabel
+								? ` · ${pane.tabLabel}`
+								: ''}</span
 						>
 						{#if info?.branch}
 							<span class="max-w-[55%] shrink-0 truncate text-branch">&#xe0a0; {info.branch}</span>

@@ -17,6 +17,17 @@ export interface AgentSummary {
 	seq: number;
 	workspaceId: string;
 	workspaceLabel: string;
+	tabId: string;
+	/**
+	 * The name on the pane's tab in herdr, with the spinner frame herdr
+	 * animates stripped off the front.
+	 *
+	 * Usually the most recognisable thing about a pane: it is the name you
+	 * gave the work, where the title is whatever the harness last wrote for
+	 * itself. Empty for a tab still carrying its default number, which says
+	 * nothing the pane address does not.
+	 */
+	tabLabel: string;
 	/**
 	 * One line of "what is this pane doing" for the list row. Filled by the
 	 * projector; the list falls back to the cwd when no adapter matched.

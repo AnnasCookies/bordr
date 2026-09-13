@@ -31,7 +31,9 @@ const agent = (paneId: string, status: AgentSummary['status'], seq = 1): AgentSu
 	cwd: '/home/dev',
 	seq,
 	workspaceId: 'w1',
-	workspaceLabel: 'w1'
+	workspaceLabel: 'w1',
+	tabId: 't1',
+	tabLabel: ''
 });
 
 async function load() {

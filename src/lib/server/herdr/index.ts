@@ -1,6 +1,7 @@
 import { env } from '$env/dynamic/private';
 import { homedir } from 'node:os';
 import { join } from 'node:path';
+import { tabName } from '$lib/tab-label';
 import type { AgentStatus, AgentSummary } from '$lib/types';
 import { HerdrClient, HerdrRequestError } from './client';
 import { judgeCompatibility, type Compatibility } from './compat';
@@ -108,13 +109,18 @@ export async function getManager(): Promise<SubscriptionManager> {
  */
 export function toSummary(
 	raw: Record<string, unknown>,
-	workspaceLabels: Map<string, string> = new Map()
+	workspaceLabels: Map<string, string> = new Map(),
+	tabLabels: Map<string, string> = new Map()
 ): AgentSummary {
 	const status = raw.agent_status as AgentStatus;
 	const workspaceLabel = workspaceLabels.get(String(raw.workspace_id ?? ''));
 	const named =
 		(typeof raw.name === 'string' && raw.name) ||
 		(workspaceLabel && !/^\d+$/.test(workspaceLabel) ? workspaceLabel : '');
+	const tabId = String(raw.tab_id ?? '');
+	// A default tab is labelled with its own number, which says nothing the
+	// pane address does not already say.
+	const tabLabel = tabName(tabLabels.get(tabId) ?? '');
 	return {
 		paneId: String(raw.pane_id ?? ''),
 		agent: String(raw.agent ?? 'unknown'),
@@ -123,7 +129,9 @@ export function toSummary(
 		cwd: String(raw.cwd ?? ''),
 		seq: Number(raw.state_change_seq ?? 0),
 		workspaceId: String(raw.workspace_id ?? ''),
-		workspaceLabel: workspaceLabel && !/^\d+$/.test(workspaceLabel) ? workspaceLabel : ''
+		workspaceLabel: workspaceLabel && !/^\d+$/.test(workspaceLabel) ? workspaceLabel : '',
+		tabId,
+		tabLabel: /^\d+$/.test(tabLabel) ? '' : tabLabel
 	};
 }
 
@@ -141,17 +149,37 @@ export async function workspaceLabels(): Promise<Map<string, string>> {
 	}
 }
 
+/**
+ * Tab id → the name on the tab.
+ *
+ * `agent.list` gives every pane its `tab_id` and nothing else about the tab,
+ * so the name it is filed under — which is the name YOU gave it in herdr, and
+ * usually the most recognisable thing about a pane — needs the second call.
+ */
+export async function tabLabels(): Promise<Map<string, string>> {
+	const herdr = getClient();
+	try {
+		const result = await herdr.request<{ tabs?: Array<Record<string, unknown>> }>('tab.list');
+		return new Map((result.tabs ?? []).map((t) => [String(t.tab_id ?? ''), String(t.label ?? '')]));
+	} catch {
+		return new Map(); // a row without its tab name is still a usable row
+	}
+}
+
 export function sortAgents(agents: AgentSummary[]): AgentSummary[] {
 	return [...agents].sort((a, b) => RANK[a.status] - RANK[b.status]);
 }
 
 export async function listAgents(): Promise<AgentSummary[]> {
 	const herdr = getClient();
-	const [result, labels] = await Promise.all([
+	// In parallel: three round trips cost what one does, and the list is on a
+	// two-second beat, so doing them in turn would show.
+	const [result, labels, tabs] = await Promise.all([
 		herdr.request<{ agents: Record<string, unknown>[] }>('agent.list'),
-		workspaceLabels()
+		workspaceLabels(),
+		tabLabels()
 	]);
-	return sortAgents(result.agents.map((a) => toSummary(a, labels)));
+	return sortAgents(result.agents.map((a) => toSummary(a, labels, tabs)));
 }
 
 /**
