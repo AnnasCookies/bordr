@@ -50,6 +50,7 @@
 	import { nextFollowing } from '$lib/follow';
 	import { swipeSequence } from '$lib/swipe-order';
 	import { showChrome, touchPoints } from '$lib/header-chrome';
+	import { screen as layout, watchWide } from '$lib/wide.svelte';
 	import { afterClose } from '$lib/after-close';
 	import { keepPending, onScreen, say, type PendingSend } from '$lib/pending-sends';
 	import { queueVerdict } from '$lib/queue';
@@ -184,16 +185,14 @@
 		drawerPane = pane;
 	});
 
+	// The shared breakpoints, so `tight` is available here too. This page kept
+	// its own copy of the `lg` query, which is the drift `wide.svelte.ts` was
+	// written to stop; `wideScreen` now follows the shared one.
+	$effect(() => watchWide());
 	$effect(() => {
-		const query = window.matchMedia('(min-width: 1024px)');
-		const sync = () => {
-			wideScreen = query.matches;
-			// A drawer left open behind a rotation would sit under the sidebar.
-			if (query.matches) treeOpen = false;
-		};
-		sync();
-		query.addEventListener('change', sync);
-		return () => query.removeEventListener('change', sync);
+		wideScreen = layout.wide;
+		// A drawer left open behind a rotation would sit under the sidebar.
+		if (layout.wide) treeOpen = false;
 	});
 
 	function prose(message: { blocks?: Block[] }): Block[] {
@@ -2186,7 +2185,7 @@
 		a state you set once, rather than a link you re-find at the bottom of a
 		growing conversation.
 	-->
-	{#if prefs.value.workControl === 'header' && toolCount > 0}
+	{#if prefs.value.workControl === 'header' && toolCount > 0 && !layout.tight}
 		<button
 			class="flex h-9 shrink-0 items-center rounded-full border px-3 text-[12px] {showWork
 				? 'border-working-halo bg-working-bg text-working'
@@ -2229,16 +2228,25 @@
 	>
 		<span class="text-[17px] leading-none">&#x22EF;</span>
 	</button>
-	<button
-		class="flex h-9 w-9 shrink-0 items-center justify-center rounded-full border {watched
-			? 'border-blocked-edge bg-blocked-bg text-blocked-ink'
-			: 'border-edge text-faint'}"
-		aria-label={watched ? 'Stop notifying on done' : 'Notify on every done'}
-		aria-pressed={watched}
-		onclick={toggleWatch}
-	>
-		<Icon name="bell" size={17} />
-	</button>
+	{#if !layout.tight}
+		<!--
+			Both toggles move into the ⋯ sheet on a narrow screen. Measured on a
+			430px phone: the row's controls take 365px of it and the pane's own
+			title is left with 13 pixels — at 360 and 320 it gets none at all.
+			The title is the one thing there you cannot work out from anything
+			else, so a toggle you set once gives way to it.
+		-->
+		<button
+			class="flex h-9 w-9 shrink-0 items-center justify-center rounded-full border {watched
+				? 'border-blocked-edge bg-blocked-bg text-blocked-ink'
+				: 'border-edge text-faint'}"
+			aria-label={watched ? 'Stop notifying on done' : 'Notify on every done'}
+			aria-pressed={watched}
+			onclick={toggleWatch}
+		>
+			<Icon name="bell" size={17} />
+		</button>
+	{/if}
 {/snippet}
 
 {#snippet conversation()}
@@ -3349,6 +3357,29 @@
 		<ControlSheet
 			targets={controlTargets}
 			subagents={strip === 'off' ? [] : finished}
+			toggles={layout.tight
+				? [
+						...(prefs.value.workControl === 'header' && toolCount > 0
+							? [
+									{
+										label: `Show the work (${toolCount})`,
+										hint: 'Tool calls, results and thinking, inline in the transcript.',
+										on: showWork,
+										onchange: () => {
+											showWork = !showWork;
+											prefs.set('showWork', showWork);
+										}
+									}
+								]
+							: []),
+						{
+							label: 'Notify when this agent finishes',
+							hint: 'A push for every done, not only when it needs you.',
+							on: watched,
+							onchange: () => void toggleWatch()
+						}
+					]
+				: []}
 			onsubagent={(id) => {
 				controlling = false;
 				openSub = id;

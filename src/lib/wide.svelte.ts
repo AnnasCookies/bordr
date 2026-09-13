@@ -14,12 +14,28 @@
 
 const LG = '(min-width: 1024px)';
 
+/**
+ * Below this, the conversation header has no room for its secondary actions.
+ *
+ * Measured on a real pane: at 430px the controls take 365px of the row and
+ * the pane's own TITLE is left with 13 pixels; at 360 and 320 it gets none at
+ * all. The title is the one thing on that row you cannot work out from
+ * anything else, so the toggles give way instead and move into the ⋯ sheet.
+ *
+ * 600px rather than `sm`: a phone in landscape is still a phone, and a tablet
+ * has the room.
+ */
+const TIGHT = '(max-width: 599px)';
+
 let matches = $state(false);
+let narrow = $state(false);
 let query: MediaQueryList | null = null;
+let tightQuery: MediaQueryList | null = null;
 let watchers = 0;
 
 const sync = () => {
 	matches = query?.matches ?? false;
+	narrow = tightQuery?.matches ?? false;
 };
 
 /**
@@ -34,14 +50,19 @@ export function watchWide(): () => void {
 	if (typeof window === 'undefined') return () => {};
 	if (watchers++ === 0) {
 		query = window.matchMedia(LG);
+		tightQuery = window.matchMedia(TIGHT);
 		sync();
 		query.addEventListener('change', sync);
+		tightQuery.addEventListener('change', sync);
 	}
 	return () => {
-		if (--watchers === 0 && query) {
+		if (--watchers === 0 && query && tightQuery) {
 			query.removeEventListener('change', sync);
+			tightQuery.removeEventListener('change', sync);
 			query = null;
+			tightQuery = null;
 			matches = false;
+			narrow = false;
 		}
 	};
 }
@@ -50,10 +71,15 @@ export function watchWide(): () => void {
 export const screen = {
 	get wide() {
 		return matches;
+	},
+	/** Too narrow for the header's secondary actions to sit beside the title. */
+	get tight() {
+		return narrow;
 	}
 };
 
-/** Test seam: set the breakpoint without a window. */
-export function setWideForTest(value: boolean): void {
+/** Test seam: set the breakpoints without a window. */
+export function setWideForTest(value: boolean, alsoTight = false): void {
 	matches = value;
+	narrow = alsoTight;
 }

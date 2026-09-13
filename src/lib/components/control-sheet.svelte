@@ -28,6 +28,7 @@
 		targets,
 		subagents = [],
 		onsubagent,
+		toggles = [],
 		onclose,
 		ondone,
 		onworktrees
@@ -50,6 +51,14 @@
 		 */
 		subagents?: { id: string; agentType: string; description: string; entries: number }[];
 		onsubagent?: (id: string) => void;
+		/**
+		 * Toggles that live in the header when there is room for them.
+		 *
+		 * On a narrow screen they move here rather than squeezing the pane's own
+		 * title out of the row — they are things you set once, and the title is
+		 * the one thing on that row you cannot work out from anywhere else.
+		 */
+		toggles?: { label: string; hint?: string; on: boolean; onchange: () => void }[];
 		onclose: () => void;
 		/**
 		 * Something changed. The action is passed on because a close leaves
@@ -217,6 +226,26 @@
 					</button>
 				{/if}
 			{/if}
+
+			{#each toggles as toggle (toggle.label)}
+				<button
+					class="flex min-h-12 w-full items-center gap-3 px-4 text-left"
+					aria-pressed={toggle.on}
+					onclick={toggle.onchange}
+				>
+					<span class="min-w-0 flex-1">
+						<span class="block text-[15px]">{toggle.label}</span>
+						{#if toggle.hint}
+							<span class="block text-[12px] text-muted">{toggle.hint}</span>
+						{/if}
+					</span>
+					<span
+						class="shrink-0 rounded-full px-2.5 py-1 font-mono text-[11px] {toggle.on
+							? 'bg-working-bg text-working'
+							: 'bg-chip text-muted'}">{toggle.on ? 'on' : 'off'}</span
+					>
+				</button>
+			{/each}
 
 			{#if subagents.length > 0 && onsubagent}
 				<p class="px-4 pt-2 pb-1 font-mono text-[10.5px] tracking-[.06em] text-faint uppercase">
