@@ -1,4 +1,5 @@
 import { expect, test } from '@playwright/test';
+import { openSettings } from './settings';
 
 /** The conversation needs a live pane; skip cleanly when none is running. */
 async function firstPane(page: import('@playwright/test').Page): Promise<string | null> {
@@ -65,24 +66,24 @@ test('chat bubbles replace the prefixed transcript when switched on', async ({ p
 	const href = await firstPane(page);
 	if (!href) test.skip(true, 'no agents running');
 
-	await page.goto('/settings');
+	await openSettings(page, 'chat bubbles');
 	await page.getByRole('switch', { name: /Chat bubbles/ }).click();
 
 	await page.goto(href as string);
 	const bubble = page.locator('main [style*="background"]').first();
 	await expect(bubble).toBeVisible();
 
-	await page.goto('/settings');
+	await openSettings(page, 'chat bubbles');
 	await page.getByRole('switch', { name: /Chat bubbles/ }).click();
 });
 
 test('swipe to cycle can be turned off', async ({ page }) => {
-	await page.goto('/settings');
+	await openSettings(page, 'input');
 	const toggle = page.getByRole('switch', { name: /Swipe to cycle agents/ });
 	await expect(toggle).toHaveAttribute('aria-checked', 'true');
 	await toggle.click();
 	await expect(toggle).toHaveAttribute('aria-checked', 'false');
-	await page.reload();
+	await openSettings(page, 'input');
 	await expect(page.getByRole('switch', { name: /Swipe to cycle agents/ })).toHaveAttribute(
 		'aria-checked',
 		'false'

@@ -26,7 +26,7 @@ describe('settings sections', () => {
 
 	it('names each guard after the heading it wraps', () => {
 		// `&` is written `&amp;` in the markup; the key is the plain text.
-		const headings = [...page.matchAll(/<h2 class="[^"]*">([^<]+)<\/h2>/g)].map((m) =>
+		const headings = [...page.matchAll(/<SettingsSection heading="([^"]+)">/g)].map((m) =>
 			m[1].trim().replace(/&amp;/g, '&')
 		);
 		// Connection is the one section with no heading of its own — it is a

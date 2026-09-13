@@ -71,6 +71,18 @@ export type ChromeWhen = 'always' | 'mobile' | 'off';
 export type ConversationWidth = 'comfortable' | 'wide' | 'full';
 
 /**
+ * Whether the Latest button rides down to the bottom or simply arrives.
+ *
+ * 'auto' asks the browser, which is the right default — someone who has
+ * turned motion down at the system level means it. But the browser is not
+ * always right about that: it reads the setting through a desktop portal, and
+ * a machine whose animations are plainly on can still report `reduce`. When
+ * that happens there is nothing on the page to argue with, so the glide looks
+ * broken rather than switched off.
+ */
+export type Motion = 'auto' | 'full' | 'none';
+
+/**
  * The model, and how hard it is being asked to think, in the header.
  *
  * Both are already in the harness's status block, but that is a dense row of
@@ -259,6 +271,8 @@ export interface Prefs {
 	tabStrip: ChromeWhen;
 	/** How wide the transcript and composer run on a desktop. */
 	conversationWidth: ConversationWidth;
+	/** Whether "Latest" glides to the bottom or jumps there. */
+	motion: Motion;
 	/** The model and effort on the conversation header's location row. */
 	headerModel: HeaderModel;
 	/** Which clock that time is written on; 'auto' follows the device. */
@@ -360,6 +374,7 @@ export const DEFAULTS: Prefs = {
 	logoButton: 'always',
 	tabStrip: 'always',
 	conversationWidth: 'full',
+	motion: 'auto',
 	headerModel: 'model-effort',
 	clockFormat: 'auto',
 	showTabName: true,
@@ -409,6 +424,7 @@ const SUBAGENT_STRIPS: SubagentStrip[] = ['off', 'running', 'all'];
 const DRAWER_HOMES: DrawerHome[] = ['mark', 'icon', 'off'];
 const CHROME_WHENS: ChromeWhen[] = ['always', 'mobile', 'off'];
 const WIDTHS: ConversationWidth[] = ['comfortable', 'wide', 'full'];
+const MOTIONS: Motion[] = ['auto', 'full', 'none'];
 const HEADER_MODELS: HeaderModel[] = ['off', 'model', 'model-effort'];
 const CLOCKS: ClockFormat[] = ['auto', 'h24', 'h12'];
 const ACCENTS: HarnessAccent[] = ['edge', 'tint', 'fill', 'off'];
@@ -522,6 +538,7 @@ export function normalisePrefs(raw: unknown): Prefs {
 		logoButton: pick(stored.logoButton, CHROME_WHENS, DEFAULTS.logoButton),
 		tabStrip: pick(stored.tabStrip, CHROME_WHENS, DEFAULTS.tabStrip),
 		conversationWidth: pick(stored.conversationWidth, WIDTHS, DEFAULTS.conversationWidth),
+		motion: pick(stored.motion, MOTIONS, DEFAULTS.motion),
 		headerModel: pick(stored.headerModel, HEADER_MODELS, DEFAULTS.headerModel),
 		clockFormat: pick(stored.clockFormat, CLOCKS, DEFAULTS.clockFormat),
 		showTabName: bool(stored.showTabName, DEFAULTS.showTabName),

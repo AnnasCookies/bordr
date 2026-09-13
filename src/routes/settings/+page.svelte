@@ -14,11 +14,13 @@
 	import SessionTree from '$lib/components/session-tree.svelte';
 	import { screen, watchWide } from '$lib/wide.svelte';
 	import SettingsNav from '$lib/components/settings-nav.svelte';
+	import SettingsSection from '$lib/components/settings-section.svelte';
 	import { SECTIONS } from '$lib/settings-sections';
 	import { page } from '$app/state';
 	import Icon from '$lib/components/icon.svelte';
 	import { checkPush, togglePushDetailed, type PushState } from '$lib/push-client';
 	import { onMount } from 'svelte';
+	import { reduceMotion } from '$lib/motion';
 	import { resolve } from '$app/paths';
 	import type {
 		BackTo,
@@ -28,6 +30,7 @@
 		DrawerHome,
 		ChromeWhen,
 		ConversationWidth,
+		Motion,
 		HeaderModel,
 		FillStyle,
 		SoundAlerts,
@@ -219,8 +222,11 @@
 	let pushState = $state<PushState>('unknown');
 	let pushMessage = $state<string | null>(null);
 	let testState = $state<'idle' | 'sending' | 'sent' | 'failed'>('idle');
+	/** Read on the client only: the server has no browser to ask. */
+	let browserReduce = $state(false);
 
 	onMount(async () => {
+		browserReduce = reduceMotion();
 		try {
 			installHidden = Number(localStorage.getItem(INSTALL_DISMISSED)) > 0;
 		} catch {
@@ -695,6 +701,20 @@
 	</div>
 {/snippet}
 
+{#snippet motionPreview()}
+	<!--
+		What the browser reports, spelled out. Without it a "System" that says
+		no to an animation you can see everywhere else is unexplainable from
+		inside the app.
+	-->
+	<p class="font-mono text-[10.5px] text-faint">
+		your browser says {browserReduce ? 'prefers-reduced-motion: reduce' : 'no-preference'} ·
+		{prefs.value.motion === 'none' || (prefs.value.motion === 'auto' && browserReduce)
+			? 'Latest jumps'
+			: 'Latest glides'}
+	</p>
+{/snippet}
+
 {#snippet widthPreview()}
 	<!-- The column, and how much of it the transcript takes. -->
 	<div class="rounded-lg bg-page p-2">
@@ -1067,8 +1087,7 @@
 				class="mx-auto w-full max-w-3xl flex-1 space-y-5 px-4 pt-3 pb-24 lg:mx-0 lg:px-6 lg:pb-8"
 			>
 				{#if shown('agents list')}
-					<section>
-						<h2 class="mb-1.5 px-1 font-mono text-[10.5px] text-muted">agents list</h2>
+					<SettingsSection heading="agents list">
 						<div
 							class="divide-y divide-black/[.06] overflow-hidden rounded-xl border border-hairline bg-card dark:divide-white/[.06]"
 						>
@@ -1138,12 +1157,11 @@
 								{#snippet preview()}{@render previewLinePreview()}{/snippet}
 							</SettingRow>
 						</div>
-					</section>
+					</SettingsSection>
 				{/if}
 
 				{#if shown('appearance')}
-					<section>
-						<h2 class="mb-1.5 px-1 font-mono text-[10.5px] text-muted">appearance</h2>
+					<SettingsSection heading="appearance">
 						<div
 							class="divide-y divide-black/[.06] overflow-hidden rounded-xl border border-hairline bg-card dark:divide-white/[.06]"
 						>
@@ -1173,12 +1191,11 @@
 								{#snippet preview()}{@render monoPreview()}{/snippet}
 							</SettingRow>
 						</div>
-					</section>
+					</SettingsSection>
 				{/if}
 
 				{#if shown('header')}
-					<section>
-						<h2 class="mb-1.5 px-1 font-mono text-[10.5px] text-muted">header</h2>
+					<SettingsSection heading="header">
 						<div
 							class="divide-y divide-black/[.06] overflow-hidden rounded-xl border border-hairline bg-card dark:divide-white/[.06]"
 						>
@@ -1250,6 +1267,26 @@
 								prose does not.
 							</p>
 							<SettingRow
+								label="Motion"
+								value={prefs.value.motion}
+								options={[
+									{ v: 'auto' as Motion, l: 'System' },
+									{ v: 'full' as Motion, l: 'Always' },
+									{ v: 'none' as Motion, l: 'Off' }
+								]}
+								onchange={(v) => prefs.set('motion', v)}
+							>
+								{#snippet preview()}{@render motionPreview()}{/snippet}
+							</SettingRow>
+							<p class="px-3.5 pb-2 text-[12px] text-muted">
+								Whether "Latest" rides down to the bottom of a conversation or simply arrives.
+								System is the right default — someone who has turned motion down at the system level
+								means it — but the browser reads that through a desktop portal and can answer
+								"reduce" on a machine whose animations are plainly on, which leaves the glide
+								looking broken rather than switched off. What your browser currently says is above,
+								so you can tell the two apart.
+							</p>
+							<SettingRow
 								label="Tab strip"
 								value={prefs.value.tabStrip}
 								options={[
@@ -1272,12 +1309,11 @@
 							strip off takes it to 111px, 14%. The sub-agent row now appears only while one is
 							actually working.
 						</p>
-					</section>
+					</SettingsSection>
 				{/if}
 
 				{#if shown('workspaces & panes')}
-					<section>
-						<h2 class="mb-1.5 px-1 font-mono text-[10.5px] text-muted">workspaces &amp; panes</h2>
+					<SettingsSection heading="workspaces &amp; panes">
 						<div
 							class="divide-y divide-black/[.06] overflow-hidden rounded-xl border border-hairline bg-card dark:divide-white/[.06]"
 						>
@@ -1357,12 +1393,11 @@
 								{#snippet preview()}{@render tabLabelPreview()}{/snippet}
 							</ToggleRow>
 						</div>
-					</section>
+					</SettingsSection>
 				{/if}
 
 				{#if shown('input')}
-					<section>
-						<h2 class="mb-1.5 px-1 font-mono text-[10.5px] text-muted">input</h2>
+					<SettingsSection heading="input">
 						<div
 							class="divide-y divide-black/[.06] overflow-hidden rounded-xl border border-hairline bg-card dark:divide-white/[.06]"
 						>
@@ -1452,12 +1487,11 @@
 								<span class="mt-1.5 block text-[12px] text-muted">Web Speech · BCP-47 tag.</span>
 							</label>
 						</div>
-					</section>
+					</SettingsSection>
 				{/if}
 
 				{#if shown('chat bubbles')}
-					<section>
-						<h2 class="mb-1.5 px-1 font-mono text-[10.5px] text-muted">chat bubbles</h2>
+					<SettingsSection heading="chat bubbles">
 						<div
 							class="divide-y divide-black/[.06] overflow-hidden rounded-xl border border-hairline bg-card dark:divide-white/[.06]"
 						>
@@ -1607,12 +1641,11 @@
 								</button>
 							{/if}
 						</div>
-					</section>
+					</SettingsSection>
 				{/if}
 
 				{#if shown('transcript')}
-					<section>
-						<h2 class="mb-1.5 px-1 font-mono text-[10.5px] text-muted">transcript</h2>
+					<SettingsSection heading="transcript">
 						<div
 							class="divide-y divide-black/[.06] overflow-hidden rounded-xl border border-hairline bg-card dark:divide-white/[.06]"
 						>
@@ -1767,12 +1800,11 @@
 								{#snippet preview()}{@render toolPreview()}{/snippet}
 							</SettingRow>
 						</div>
-					</section>
+					</SettingsSection>
 				{/if}
 
 				{#if shown('notifications')}
-					<section>
-						<h2 class="mb-1.5 px-1 font-mono text-[10.5px] text-muted">notifications</h2>
+					<SettingsSection heading="notifications">
 						<div
 							class="divide-y divide-black/[.06] overflow-hidden rounded-xl border border-hairline bg-card dark:divide-white/[.06]"
 						>
@@ -1851,7 +1883,7 @@
 								<p class="px-3.5 py-3 text-[12.5px] text-danger-ink">{pushMessage}</p>
 							{/if}
 						</div>
-					</section>
+					</SettingsSection>
 				{/if}
 
 				{#if shown('connection')}

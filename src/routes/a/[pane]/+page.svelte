@@ -51,6 +51,7 @@
 	import { swipeSequence } from '$lib/swipe-order';
 	import { widthClasses } from '$lib/conversation-width';
 	import { glideDuration, glidePosition } from '$lib/glide';
+	import { reduceMotion } from '$lib/motion';
 	import { showChrome, touchPoints } from '$lib/header-chrome';
 	import { screen as layout, watchWide } from '$lib/wide.svelte';
 	import { afterClose } from '$lib/after-close';
@@ -1357,7 +1358,14 @@
 		const from = scrollTop();
 		const distance = target() - from;
 		// Already there, or the reader asked for less motion: just be there.
-		if (Math.abs(distance) < 8 || matchMedia('(prefers-reduced-motion: reduce)').matches) {
+		//
+		// The system preference is only the DEFAULT answer. It is read through
+		// a desktop portal and can say `reduce` on a machine whose animations
+		// are plainly on, which leaves a glide that looks broken rather than
+		// switched off and nothing on the page to argue with.
+		const motion = prefs.value.motion;
+		const still = motion === 'none' || (motion === 'auto' && reduceMotion());
+		if (Math.abs(distance) < 8 || still) {
 			scrollBottom();
 			return;
 		}
