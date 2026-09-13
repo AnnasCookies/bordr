@@ -236,6 +236,8 @@
 		textarea?.focus();
 	}
 	let busy = $state(false);
+	/** Which option is in flight, so the card can show the one you chose. */
+	let sendingIndex = $state(-1);
 	let shown = $state(TAIL);
 	let loadingEarlier = $state(false);
 	let attachments = $state<File[]>([]);
@@ -999,6 +1001,7 @@
 
 	async function answer(index: number) {
 		busy = true;
+		sendingIndex = index;
 		uncertain = null;
 		try {
 			const r = await fetch(`/api/agents/${encodeURIComponent(detail.paneId)}/answer`, {
@@ -1024,6 +1027,7 @@
 			uncertain = `Nothing was sent: ${(e as Error).message}. Check the connection and try again.`;
 		} finally {
 			busy = false;
+			sendingIndex = -1;
 		}
 		refreshSoon();
 	}
@@ -1941,9 +1945,12 @@
 				{/if}
 				<div class="mt-2 flex flex-col gap-1.5">
 					{#each detail.picker.options as option (option.index)}
+						{@const sending = busy && sendingIndex === option.index}
 						<button
-							class="flex items-center gap-2 rounded-lg px-3 py-2.5 text-left text-[14px] disabled:opacity-50 {detail
-								.picker.multi
+							class="flex items-center gap-2 rounded-lg px-3 py-2.5 text-left text-[14px] transition-opacity {busy &&
+							!sending
+								? 'opacity-40'
+								: ''} {sending ? 'animate-pulse' : ''} {detail.picker.multi
 								? option.selected
 									? 'border border-working bg-card'
 									: 'border border-black/[.08] bg-card dark:border-white/[.08]'
@@ -2071,7 +2078,7 @@
 					and not focusable, so the real button is the one you reach.
 				-->
 				<button
-					class="absolute inset-0 bg-black/40"
+					class="no-press absolute inset-0 bg-black/40"
 					aria-hidden="true"
 					tabindex="-1"
 					onclick={() => (treeOpen = false)}
