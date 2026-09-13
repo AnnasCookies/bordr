@@ -2369,7 +2369,9 @@
 					it: this is scenery, not a target.
 				-->
 				<div
-					class="pointer-events-none fixed top-1/3 z-0 {dragX < 0 ? 'right-2' : 'left-2'}"
+					class="pointer-events-none fixed top-1/2 z-0 -translate-y-1/2 {dragX < 0
+						? 'right-2'
+						: 'left-2'}"
 					style="width:{Math.min(260, Math.max(0, Math.abs(dragX) - 16))}px; opacity:{Math.min(
 						1,
 						Math.abs(dragX) / 70
@@ -2396,7 +2398,7 @@
 				</div>
 			{/if}
 			<main
-				class="relative z-10 mx-auto w-full max-w-screen-sm flex-1 px-4 pt-3 pb-2 lg:mx-0 lg:max-w-3xl lg:px-6 xl:max-w-4xl 2xl:max-w-5xl {dragging
+				class="relative mx-auto w-full max-w-screen-sm flex-1 px-4 pt-3 pb-2 lg:mx-0 lg:max-w-3xl lg:px-6 xl:max-w-4xl 2xl:max-w-5xl {dragging
 					? 'bg-page'
 					: ''} {dragging || leaving
 					? ''
