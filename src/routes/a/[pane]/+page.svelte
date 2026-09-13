@@ -7,7 +7,7 @@
 	import { mergeResults } from '$lib/dictation';
 	import { shrinkImage } from '$lib/shrink-image';
 	import { prefs } from '$lib/prefs.svelte';
-	import { collapseHome, flatOrder } from '$lib/grouping';
+	import { agentTitle, collapseHome, flatOrder } from '$lib/grouping';
 	import { decideSwipe, inHorizontalScroller, neighbourPane } from '$lib/swipe';
 	import { harnessBorder, harnessBubble, harnessHex, harnessText, STATUS_INK } from '$lib/theme';
 	import { ansiToHtml } from '$lib/ansi';
@@ -48,12 +48,13 @@
 	import BubbleMeta from '$lib/components/bubble-meta.svelte';
 	import { track } from '$lib/pending.svelte';
 	import { nextFollowing } from '$lib/follow';
+	import { swipeSequence } from '$lib/swipe-order';
 	import { afterClose } from '$lib/after-close';
 	import { keepPending, onScreen, say, type PendingSend } from '$lib/pending-sends';
 	import { queueVerdict } from '$lib/queue';
 	import { parseModelLine } from '$lib/model-line';
 	import type { Block } from '$lib/server/transcript/types';
-	import type { SplitNode, WorkspaceNode } from '$lib/types';
+	import type { AgentStatus, SplitNode, WorkspaceNode } from '$lib/types';
 	let { data } = $props();
 	const detail = $derived(data.detail);
 
@@ -1883,16 +1884,34 @@
 	/**
 	 * The panes of the current workspace's tabs, reported by the tab bar.
 	 *
-	 * A swipe moves between TABS when the workspace has more than one, and
-	 * falls back to the flat agent order when it does not. Tabs are the
-	 * nearer relationship — they are what the bar above the transcript is
-	 * already showing — so moving along them is what the gesture should mean
-	 * wherever they exist.
+	 * A swipe walks the current tab's panes and then carries on into the rest
+	 * of the fleet. Tabs used to REPLACE the list rather than sit inside it,
+	 * which made a multi-pane tab a cul-de-sac: nothing outside it could be
+	 * reached by the gesture at all. `swipeSequence` weaves the two together.
 	 */
 	let tabSiblings = $state<string[]>([]);
-	const swipeOrder = $derived(
-		tabSiblings.length > 1 && tabSiblings.includes(detail.paneId) ? tabSiblings : order
-	);
+	const swipeOrder = $derived(swipeSequence(order, tabSiblings, detail.paneId));
+
+	/**
+	 * The pane a swipe is currently heading towards, as a card under this one.
+	 *
+	 * From the list the app already has, not a fetch: a title, a harness and a
+	 * status are enough to know whether this is the one you meant before you
+	 * let go of it. Null until a drag has a direction.
+	 */
+	const revealing = $derived.by(() => {
+		if (!dragging || Math.abs(dragX) < 4) return null;
+		const to = neighbourPane(swipeOrder, detail.paneId, dragX < 0 ? 'next' : 'previous');
+		if (!to || to === detail.paneId) return null;
+		return (
+			store.agents.find((a) => a.paneId === to) ?? {
+				paneId: to,
+				title: to,
+				agent: '',
+				status: 'unknown' as AgentStatus
+			}
+		);
+	});
 
 	/**
 	 * How far the transcript is dragged, in px, while a finger is down.
@@ -1940,7 +1959,15 @@
 		// every scroll down a long transcript would wobble the page sideways.
 		if (!dragging && (Math.abs(dx) < 12 || Math.abs(dx) < Math.abs(dy) * 1.5)) return;
 		dragging = true;
-		dragX = dx / 3;
+		// Two thirds where there IS somewhere to go, a third where there is not.
+		//
+		// The damping was resistance — "this moves, but not freely". That is the
+		// right feel at the end of the deck, where the gesture cannot do
+		// anything; it is the wrong one in the middle, where the drag has to
+		// open a gap wide enough to actually read the card underneath before
+		// deciding to let go.
+		const reachable = neighbourPane(swipeOrder, detail.paneId, dx < 0 ? 'next' : 'previous');
+		dragX = dx * (reachable && reachable !== detail.paneId ? 0.66 : 0.33);
 	}
 
 	function onTouchCancel() {
@@ -2325,14 +2352,59 @@
 				which also reads better — the chrome stays and the content slides
 				under it.
 			-->
+			{#if revealing}
+				<!--
+					The pane the swipe is heading for, showing through the gap the
+					transcript leaves as it slides — a card under the top of the deck
+					rather than a screen that arrives with no warning.
+
+					Sized to the gap, not to itself. A fixed-width card is mostly BEHIND
+					the transcript for the first half of the drag, so the only part
+					visible is whatever happens to be right-aligned in it — measured at
+					a 145px gap: the title hidden, the word "idle" showing on its own.
+					Growing with the gap means the whole of it is always readable, and
+					the card widens as the deck opens, which is what a deck does.
+
+					`pointer-events-none` because the finger is on the transcript above
+					it: this is scenery, not a target.
+				-->
+				<div
+					class="pointer-events-none fixed top-1/3 z-0 {dragX < 0 ? 'right-2' : 'left-2'}"
+					style="width:{Math.min(260, Math.max(0, Math.abs(dragX) - 16))}px; opacity:{Math.min(
+						1,
+						Math.abs(dragX) / 70
+					)}"
+					aria-hidden="true"
+				>
+					<span class="block rounded-xl border border-edge bg-card px-3 py-2.5 shadow-lg">
+						<span class="flex items-baseline gap-2">
+							<span class="min-w-0 flex-1 truncate text-[14px] font-medium"
+								>{agentTitle(revealing.title, '', revealing.paneId, revealing.agent)}</span
+							>
+							<span
+								class="shrink-0 font-mono text-[10px] {STATUS_INK[revealing.status] ??
+									'text-faint'}">{revealing.status}</span
+							>
+						</span>
+						{#if revealing.agent}
+							<span
+								class="mt-0.5 block truncate font-mono text-[11px] {harnessText(revealing.agent)}"
+								>{revealing.agent}</span
+							>
+						{/if}
+					</span>
+				</div>
+			{/if}
 			<main
-				class="mx-auto w-full max-w-screen-sm flex-1 px-4 pt-3 pb-2 lg:mx-0 lg:max-w-3xl lg:px-6 xl:max-w-4xl 2xl:max-w-5xl {dragging ||
-				leaving
+				class="relative z-10 mx-auto w-full max-w-screen-sm flex-1 px-4 pt-3 pb-2 lg:mx-0 lg:max-w-3xl lg:px-6 xl:max-w-4xl 2xl:max-w-5xl {dragging
+					? 'bg-page'
+					: ''} {dragging || leaving
 					? ''
 					: 'transition-transform duration-200 ease-out motion-reduce:transition-none'} {leaving
 					? 'transition-all duration-150 ease-in'
 					: ''}"
 				style="transform: translate3d({dragX}px, 0, 0); {leaving ? 'opacity:0' : ''}"
+				data-swiping={dragging ? 'true' : undefined}
 			>
 				{#if detail.degraded !== 'none'}
 					<p class="mb-3 flex items-center gap-2 text-[12px] text-muted">
