@@ -1,5 +1,7 @@
 <script lang="ts">
-	import NetDot from '$lib/components/net-dot.svelte';
+	import AppHeader from '$lib/components/app-header.svelte';
+	import SessionTree from '$lib/components/session-tree.svelte';
+	let treeOpen = $state(false);
 	import { track } from '$lib/pending.svelte';
 	import { resolve } from '$app/paths';
 	import type { ResolvedPathname } from '$app/types';
@@ -204,14 +206,34 @@
 	const textLines = $derived(prettyJson ?? lines);
 </script>
 
+{#snippet title()}
+	<span class="block truncate text-[15px] font-semibold">Files</span>
+{/snippet}
+
 <div class="flex min-h-dvh flex-col">
 	<header class="sticky top-0 z-10 border-b border-hairline bg-page">
-		<div class="flex items-center gap-1 px-2 pt-1 pb-1.5">
-			<a
-				href={browseHref(isFile || data.path ? parentPath : '')}
-				class="flex h-10 w-10 shrink-0 items-center justify-center font-mono text-base text-working"
-				aria-label="Up">←</a
-			>
+		<AppHeader
+			onmenu={() => (treeOpen = true)}
+			menuLabel="Workspaces"
+			menuExpanded={treeOpen}
+			middle={title}
+		/>
+		<!-- The crumbs keep their own row: a path needs the full width. -->
+		<div class="flex items-center gap-1 px-2 pb-1.5">
+			{#if isFile || data.path}
+				<!--
+					Only where there is somewhere above to go. At the root it linked to
+					the page it was on, which put two arrows in a column with the
+					header's own back — one of them doing nothing at all.
+				-->
+				<a
+					href={browseHref(parentPath)}
+					class="flex h-10 w-10 shrink-0 items-center justify-center font-mono text-base text-working"
+					aria-label="Up">←</a
+				>
+			{:else}
+				<span class="w-2 shrink-0"></span>
+			{/if}
 			<span class="min-w-0 flex-1 truncate font-mono text-[13px]">
 				{#if crumbs.length === 0}
 					<span class="font-medium">files</span>
@@ -222,9 +244,6 @@
 						>{#if i < crumbs.length - 1}<span class="text-faint">/</span>{/if}{/each}
 				{/if}
 			</span>
-			<!-- Every screen says whether the app can still reach anything. This
-			     one and search were the two that never did. -->
-			<NetDot />
 		</div>
 	</header>
 
@@ -560,6 +579,19 @@
 			{/each}
 		</ul>
 	</div>
+	{#if treeOpen}
+		<div class="fixed inset-0 z-40 lg:hidden">
+			<button
+				class="no-press absolute inset-0 bg-black/40"
+				aria-hidden="true"
+				tabindex="-1"
+				onclick={() => (treeOpen = false)}
+			></button>
+			<div class="absolute inset-y-0 left-0 w-[86%] max-w-[320px] shadow-2xl">
+				<SessionTree onclose={() => (treeOpen = false)} home />
+			</div>
+		</div>
+	{/if}
 {/if}
 
 <style>

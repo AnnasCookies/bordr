@@ -2,6 +2,8 @@
 	import type { Snippet } from 'svelte';
 	import NetDot from './net-dot.svelte';
 	import { resolve } from '$app/paths';
+	import { prefs } from '$lib/prefs.svelte';
+	import { showChrome, touchPoints } from '$lib/header-chrome';
 
 	/**
 	 * The one bar across the top of the app.
@@ -18,8 +20,7 @@
 		menuExpanded = false,
 		middle,
 		actions,
-		below,
-		back
+		below
 	}: {
 		onmenu: () => void;
 		menuLabel?: string;
@@ -33,20 +34,18 @@
 		 * and a branch. Anything that needs the room goes here.
 		 */
 		below?: Snippet;
-		/**
-		 * An explicit way back to the agents list.
-		 *
-		 *   beside  the arrow and the mark, which is the usual case
-		 *   only    the arrow alone; they go to the same place, and on a narrow
-		 *           header keeping both is 56px spent saying "home" twice
-		 *
-		 * Below 360px the mark stands down even in 'beside'. The two together
-		 * push the actions past the edge of a 320px screen, and no setting
-		 * should be able to make the page scroll sideways — the arrow is the
-		 * one of the pair that reads as a control, so it is the one that stays.
-		 */
-		back?: 'only' | 'beside';
 	} = $props();
+
+	/**
+	 * The three controls, decided here rather than by each caller.
+	 *
+	 * Five screens draw this header and every one of them wants the same
+	 * answer; asking each to work it out was five chances to disagree.
+	 */
+	const touch = $derived(touchPoints());
+	const showBack = $derived(showChrome(prefs.value.backButton, touch));
+	const showMenu = $derived(showChrome(prefs.value.menuButton, touch));
+	const showLogo = $derived(showChrome(prefs.value.logoButton, touch));
 </script>
 
 <!--
@@ -73,7 +72,7 @@
 		which wants the room; these two do not.
 	-->
 	<span class="flex shrink-0 items-stretch gap-0.5">
-		{#if back}
+		{#if showBack}
 			<!--
 				First, where a back control belongs, and narrower than the menu
 				beside it: the row is about 178px wide on a phone once the mark and
@@ -85,12 +84,14 @@
 				aria-label="Back to agents">&#x2190;</a
 			>
 		{/if}
-		<button
-			class="flex w-10 shrink-0 grow-0 items-center justify-center self-stretch rounded-lg text-[26px] leading-none text-muted"
-			aria-label={menuLabel}
-			aria-expanded={menuExpanded}
-			onclick={onmenu}>☰</button
-		>
+		{#if showMenu}
+			<button
+				class="flex w-10 shrink-0 grow-0 items-center justify-center self-stretch rounded-lg text-[26px] leading-none text-muted"
+				aria-label={menuLabel}
+				aria-expanded={menuExpanded}
+				onclick={onmenu}>☰</button
+			>
+		{/if}
 		<!--
 		The mark alone. The name is on the tab, the manifest and the address bar
 		already, and next to a pane's own title it was the least useful word on
@@ -101,10 +102,10 @@
 		both spent 56px of a 320px header on saying "home" twice, which is what
 		pushed the actions off the end of it.
 	-->
-		{#if back !== 'only'}
+		{#if showLogo}
 			<a
 				href={resolve('/')}
-				class="group relative flex shrink-0 items-center self-stretch {back
+				class="group relative flex shrink-0 items-center self-stretch {showBack
 					? 'max-[359px]:hidden'
 					: ''}"
 				aria-label="bordr — all agents"

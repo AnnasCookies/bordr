@@ -13,7 +13,6 @@
 	import AppHeader from '$lib/components/app-header.svelte';
 	import SessionTree from '$lib/components/session-tree.svelte';
 	import { screen, watchWide } from '$lib/wide.svelte';
-	import { backPlacement } from '$lib/back-button';
 	import SettingsNav from '$lib/components/settings-nav.svelte';
 	import { SECTIONS } from '$lib/settings-sections';
 	import { page } from '$app/state';
@@ -27,7 +26,7 @@
 		MessageTime,
 		SubagentStrip,
 		DrawerHome,
-		BackButton,
+		ChromeWhen,
 		HeaderModel,
 		FillStyle,
 		SoundAlerts,
@@ -215,20 +214,6 @@
 		}
 		installHidden = false;
 	}
-
-	/**
-	 * The same rule the conversation uses, so the two cannot disagree.
-	 *
-	 * Settings does have a tab bar, so this is less load-bearing here than in a
-	 * conversation — but a setting that draws an arrow on one screen and not
-	 * the other reads as a bug rather than as a choice.
-	 */
-	const showBack = $derived(
-		backPlacement(
-			prefs.value.backButton,
-			typeof navigator === 'undefined' ? 1 : navigator.maxTouchPoints
-		)
-	);
 
 	let pushState = $state<PushState>('unknown');
 	let pushMessage = $state<string | null>(null);
@@ -709,23 +694,27 @@
 	</div>
 {/snippet}
 
-{#snippet backButtonPreview()}
+{#snippet chromePreview()}
+	<!--
+		The three together, because they share a row and the question is always
+		what the row ends up looking like rather than what one control does.
+	-->
 	<div class="flex items-center gap-1 rounded-lg bg-page p-2">
 		{#if prefs.value.backButton !== 'off'}
 			<span class="flex h-8 w-7 items-center justify-center text-[18px] text-muted">&#x2190;</span>
 		{/if}
-		<span class="flex h-9 w-9 items-center justify-center text-[22px] leading-none text-muted"
-			>☰</span
-		>
-		{#if prefs.value.backButton !== 'only'}
+		{#if prefs.value.menuButton !== 'off'}
+			<span class="flex h-9 w-9 items-center justify-center text-[22px] leading-none text-muted"
+				>☰</span
+			>
+		{/if}
+		{#if prefs.value.logoButton !== 'off'}
 			<img src="/collie.svg" alt="" class="h-6 w-6" style="image-rendering: pixelated" />
 		{/if}
 		<span class="truncate text-[13px] font-medium">checkout-flow</span>
 	</div>
-	{#if prefs.value.backButton === 'auto'}
-		<p class="mt-1 text-[11.5px] text-faint">
-			Hidden on a touch screen, which has its own gesture.
-		</p>
+	{#if [prefs.value.backButton, prefs.value.menuButton, prefs.value.logoButton].includes('mobile')}
+		<p class="mt-1 text-[11.5px] text-faint">Anything set to Mobile is hidden on a desktop.</p>
 	{/if}
 {/snippet}
 
@@ -1037,7 +1026,6 @@
 			menuLabel="Workspaces"
 			menuExpanded={treeOpen}
 			middle={title}
-			back={showBack}
 		/>
 	</header>
 
@@ -1287,24 +1275,52 @@
 								{#snippet preview()}{@render backPreview()}{/snippet}
 							</SettingRow>
 							<SettingRow
-								label="Back button"
+								label="Back arrow"
 								value={prefs.value.backButton}
 								options={[
-									{ v: 'auto' as BackButton, l: 'Auto' },
-									{ v: 'on' as BackButton, l: 'Always' },
-									{ v: 'only' as BackButton, l: 'No logo' },
-									{ v: 'off' as BackButton, l: 'Off' }
+									{ v: 'always' as ChromeWhen, l: 'Always' },
+									{ v: 'mobile' as ChromeWhen, l: 'Mobile' },
+									{ v: 'off' as ChromeWhen, l: 'Off' }
 								]}
 								onchange={(v) => prefs.set('backButton', v)}
 							>
-								{#snippet preview()}{@render backButtonPreview()}{/snippet}
+								{#snippet preview()}{@render chromePreview()}{/snippet}
 							</SettingRow>
 							<p class="px-3.5 pb-2 text-[12px] text-muted">
-								On a conversation and here. Auto draws it where there is no back gesture to fall
-								back on, which in practice means a desktop — a conversation is the only screen with
-								no tab bar, because the composer has the bottom of it. The collie stays; “No logo”
-								drops it, since the two go to the same place and a narrow header has better uses for
-								the room.
+								One step to the agents list. A conversation is the only screen with no tab bar — the
+								composer has the bottom of it.
+							</p>
+							<SettingRow
+								label="Menu button"
+								value={prefs.value.menuButton}
+								options={[
+									{ v: 'always' as ChromeWhen, l: 'Always' },
+									{ v: 'mobile' as ChromeWhen, l: 'Mobile' },
+									{ v: 'off' as ChromeWhen, l: 'Off' }
+								]}
+								onchange={(v) => prefs.set('menuButton', v)}
+							>
+								{#snippet preview()}{@render chromePreview()}{/snippet}
+							</SettingRow>
+							<p class="px-3.5 pb-2 text-[12px] text-muted">
+								Opens the machines, workspaces and panes. On a desktop it collapses the sidebar
+								instead.
+							</p>
+							<SettingRow
+								label="bordr mark"
+								value={prefs.value.logoButton}
+								options={[
+									{ v: 'always' as ChromeWhen, l: 'Always' },
+									{ v: 'mobile' as ChromeWhen, l: 'Mobile' },
+									{ v: 'off' as ChromeWhen, l: 'Off' }
+								]}
+								onchange={(v) => prefs.set('logoButton', v)}
+							>
+								{#snippet preview()}{@render chromePreview()}{/snippet}
+							</SettingRow>
+							<p class="px-3.5 pb-2 text-[12px] text-muted">
+								The collie, which is also a link to the agents list. It stands down under 360px when
+								the back arrow is there, so the two cannot push the header off the screen.
 							</p>
 							<SettingRow
 								label="Home in the drawer"

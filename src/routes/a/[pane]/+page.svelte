@@ -49,7 +49,6 @@
 	import { track } from '$lib/pending.svelte';
 	import { nextFollowing } from '$lib/follow';
 	import { afterClose } from '$lib/after-close';
-	import { backPlacement } from '$lib/back-button';
 	import { keepPending, onScreen, say, type PendingSend } from '$lib/pending-sends';
 	import { queueVerdict } from '$lib/queue';
 	import { parseModelLine } from '$lib/model-line';
@@ -401,24 +400,6 @@
 			replaceState: true
 		});
 	}
-
-	/**
-	 * Whether to draw an explicit way out of this conversation.
-	 *
-	 * 'auto' means "where there is no gesture to rely on". A touch screen has
-	 * an edge swipe and a phone has a system button; a desktop has neither, and
-	 * the mark in the header is the only affordance there — which reads as a
-	 * logo, not as a control.
-	 *
-	 * `maxTouchPoints` rather than the viewport: a narrow window on a desktop
-	 * is still a desktop, and a tablet in landscape still swipes.
-	 */
-	const showBack = $derived(
-		backPlacement(
-			prefs.value.backButton,
-			typeof navigator === 'undefined' ? 1 : navigator.maxTouchPoints
-		)
-	);
 
 	let controlling = $state(false);
 	let worktrees = $state(false);
@@ -3181,7 +3162,6 @@
 		menuExpanded={wideScreen ? prefs.value.sidebarOpen : treeOpen}
 		middle={headerTitle}
 		actions={headerActions}
-		back={showBack}
 		below={detail.cwd || detail.branch || modelLine.model ? headerLocation : undefined}
 	/>
 {/snippet}

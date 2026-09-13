@@ -44,24 +44,17 @@ export type SubagentStrip = 'off' | 'running' | 'all';
 export type DrawerHome = 'mark' | 'icon' | 'off';
 
 /**
- * An explicit way out of a conversation.
+ * When one of the header's three controls is drawn.
  *
- * It is the only screen with no tab bar — the composer owns the bottom of it —
- * so the ways back are the phone's own gesture, the mark in the header, and
- * the drawer's home. On a desktop there is no gesture, and a logo reads as a
- * logo rather than as a control.
+ * The same three answers for each of them, because they sit side by side and
+ * a control that appears under different rules from its neighbour is a
+ * control you have to think about.
  *
- *   auto  where there is no back gesture to rely on, beside the mark
- *   on    always, beside the mark
- *   only  always, INSTEAD of the mark — the two go to the same place, and on a
- *         narrow header that is 56px spent saying "home" twice
- *   off   never; the gesture and the mark are enough
- *
- * The mark stays by default. Replacing it was a space argument borrowed from a
- * 320px phone and applied to `auto`, which only ever fires on a desktop — the
- * one place with room for both.
+ *   always  every screen, every width
+ *   mobile  only where there is a touch screen
+ *   off     never
  */
-export type BackButton = 'auto' | 'on' | 'only' | 'off';
+export type ChromeWhen = 'always' | 'mobile' | 'off';
 
 /**
  * The model, and how hard it is being asked to think, in the header.
@@ -234,8 +227,14 @@ export interface Prefs {
 	subagentStrip: SubagentStrip;
 	/** What the phone drawer offers for getting back to the agents list. */
 	drawerHome: DrawerHome;
-	/** An explicit back control in a conversation's header. */
-	backButton: BackButton;
+	/**
+	 * The header's three controls: an arrow back to the agents list, the
+	 * menu that opens the session tree, and the collie, which is also a link
+	 * to the list.
+	 */
+	backButton: ChromeWhen;
+	menuButton: ChromeWhen;
+	logoButton: ChromeWhen;
 	/** The model and effort on the conversation header's location row. */
 	headerModel: HeaderModel;
 	/** Which clock that time is written on; 'auto' follows the device. */
@@ -328,7 +327,9 @@ export const DEFAULTS: Prefs = {
 	messageTime: 'runs',
 	subagentStrip: 'running',
 	drawerHome: 'mark',
-	backButton: 'auto',
+	backButton: 'always',
+	menuButton: 'always',
+	logoButton: 'always',
 	headerModel: 'model-effort',
 	clockFormat: 'auto',
 	showTabName: true,
@@ -376,7 +377,7 @@ const BACKS: BackTo[] = ['home', 'history'];
 const MESSAGE_TIMES: MessageTime[] = ['off', 'runs', 'all'];
 const SUBAGENT_STRIPS: SubagentStrip[] = ['off', 'running', 'all'];
 const DRAWER_HOMES: DrawerHome[] = ['mark', 'icon', 'off'];
-const BACK_BUTTONS: BackButton[] = ['auto', 'on', 'only', 'off'];
+const CHROME_WHENS: ChromeWhen[] = ['always', 'mobile', 'off'];
 const HEADER_MODELS: HeaderModel[] = ['off', 'model', 'model-effort'];
 const CLOCKS: ClockFormat[] = ['auto', 'h24', 'h12'];
 const ACCENTS: HarnessAccent[] = ['edge', 'tint', 'fill', 'off'];
@@ -485,7 +486,9 @@ export function normalisePrefs(raw: unknown): Prefs {
 		messageTime: pick(stored.messageTime, MESSAGE_TIMES, DEFAULTS.messageTime),
 		subagentStrip: pick(stored.subagentStrip, SUBAGENT_STRIPS, DEFAULTS.subagentStrip),
 		drawerHome: pick(stored.drawerHome, DRAWER_HOMES, DEFAULTS.drawerHome),
-		backButton: pick(stored.backButton, BACK_BUTTONS, DEFAULTS.backButton),
+		backButton: pick(stored.backButton, CHROME_WHENS, DEFAULTS.backButton),
+		menuButton: pick(stored.menuButton, CHROME_WHENS, DEFAULTS.menuButton),
+		logoButton: pick(stored.logoButton, CHROME_WHENS, DEFAULTS.logoButton),
 		headerModel: pick(stored.headerModel, HEADER_MODELS, DEFAULTS.headerModel),
 		clockFormat: pick(stored.clockFormat, CLOCKS, DEFAULTS.clockFormat),
 		showTabName: bool(stored.showTabName, DEFAULTS.showTabName),

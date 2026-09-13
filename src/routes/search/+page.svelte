@@ -1,5 +1,7 @@
 <script lang="ts">
-	import NetDot from '$lib/components/net-dot.svelte';
+	let treeOpen = $state(false);
+	import AppHeader from '$lib/components/app-header.svelte';
+	import SessionTree from '$lib/components/session-tree.svelte';
 	import { onMount } from 'svelte';
 	import { resolve } from '$app/paths';
 	import { agentStore } from '$lib/agents.svelte';
@@ -114,7 +116,20 @@
 	const HINT = '"phrase" -exclude';
 </script>
 
+{#snippet title()}
+	<span class="block truncate text-[15px] font-semibold">Search</span>
+{/snippet}
+
 <div class="flex min-h-dvh flex-col">
+	<header class="sticky top-0 z-10 border-b border-hairline bg-page">
+		<AppHeader
+			onmenu={() => (treeOpen = true)}
+			menuLabel="Workspaces"
+			menuExpanded={treeOpen}
+			middle={title}
+		/>
+	</header>
+
 	<div class="flex items-center gap-3 px-4 pt-3 pb-2">
 		<!-- svelte-ignore a11y_autofocus -->
 		<input
@@ -124,8 +139,6 @@
 			placeholder="Search all sessions…"
 			class="min-w-0 flex-1 rounded-xl border border-edge bg-card px-3 py-2.5 text-[16px] placeholder:text-faint"
 		/>
-		<NetDot />
-		<a href={resolve('/')} class="shrink-0 text-[15px] text-working">Cancel</a>
 	</div>
 	<p class="px-4 pb-2 font-mono text-[11px] text-faint">{HINT}</p>
 
@@ -205,3 +218,16 @@
 
 	<TabBar />
 </div>
+{#if treeOpen}
+	<div class="fixed inset-0 z-40 lg:hidden">
+		<button
+			class="no-press absolute inset-0 bg-black/40"
+			aria-hidden="true"
+			tabindex="-1"
+			onclick={() => (treeOpen = false)}
+		></button>
+		<div class="absolute inset-y-0 left-0 w-[86%] max-w-[320px] shadow-2xl">
+			<SessionTree onclose={() => (treeOpen = false)} home />
+		</div>
+	</div>
+{/if}
