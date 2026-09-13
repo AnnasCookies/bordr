@@ -487,7 +487,7 @@
 													agent.cwd
 												)}
 											</span>
-											{#if agent.tabLabel}
+											{#if prefs.value.showTabName && agent.tabLabel}
 												<!-- Which pane is asking. Most worth saying here, where
 												     you are about to answer one of several. -->
 												<span class="block truncate font-mono text-[11px] text-faint">

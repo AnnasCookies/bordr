@@ -22,6 +22,8 @@
 	import { resolve } from '$app/paths';
 	import type {
 		BackTo,
+		ClockFormat,
+		MessageTime,
 		FillStyle,
 		SoundAlerts,
 		GradientEnd,
@@ -37,6 +39,9 @@
 	} from '$lib/prefs.svelte';
 	import MessageBlocks from '$lib/components/message-blocks.svelte';
 	import Bubble from '$lib/components/bubble.svelte';
+	import BubbleMeta from '$lib/components/bubble-meta.svelte';
+	import Ticks from '$lib/components/ticks.svelte';
+	import { clockTime } from '$lib/clock-time';
 	// Aliased: `ToolDetail` is already the name of the preference type.
 	import ToolDetailView from '$lib/components/tool-detail.svelte';
 	import {
@@ -64,6 +69,9 @@
 	 * conversation uses, from real block data. A hand-drawn mock would drift
 	 * the first time the renderer changed; this cannot.
 	 */
+	/** Fixed times, so a preview never changes under you while you read it. */
+	const sampleAt = Date.UTC(2026, 0, 2, 9, 5);
+	const sampleEvening = Date.UTC(2026, 0, 2, 17, 22);
 	const sampleInput = { command: 'bun run test:unit', description: 'Run the unit tests' };
 	const sampleTool: Block[] = [
 		{
@@ -616,6 +624,72 @@
 	</div>
 {/snippet}
 
+{#snippet ticksPreview()}
+	<div class="flex items-center gap-3 rounded-lg bg-page p-2 text-[12px] text-muted">
+		<span class="flex items-center gap-1"><Ticks state="sending" /> sending</span>
+		<span class="flex items-center gap-1"><Ticks state="sent" /> queued</span>
+		<span class="flex items-center gap-1"><Ticks state="read" /> the agent has it</span>
+	</div>
+{/snippet}
+
+{#snippet messageTimePreview()}
+	<!--
+		Two bubbles from the same speaker, so "per run" can be SEEN to differ
+		from "every": it stamps the second and leaves the first bare.
+	-->
+	<div class="flex flex-col items-end gap-0.5 rounded-lg bg-page p-2">
+		<Bubble
+			mine
+			run="first"
+			small
+			border={sampleUserBorder}
+			fill={sampleUserFill}
+			fillGradient={gradient}
+			fillEnd={sampleUserEnd}
+			tail={false}
+			width={prefs.value.bubbleBorderWidth}
+			ink={sampleUserInk}
+		>
+			any luck with that?
+			{#snippet meta()}<BubbleMeta at={sampleAt} run="first" state="read" />{/snippet}
+		</Bubble>
+		<Bubble
+			mine
+			run="last"
+			small
+			border={sampleUserBorder}
+			fill={sampleUserFill}
+			fillGradient={gradient}
+			fillEnd={sampleUserEnd}
+			tail={prefs.value.bubbleTails}
+			width={prefs.value.bubbleBorderWidth}
+			ink={sampleUserInk}
+		>
+			no rush
+			{#snippet meta()}<BubbleMeta at={sampleAt} run="last" state="read" />{/snippet}
+		</Bubble>
+	</div>
+{/snippet}
+
+{#snippet clockPreview()}
+	<div class="rounded-lg bg-page p-2 font-mono text-[12px] text-muted">
+		{clockTime(sampleAt, prefs.value.clockFormat)} · {clockTime(
+			sampleEvening,
+			prefs.value.clockFormat
+		)}
+	</div>
+{/snippet}
+
+{#snippet tabNamePreview()}
+	<div class="rounded-lg bg-page p-2 text-[12px]">
+		<p class="font-medium">it-cli</p>
+		{#if prefs.value.showTabName}
+			<p class="font-mono text-[11px] text-faint">&#x2299; Bitwarden CLI integration</p>
+		{/if}
+		<p class="font-mono text-[11px] text-muted">claude · ~/code/platform</p>
+	</div>
+{/snippet}
+
 {#snippet backPreview()}
 	<div class="rounded-lg bg-page p-2 text-[12px] text-muted">
 		{#if prefs.value.backTo === 'home'}
@@ -882,6 +956,14 @@
 								checked={prefs.value.showGrouping}
 								onchange={(v) => prefs.set('showGrouping', v)}
 							/>
+							<ToggleRow
+								label="Tab name on each row"
+								hint="The name you gave the work in herdr. Two panes in the same workspace, on the same harness, at the same status are otherwise identical rows."
+								checked={prefs.value.showTabName}
+								onchange={(v) => prefs.set('showTabName', v)}
+							>
+								{#snippet preview()}{@render tabNamePreview()}{/snippet}
+							</ToggleRow>
 							<SettingRow
 								label="Sort within group"
 								value={prefs.value.sort}
@@ -1287,10 +1369,40 @@
 						>
 							<ToggleRow
 								label="Delivery ticks on your messages"
-								hint="A spinner while it is being sent, one tick once herdr has it, two once the agent has picked it up — the harness writes the message to its transcript when it starts the turn."
+								hint="A spinner while it is being sent, one tick once herdr has it, two once the agent has taken it — read from the harness's own queue, not guessed from the screen."
 								checked={prefs.value.messageTicks}
 								onchange={(v) => prefs.set('messageTicks', v)}
-							/>
+							>
+								{#snippet preview()}{@render ticksPreview()}{/snippet}
+							</ToggleRow>
+							<SettingRow
+								label="Message times"
+								value={prefs.value.messageTime}
+								options={[
+									{ v: 'off' as MessageTime, l: 'Off' },
+									{ v: 'runs' as MessageTime, l: 'Per run' },
+									{ v: 'all' as MessageTime, l: 'Every' }
+								]}
+								onchange={(v) => prefs.set('messageTime', v)}
+							>
+								{#snippet preview()}{@render messageTimePreview()}{/snippet}
+							</SettingRow>
+							<p class="px-3.5 pb-2 text-[12px] text-muted">
+								Per run stamps only the last bubble of a run from the same speaker: five replies
+								inside the same minute get one time, not five.
+							</p>
+							<SettingRow
+								label="Clock"
+								value={prefs.value.clockFormat}
+								options={[
+									{ v: 'auto' as ClockFormat, l: 'Device' },
+									{ v: 'h24' as ClockFormat, l: '24-hour' },
+									{ v: 'h12' as ClockFormat, l: '12-hour' }
+								]}
+								onchange={(v) => prefs.set('clockFormat', v)}
+							>
+								{#snippet preview()}{@render clockPreview()}{/snippet}
+							</SettingRow>
 							<ToggleRow
 								label="Group tool calls"
 								hint="A run of turns that only ran tools folds into one row you can open. A single call is left alone."

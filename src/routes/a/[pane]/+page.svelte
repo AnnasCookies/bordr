@@ -2335,6 +2335,7 @@
 											{#snippet meta()}
 												<BubbleMeta
 													at={sent.at}
+													run={row.run}
 													state={sent.state === 'sending' ? 'sending' : held ? 'read' : 'sent'}
 												/>
 											{/snippet}
@@ -2420,7 +2421,7 @@
 													plain
 												/>
 												{#snippet meta()}
-													<BubbleMeta at={message.at ?? 0} state="read" />
+													<BubbleMeta at={message.at ?? 0} run={row.run} state="read" />
 												{/snippet}
 											</Bubble>
 										</div>
@@ -2485,7 +2486,10 @@
 																	No ticks on an agent's own turn: a tick says whether something
 																	YOU sent arrived, and this did not come from you. Time only.
 																-->
-																<BubbleMeta at={message.at ?? 0} />
+																<BubbleMeta
+																	at={message.at ?? 0}
+																	run={bubbleRun(row.run, segments, segmentIndex)}
+																/>
 															{/snippet}
 														</Bubble>
 													{:else}

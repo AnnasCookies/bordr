@@ -11,6 +11,19 @@ export type Theme = 'light' | 'dark' | 'system';
 export type KeyStripMode = 'always' | 'peek';
 export type BackTo = 'home' | 'history';
 
+/**
+ * How often a bubble carries the time.
+ *
+ *   off   never
+ *   runs  once per run of turns from the same speaker, on its last bubble —
+ *         a burst of five replies in the same minute gets one stamp, not five
+ *   all   every bubble
+ */
+export type MessageTime = 'off' | 'runs' | 'all';
+
+/** Which clock a time is written on, when the locale's own is not wanted. */
+export type ClockFormat = 'auto' | 'h24' | 'h12';
+
 /** Whether the app makes a noise when an agent's state changes. */
 export type SoundAlerts = 'off' | 'attention' | 'all';
 
@@ -162,6 +175,12 @@ export interface Prefs {
 	 */
 	appBadge: boolean;
 	messageTicks: boolean;
+	/** How often a bubble carries the time it was written. */
+	messageTime: MessageTime;
+	/** Which clock that time is written on; 'auto' follows the device. */
+	clockFormat: ClockFormat;
+	/** The herdr tab name on list rows and in the sidebar. */
+	showTabName: boolean;
 	showBranches: boolean;
 	/** Name an unnamed tab after what is in it, rather than "tab 2". */
 	smartTabLabels: boolean;
@@ -245,6 +264,9 @@ export const DEFAULTS: Prefs = {
 	listDetail: true,
 	appBadge: true,
 	messageTicks: true,
+	messageTime: 'runs',
+	clockFormat: 'auto',
+	showTabName: true,
 	showBranches: true,
 	smartTabLabels: true,
 	showActivity: true,
@@ -286,6 +308,8 @@ const PREVIEWS: PreviewMode[] = ['activity', 'cwd', 'none'];
 const THEMES: Theme[] = ['light', 'dark', 'system'];
 const STRIPS: KeyStripMode[] = ['always', 'peek'];
 const BACKS: BackTo[] = ['home', 'history'];
+const MESSAGE_TIMES: MessageTime[] = ['off', 'runs', 'all'];
+const CLOCKS: ClockFormat[] = ['auto', 'h24', 'h12'];
 const ACCENTS: HarnessAccent[] = ['edge', 'tint', 'fill', 'off'];
 const INDICATORS: StatusIndicators[] = ['dot', 'symbol', 'text'];
 const SOUNDS: SoundAlerts[] = ['off', 'attention', 'all'];
@@ -389,6 +413,9 @@ export function normalisePrefs(raw: unknown): Prefs {
 		listDetail: bool(stored.listDetail, DEFAULTS.listDetail),
 		appBadge: bool(stored.appBadge, DEFAULTS.appBadge),
 		messageTicks: bool(stored.messageTicks, DEFAULTS.messageTicks),
+		messageTime: pick(stored.messageTime, MESSAGE_TIMES, DEFAULTS.messageTime),
+		clockFormat: pick(stored.clockFormat, CLOCKS, DEFAULTS.clockFormat),
+		showTabName: bool(stored.showTabName, DEFAULTS.showTabName),
 		showBranches: bool(stored.showBranches, DEFAULTS.showBranches),
 		smartTabLabels: bool(stored.smartTabLabels, DEFAULTS.smartTabLabels),
 		showActivity: bool(stored.showActivity, DEFAULTS.showActivity),

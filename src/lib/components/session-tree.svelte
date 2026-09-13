@@ -470,7 +470,8 @@
 							row makes the same trade.
 						-->
 						<span class="min-w-0 truncate"
-							>{pane.machine ? `${pane.machine} · ` : ''}{pane.workspaceLabel}{pane.tabLabel
+							>{pane.machine ? `${pane.machine} · ` : ''}{pane.workspaceLabel}{prefs.value
+								.showTabName && pane.tabLabel
 								? ` · ${pane.tabLabel}`
 								: ''}</span
 						>

@@ -67,7 +67,7 @@
 				{agent.status}
 			</span>
 		</span>
-		{#if agent.tabLabel}
+		{#if prefs.value.showTabName && agent.tabLabel}
 			<!--
 				The name YOU gave the work, which is the thing that tells two rows
 				apart when the title cannot. Grouped by workspace, a fleet shows
