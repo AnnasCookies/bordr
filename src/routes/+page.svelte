@@ -57,6 +57,12 @@
 	let pushMessage = $state<string | null>(null);
 	/** Set while an inline answer is in flight, so the row cannot double-fire. */
 	let answering = $state('');
+	/**
+	 * Which option, not just which agent. Dimming all three said "something is
+	 * happening"; it did not say which one you had chosen, and on a slow round
+	 * trip that is the only thing you want to know.
+	 */
+	let answeringIndex = $state(-1);
 	let showNew = $state(false);
 	/** paneId → what went wrong with the last inline answer, shown for a while. */
 	let uncertain = $state<Record<string, string>>({});
@@ -100,6 +106,7 @@
 
 	async function answer(agent: AgentSummary, index: number) {
 		answering = agent.paneId;
+		answeringIndex = index;
 		try {
 			const response = await fetch(`/api/agents/${encodeURIComponent(agent.paneId)}/answer`, {
 				method: 'POST',
@@ -123,6 +130,7 @@
 			flagAnswer(agent.paneId, 'Nothing was sent — check the connection and try again.');
 		}
 		answering = '';
+		answeringIndex = -1;
 	}
 
 	const GROUP_CHIPS: Array<{ v: GroupBy; l: string }> = [
@@ -276,10 +284,14 @@
 									{/if}
 									<div class="mt-2 flex flex-wrap gap-1.5">
 										{#each agent.picker.options.slice(0, 3) as option, i (option.index)}
+											{@const sending =
+												answering === agent.paneId && answeringIndex === option.index}
 											<button
-												class="rounded-[7px] px-3.5 py-2 text-[12.5px] disabled:opacity-50 {i === 0
+												class="rounded-[7px] px-3.5 py-2 text-[12.5px] transition-opacity {i === 0
 													? 'bg-ink text-card'
-													: 'bg-chip text-ink'}"
+													: 'bg-chip text-ink'} {answering === agent.paneId && !sending
+													? 'opacity-40'
+													: ''} {sending ? 'animate-pulse' : ''}"
 												disabled={answering === agent.paneId}
 												onclick={() => answer(agent, option.index)}
 											>
@@ -399,7 +411,7 @@
 				with the same job in the accessibility tree.
 			-->
 			<button
-				class="absolute inset-0 bg-black/40"
+				class="no-press absolute inset-0 bg-black/40"
 				aria-hidden="true"
 				tabindex="-1"
 				onclick={() => (treeOpen = false)}

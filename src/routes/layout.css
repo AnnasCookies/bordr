@@ -222,6 +222,52 @@ body {
 	-webkit-tap-highlight-color: transparent;
 }
 
+/*
+ * Every tap says so, immediately.
+ *
+ * The line above turns off the browser's own tap flash, which is right — it is
+ * a grey rectangle that ignores the shape of what you pressed — but nothing
+ * replaced it, so until this there was no feedback on a tap ANYWHERE in the
+ * app. That is survivable when the answer is instant and horrible when it is
+ * not: answering a picker is a round trip to the host, and over a tailnet on a
+ * train it can take a beat. A dead-feeling button gets pressed again.
+ *
+ * Scale rather than a colour or brightness shift: it reads the same in both
+ * themes and on top of any background, and it cannot be lost against a button
+ * that is already dark. 60ms out, 120ms back, so it feels like a press rather
+ * than an animation.
+ *
+ * `.no-press` is for the full-bleed scrims behind the drawers, which are
+ * buttons only so that a tap closes them; scaling the whole overlay would be
+ * absurd.
+ */
+button:not(:disabled):not(.no-press):active,
+a:not(.no-press):active,
+[role='button']:not([aria-disabled='true']):not(.no-press):active {
+	/* Outside the motion query on purpose: someone who asked for less motion
+	   still needs to know their tap landed, and a dim is not motion. */
+	opacity: 0.72;
+}
+
+@media (prefers-reduced-motion: no-preference) {
+	button:not(:disabled):not(.no-press):active,
+	a:not(.no-press):active,
+	[role='button']:not([aria-disabled='true']):not(.no-press):active {
+		transform: scale(0.97);
+		transition:
+			transform 60ms ease-out,
+			opacity 60ms ease-out;
+	}
+
+	button:not(:disabled):not(.no-press),
+	a:not(.no-press),
+	[role='button']:not(.no-press) {
+		transition:
+			transform 120ms ease-out,
+			opacity 120ms ease-out;
+	}
+}
+
 /* The handoff's only animation, plus the reduced-motion escape it asks for. */
 @keyframes bordr-rise {
 	from {
