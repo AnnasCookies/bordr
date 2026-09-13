@@ -39,6 +39,7 @@
 	import WorkspaceTabs from '$lib/components/workspace-tabs.svelte';
 	import StatusBlock from '$lib/components/status-block.svelte';
 	import NewAgentSheet from '$lib/components/new-agent-sheet.svelte';
+	import ControlSheet from '$lib/components/control-sheet.svelte';
 	import SubagentSheet from '$lib/components/subagent-sheet.svelte';
 	import Spinner from '$lib/components/spinner.svelte';
 	import Ticks from '$lib/components/ticks.svelte';
@@ -378,6 +379,16 @@
 		refreshGate.call();
 		if (dictating) void holdScreen();
 	}
+	/** Which scope the controls sheet is open for, if any. */
+	let controlling = $state(false);
+	/** The pane, and the tab holding it — both worth naming, one sheet. */
+	const controlTargets = $derived(
+		[
+			{ scope: 'pane' as const, id: detail.paneId, label: detail.title || detail.paneId },
+			detail.tabId ? { scope: 'tab' as const, id: detail.tabId, label: detail.tabLabel } : null
+		].filter((target) => target !== null)
+	);
+
 	let statusOpen = $state(false);
 	let uncertain = $state<string | null>(null);
 	let sendError = $state<string | null>(null);
@@ -2139,6 +2150,18 @@
 			Stop
 		</button>
 	{/if}
+	<!--
+		herdr's own controls for this pane and its tab: put it on the
+		terminal's screen, name it, close it. Everything bordr drove until
+		now was the AGENT — the workspace around it was read-only.
+	-->
+	<button
+		class="flex h-9 w-9 shrink-0 items-center justify-center rounded-full border border-edge text-faint"
+		aria-label="Pane and tab controls"
+		onclick={() => (controlling = true)}
+	>
+		<span class="text-[17px] leading-none">&#x22EF;</span>
+	</button>
 	<button
 		class="flex h-9 w-9 shrink-0 items-center justify-center rounded-full border {watched
 			? 'border-blocked-edge bg-blocked-bg text-blocked-ink'
@@ -3199,6 +3222,13 @@
 		{/if}
 	</div>
 	<NewAgentSheet open={showNewAgent} onclose={() => (showNewAgent = false)} />
+	{#if controlling}
+		<ControlSheet
+			targets={controlTargets}
+			onclose={() => (controlling = false)}
+			ondone={() => void invalidateAll()}
+		/>
+	{/if}
 	{#if openSubAgent}
 		<SubagentSheet pane={detail.paneId} agent={openSubAgent} onclose={() => (openSub = null)} />
 	{/if}
