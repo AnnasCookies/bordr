@@ -47,6 +47,7 @@
 	import { nextFollowing } from '$lib/follow';
 	import { keepPending, onScreen, say, type PendingSend } from '$lib/pending-sends';
 	import { queueVerdict } from '$lib/queue';
+	import { parseModelLine } from '$lib/model-line';
 	import type { Block } from '$lib/server/transcript/types';
 	import type { SplitNode, WorkspaceNode } from '$lib/types';
 	let { data } = $props();
@@ -450,6 +451,22 @@
 	 * covers a payload cached on a phone that has not reloaded yet.
 	 */
 	const statusRows = $derived(detail.statusAnsi?.length ? detail.statusAnsi : detail.statusLines);
+
+	/**
+	 * The model and effort, off the plain status lines.
+	 *
+	 * `statusLines` rather than `statusAnsi`: the two carry the same text and
+	 * only the plain one is free of escape sequences, which would land in the
+	 * middle of a field this has to cut at a glyph boundary.
+	 */
+	const modelLine = $derived(
+		prefs.value.headerModel === 'off'
+			? { model: '', effort: '' }
+			: (() => {
+					const parsed = parseModelLine(detail.statusLines ?? []);
+					return prefs.value.headerModel === 'model' ? { model: parsed.model, effort: '' } : parsed;
+				})()
+	);
 
 	/**
 	 * How the harness shows on an agent bubble.
@@ -2022,6 +2039,18 @@
 -->
 {#snippet headerLocation()}
 	<span class="flex items-center gap-x-1 font-mono text-[10.5px]">
+		{#if modelLine.model}
+			<!--
+				First on the row, and it keeps its width. The path and the branch
+				can be recognised cut short; "Opus" is a different model from
+				"Opus 5", so this one cannot.
+			-->
+			<span class="shrink-0 text-working">{modelLine.model}</span>
+			{#if modelLine.effort}
+				<span class="shrink-0 text-faint">{modelLine.effort}</span>
+			{/if}
+			<span class="shrink-0 text-faint">·</span>
+		{/if}
 		{#if detail.cwd}
 			<!--
 				The path is short after collapseHome and is the half you orient
@@ -3074,7 +3103,7 @@
 		menuExpanded={wideScreen ? prefs.value.sidebarOpen : treeOpen}
 		middle={headerTitle}
 		actions={headerActions}
-		below={detail.cwd || detail.branch ? headerLocation : undefined}
+		below={detail.cwd || detail.branch || modelLine.model ? headerLocation : undefined}
 	/>
 {/snippet}
 

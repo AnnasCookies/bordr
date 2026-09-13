@@ -26,6 +26,7 @@
 		MessageTime,
 		SubagentStrip,
 		DrawerHome,
+		HeaderModel,
 		FillStyle,
 		SoundAlerts,
 		GradientEnd,
@@ -648,6 +649,21 @@
 		<span class="self-center font-mono text-[10.5px] text-muted">
 			{prefs.value.theme === 'system' ? 'follows the device' : `always ${prefs.value.theme}`}
 		</span>
+	</div>
+{/snippet}
+
+{#snippet headerModelPreview()}
+	<div class="rounded-lg bg-page p-2 font-mono text-[10.5px]">
+		{#if prefs.value.headerModel === 'off'}
+			<span class="text-path">~/code/platform</span>
+			<span class="text-branch">&#xe0a0; main</span>
+		{:else}
+			<span class="text-working">Opus 5</span>
+			{#if prefs.value.headerModel === 'model-effort'}<span class="text-faint">high</span>{/if}
+			<span class="text-faint">·</span>
+			<span class="text-path">~/code/platform</span>
+			<span class="text-branch">&#xe0a0; main</span>
+		{/if}
 	</div>
 {/snippet}
 
@@ -1489,6 +1505,22 @@
 							>
 								{#snippet preview()}{@render clockPreview()}{/snippet}
 							</SettingRow>
+							<SettingRow
+								label="Model in the header"
+								value={prefs.value.headerModel}
+								options={[
+									{ v: 'off' as HeaderModel, l: 'Off' },
+									{ v: 'model' as HeaderModel, l: 'Model' },
+									{ v: 'model-effort' as HeaderModel, l: '+ effort' }
+								]}
+								onchange={(v) => prefs.set('headerModel', v)}
+							>
+								{#snippet preview()}{@render headerModelPreview()}{/snippet}
+							</SettingRow>
+							<p class="px-3.5 pb-2 text-[12px] text-muted">
+								Read off the harness's own status block, so it costs no extra call. A harness with
+								no effort setting simply shows its model.
+							</p>
 							<SettingRow
 								label="Sub-agents above the conversation"
 								value={prefs.value.subagentStrip}

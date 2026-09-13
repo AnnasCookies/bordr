@@ -43,6 +43,16 @@ export type SubagentStrip = 'off' | 'running' | 'all';
  */
 export type DrawerHome = 'mark' | 'icon' | 'off';
 
+/**
+ * The model, and how hard it is being asked to think, in the header.
+ *
+ * Both are already in the harness's status block, but that is a dense row of
+ * glyphs and quotas you read when you go looking. These two change what an
+ * answer is worth and what it costs, so they are worth a glance rather than a
+ * hunt.
+ */
+export type HeaderModel = 'off' | 'model' | 'model-effort';
+
 /** Which clock a time is written on, when the locale's own is not wanted. */
 export type ClockFormat = 'auto' | 'h24' | 'h12';
 
@@ -203,6 +213,8 @@ export interface Prefs {
 	subagentStrip: SubagentStrip;
 	/** What the phone drawer offers for getting back to the agents list. */
 	drawerHome: DrawerHome;
+	/** The model and effort on the conversation header's location row. */
+	headerModel: HeaderModel;
 	/** Which clock that time is written on; 'auto' follows the device. */
 	clockFormat: ClockFormat;
 	/** The herdr tab name on list rows and in the sidebar. */
@@ -293,6 +305,7 @@ export const DEFAULTS: Prefs = {
 	messageTime: 'runs',
 	subagentStrip: 'running',
 	drawerHome: 'mark',
+	headerModel: 'model-effort',
 	clockFormat: 'auto',
 	showTabName: true,
 	showBranches: true,
@@ -339,6 +352,7 @@ const BACKS: BackTo[] = ['home', 'history'];
 const MESSAGE_TIMES: MessageTime[] = ['off', 'runs', 'all'];
 const SUBAGENT_STRIPS: SubagentStrip[] = ['off', 'running', 'all'];
 const DRAWER_HOMES: DrawerHome[] = ['mark', 'icon', 'off'];
+const HEADER_MODELS: HeaderModel[] = ['off', 'model', 'model-effort'];
 const CLOCKS: ClockFormat[] = ['auto', 'h24', 'h12'];
 const ACCENTS: HarnessAccent[] = ['edge', 'tint', 'fill', 'off'];
 const INDICATORS: StatusIndicators[] = ['dot', 'symbol', 'text'];
@@ -446,6 +460,7 @@ export function normalisePrefs(raw: unknown): Prefs {
 		messageTime: pick(stored.messageTime, MESSAGE_TIMES, DEFAULTS.messageTime),
 		subagentStrip: pick(stored.subagentStrip, SUBAGENT_STRIPS, DEFAULTS.subagentStrip),
 		drawerHome: pick(stored.drawerHome, DRAWER_HOMES, DEFAULTS.drawerHome),
+		headerModel: pick(stored.headerModel, HEADER_MODELS, DEFAULTS.headerModel),
 		clockFormat: pick(stored.clockFormat, CLOCKS, DEFAULTS.clockFormat),
 		showTabName: bool(stored.showTabName, DEFAULTS.showTabName),
 		showBranches: bool(stored.showBranches, DEFAULTS.showBranches),
