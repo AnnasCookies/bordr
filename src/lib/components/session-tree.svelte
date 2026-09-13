@@ -387,10 +387,15 @@
 				real question and the honest answer is short.
 			-->
 			<p class="shrink-0 border-t border-hairline px-2 py-1.5 text-[10.5px] text-muted">
-				{offered.join(', ')} configured in herdr.
+				{offered.join(', ')} configured in herdr, not reachable from here.
 				<span class="text-faint"
-					>Add to <span class="font-mono">BORDR_MACHINES</span> in bordr's .env to reach
-					{offered.length === 1 ? 'it' : 'them'} from here.</span
+					>bordr only inherits herdr's machines while it is bound to loopback or a tailnet. Name {offered.length ===
+					1
+						? 'it'
+						: 'them'} in <span class="font-mono">BORDR_MACHINES</span> to reach {offered.length ===
+					1
+						? 'it'
+						: 'them'} anyway.</span
 				>
 			</p>
 		{/if}

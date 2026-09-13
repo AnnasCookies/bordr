@@ -1,4 +1,5 @@
 import { env } from '$env/dynamic/private';
+import { ALLOW_FLAG, machinesInherit } from '../bind';
 import { readFileSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { join } from 'node:path';
@@ -50,23 +51,7 @@ export function listMachines(): Machine[] {
 	const ssh = (raw as { ssh?: unknown })?.ssh;
 	if (!Array.isArray(ssh)) return [];
 
-	// Opt in, per machine, on bordr's side.
-	//
-	// herdr's endpoints file is a list of machines you once typed into a
-	// terminal. Inheriting it wholesale means anyone who reaches bordr can
-	// drive every one of them, and a laptop added months ago becomes remotely
-	// drivable the day this ships, silently. bordr has no login, so the list
-	// of hosts it will reach has to be a decision someone made here.
-	//
-	// Empty is the default and means local only, which is what the threat
-	// model in SECURITY.md describes.
-	const allowed = (env.BORDR_MACHINES ?? '')
-		.split(',')
-		.map((entry) => entry.trim().toLowerCase())
-		.filter(Boolean);
-	if (allowed.length === 0) return [];
-
-	return ssh
+	const machines = ssh
 		.map((entry) => entry as Record<string, unknown>)
 		.filter((entry) => typeof entry.label === 'string' && entry.label)
 		.map((entry) => ({
@@ -75,11 +60,32 @@ export function listMachines(): Machine[] {
 			target: String(entry.target ?? ''),
 			session: String(entry.session ?? 'default'),
 			enabled: entry.enabled !== false
-		}))
-		.filter(
-			(machine) =>
-				allowed.includes(machine.id.toLowerCase()) || allowed.includes(machine.label.toLowerCase())
-		);
+		}));
+
+	// `BORDR_MACHINES` NARROWS the list; it no longer switches it on.
+	//
+	// Naming a machine in herdr is a deliberate act at a terminal, and when
+	// bordr is reachable by nobody that terminal is not — bound to loopback or
+	// a tailnet, with the no-auth flag unset — the two grants are the same
+	// grant, and a second list is bookkeeping that duplicates the first. That
+	// is what `machinesInherit` decides; see its comment for the case it
+	// cannot see, and what shuts that one out.
+	//
+	// Set the list and it still does exactly what it did: only these. Which is
+	// what you want when the tailnet is shared, or bordr has been bound
+	// somewhere deliberately.
+	const allowed = (env.BORDR_MACHINES ?? '')
+		.split(',')
+		.map((entry) => entry.trim().toLowerCase())
+		.filter(Boolean);
+	if (allowed.length === 0) {
+		return machinesInherit(env.HOST, env[ALLOW_FLAG]) ? machines : [];
+	}
+
+	return machines.filter(
+		(machine) =>
+			allowed.includes(machine.id.toLowerCase()) || allowed.includes(machine.label.toLowerCase())
+	);
 }
 
 /**

@@ -57,17 +57,39 @@ proxy in front of it and treat the result as load-bearing security you own.
 
 ### Machines
 
-bordr can drive herdr on other machines over SSH. It does **not** inherit
-herdr's own endpoint list: a machine is reachable only once you name it here,
-by its herdr id or label.
+bordr can drive herdr on other machines over SSH, and whether it inherits
+herdr's own endpoint list depends on how bordr itself is reachable.
+
+**Bound to loopback or a tailnet address, with `BORDR_I_UNDERSTAND_THIS_HAS_NO_AUTH`
+unset, it inherits.** Naming a machine in herdr is a deliberate act at a
+terminal on this host. Making it reachable from bordr grants it to whoever can
+reach bordr — and under this bind that is the same set of people, because the
+tailnet is the boundary and a device on it "is trusted completely" (above), while
+anyone who can reach loopback directly is already on the machine and already owns
+every agent on it. A second list there is bookkeeping that duplicates the first,
+and the usual result of asking for it is a sidebar that silently stops listing
+the machines you use daily.
+
+**With that flag set, it does not.** The flag means bordr was deliberately bound
+somewhere else, so "everyone who can reach this port" is a wider set than
+"whoever is sitting at this terminal", and the list has to be a decision
+someone made here.
+
+Either way, naming machines narrows it to exactly those:
 
 ```
 BORDR_MACHINES=laptop,tower
 ```
 
-Empty, the default, means this host only. Every machine you name is drivable
-by anyone who reaches bordr, so the list is the blast radius. Authentication
-is your own SSH config and agent; bordr reads no keys and writes none.
+Set that when you share a tailnet, or when you want bordr to reach some of your
+machines and not others. Every machine bordr can reach is drivable by anyone who
+reaches bordr, so the reachable set is the blast radius. Authentication is your
+own SSH config and agent; bordr reads no keys and writes none.
+
+One case this cannot see: `tailscale funnel` fronts a loopback bind exactly as
+`serve` does, so bordr cannot tell them apart from the bind alone. Funnel sends
+no identity header, which is what `BORDR_ALLOWED_USERS` refuses — set it and a
+funnel is shut out, machines included.
 
 ### The hostname check
 
