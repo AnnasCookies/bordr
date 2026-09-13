@@ -27,7 +27,8 @@
 	let {
 		targets,
 		onclose,
-		ondone
+		ondone,
+		onworktrees
 	}: {
 		/**
 		 * What this sheet can act on, in the order they are offered.
@@ -41,6 +42,8 @@
 		onclose: () => void;
 		/** Something changed; the caller refetches its tree. */
 		ondone: () => void;
+		/** Offered only when the caller knows a repository to look in. */
+		onworktrees?: () => void;
 	} = $props();
 
 	let chosen = $state(0);
@@ -198,6 +201,14 @@
 						<span class="font-mono text-[11px] text-faint">ends what is running</span>
 					</button>
 				{/if}
+			{/if}
+
+			{#if onworktrees}
+				<!-- Only where a repository is known: the pane's own directory. -->
+				<button class="flex min-h-12 items-center px-4 text-left text-[15px]" onclick={onworktrees}>
+					<span class="flex-1">Worktrees</span>
+					<span class="font-mono text-[11px] text-faint">branch off, or open one</span>
+				</button>
 			{/if}
 
 			<button class="min-h-12 px-4 text-left text-[15px] text-muted" onclick={onclose}

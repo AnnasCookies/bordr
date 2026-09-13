@@ -40,6 +40,7 @@
 	import StatusBlock from '$lib/components/status-block.svelte';
 	import NewAgentSheet from '$lib/components/new-agent-sheet.svelte';
 	import ControlSheet from '$lib/components/control-sheet.svelte';
+	import WorktreeSheet from '$lib/components/worktree-sheet.svelte';
 	import SubagentSheet from '$lib/components/subagent-sheet.svelte';
 	import Spinner from '$lib/components/spinner.svelte';
 	import Ticks from '$lib/components/ticks.svelte';
@@ -381,6 +382,7 @@
 	}
 	/** Which scope the controls sheet is open for, if any. */
 	let controlling = $state(false);
+	let worktrees = $state(false);
 	/** The pane, and the tab holding it — both worth naming, one sheet. */
 	const controlTargets = $derived(
 		[
@@ -3226,6 +3228,20 @@
 		<ControlSheet
 			targets={controlTargets}
 			onclose={() => (controlling = false)}
+			ondone={() => void invalidateAll()}
+			onworktrees={detail.cwd
+				? () => {
+						controlling = false;
+						worktrees = true;
+					}
+				: undefined}
+		/>
+	{/if}
+	{#if worktrees && detail.cwd}
+		<WorktreeSheet
+			pane={detail.paneId}
+			cwd={detail.cwd}
+			onclose={() => (worktrees = false)}
 			ondone={() => void invalidateAll()}
 		/>
 	{/if}
