@@ -26,6 +26,8 @@
 
 	let {
 		targets,
+		subagents = [],
+		onsubagent,
 		onclose,
 		ondone,
 		onworktrees
@@ -39,6 +41,15 @@
 		 * make itself.
 		 */
 		targets: ControlTarget[];
+		/**
+		 * Sub-agents that have finished.
+		 *
+		 * They used to sit in a strip above the transcript whether or not
+		 * anything was running, which cost 37px of header to say "+4 done".
+		 * Here they are one tap away and take no room until asked for.
+		 */
+		subagents?: { id: string; agentType: string; description: string; entries: number }[];
+		onsubagent?: (id: string) => void;
 		onclose: () => void;
 		/**
 		 * Something changed. The action is passed on because a close leaves
@@ -205,6 +216,24 @@
 						<span class="font-mono text-[11px] text-faint">ends what is running</span>
 					</button>
 				{/if}
+			{/if}
+
+			{#if subagents.length > 0 && onsubagent}
+				<p class="px-4 pt-2 pb-1 font-mono text-[10.5px] tracking-[.06em] text-faint uppercase">
+					finished sub-agents
+				</p>
+				{#each subagents as sub (sub.id)}
+					<button
+						class="flex min-h-11 w-full items-center gap-2 px-4 text-left"
+						onclick={() => onsubagent(sub.id)}
+					>
+						<span class="min-w-0 flex-1 truncate text-[14px]">
+							<span class="font-mono text-muted">{sub.agentType}</span>
+							{sub.description}
+						</span>
+						<span class="shrink-0 font-mono text-[11px] text-faint">{sub.entries}</span>
+					</button>
+				{/each}
 			{/if}
 
 			{#if onworktrees}

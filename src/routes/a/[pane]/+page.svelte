@@ -49,6 +49,7 @@
 	import { track } from '$lib/pending.svelte';
 	import { nextFollowing } from '$lib/follow';
 	import { swipeSequence } from '$lib/swipe-order';
+	import { showChrome, touchPoints } from '$lib/header-chrome';
 	import { afterClose } from '$lib/after-close';
 	import { keepPending, onScreen, say, type PendingSend } from '$lib/pending-sends';
 	import { queueVerdict } from '$lib/queue';
@@ -2247,11 +2248,13 @@
 				The pane strip is what the split itself already is, so it appears
 				only where the split is not being drawn.
 			-->
-			<WorkspaceTabs
-				current={detail.paneId}
-				panes={!(wideScreen && splitLayout)}
-				onsiblings={(list) => (tabSiblings = list)}
-			/>
+			{#if showChrome(prefs.value.tabStrip, touchPoints())}
+				<WorkspaceTabs
+					current={detail.paneId}
+					panes={!(wideScreen && splitLayout)}
+					onsiblings={(list) => (tabSiblings = list)}
+				/>
+			{/if}
 
 			<!--
 				Sub-agents this session has spawned.
@@ -2261,7 +2264,14 @@
 				failed, none of it was reachable. Each has its own transcript, so
 				each of these opens one.
 			-->
-			{#if running.length > 0 || finished.length > 0}
+			<!--
+				Only while something is WORKING. A row that exists to say "+4 done"
+				is 37px of a 179px header spent on a count — measured on a phone,
+				where the header was already 22% of the screen. The finished ones
+				move to the controls sheet, which is where things you might want
+				rather than things happening now belong.
+			-->
+			{#if running.length > 0}
 				<div class="flex items-center gap-1.5 overflow-x-auto border-b border-hairline px-2 py-1.5">
 					<span class="shrink-0 font-mono text-[10px] tracking-[.06em] text-faint uppercase"
 						>agents</span
@@ -3331,6 +3341,11 @@
 	{#if controlling}
 		<ControlSheet
 			targets={controlTargets}
+			subagents={strip === 'off' ? [] : finished}
+			onsubagent={(id) => {
+				controlling = false;
+				openSub = id;
+			}}
 			onclose={() => (controlling = false)}
 			ondone={afterControl}
 			onworktrees={detail.cwd

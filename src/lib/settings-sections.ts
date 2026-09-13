@@ -8,6 +8,7 @@
 export const SECTIONS = [
 	'agents list',
 	'appearance',
+	'header',
 	'workspaces & panes',
 	'input',
 	'chat bubbles',

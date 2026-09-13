@@ -1153,6 +1153,86 @@
 					</section>
 				{/if}
 
+				{#if shown('header')}
+					<section>
+						<h2 class="mb-1.5 px-1 font-mono text-[10.5px] text-muted">header</h2>
+						<div
+							class="divide-y divide-black/[.06] overflow-hidden rounded-xl border border-hairline bg-card dark:divide-white/[.06]"
+						>
+							<SettingRow
+								label="Back arrow"
+								value={prefs.value.backButton}
+								options={[
+									{ v: 'always' as ChromeWhen, l: 'Always' },
+									{ v: 'mobile' as ChromeWhen, l: 'Mobile' },
+									{ v: 'off' as ChromeWhen, l: 'Off' }
+								]}
+								onchange={(v) => prefs.set('backButton', v)}
+							>
+								{#snippet preview()}{@render chromePreview()}{/snippet}
+							</SettingRow>
+							<p class="px-3.5 pb-2 text-[12px] text-muted">
+								One step to the agents list. A conversation is the only screen with no tab bar — the
+								composer has the bottom of it.
+							</p>
+							<SettingRow
+								label="Menu button"
+								value={prefs.value.menuButton}
+								options={[
+									{ v: 'always' as ChromeWhen, l: 'Always' },
+									{ v: 'mobile' as ChromeWhen, l: 'Mobile' },
+									{ v: 'off' as ChromeWhen, l: 'Off' }
+								]}
+								onchange={(v) => prefs.set('menuButton', v)}
+							>
+								{#snippet preview()}{@render chromePreview()}{/snippet}
+							</SettingRow>
+							<p class="px-3.5 pb-2 text-[12px] text-muted">
+								Opens the machines, workspaces and panes. On a desktop it collapses the sidebar
+								instead.
+							</p>
+							<SettingRow
+								label="bordr mark"
+								value={prefs.value.logoButton}
+								options={[
+									{ v: 'always' as ChromeWhen, l: 'Always' },
+									{ v: 'mobile' as ChromeWhen, l: 'Mobile' },
+									{ v: 'off' as ChromeWhen, l: 'Off' }
+								]}
+								onchange={(v) => prefs.set('logoButton', v)}
+							>
+								{#snippet preview()}{@render chromePreview()}{/snippet}
+							</SettingRow>
+							<p class="px-3.5 pb-2 text-[12px] text-muted">
+								The collie, which is also a link to the agents list. It stands down under 360px when
+								the back arrow is there, so the two cannot push the header off the screen.
+							</p>
+							<SettingRow
+								label="Tab strip"
+								value={prefs.value.tabStrip}
+								options={[
+									{ v: 'always' as ChromeWhen, l: 'Always' },
+									{ v: 'mobile' as ChromeWhen, l: 'Mobile' },
+									{ v: 'off' as ChromeWhen, l: 'Off' }
+								]}
+								onchange={(v) => prefs.set('tabStrip', v)}
+							>
+								{#snippet preview()}{@render chromePreview()}{/snippet}
+							</SettingRow>
+							<p class="px-3.5 pb-2 text-[12px] text-muted">
+								The tabs in this workspace and the panes in this tab. A swipe already moves between
+								the same panes, so this is 40px you can have back.
+							</p>
+						</div>
+						<p class="mt-1.5 px-1 text-[12px] text-muted">
+							Measured on a 430&times;820 phone: the conversation header is 179px, 22% of the
+							screen, in four rows. Moving the harness status to the bottom and turning the tab
+							strip off takes it to 111px, 14%. The sub-agent row now appears only while one is
+							actually working.
+						</p>
+					</section>
+				{/if}
+
 				{#if shown('workspaces & panes')}
 					<section>
 						<h2 class="mb-1.5 px-1 font-mono text-[10.5px] text-muted">workspaces &amp; panes</h2>
@@ -1274,54 +1354,6 @@
 							>
 								{#snippet preview()}{@render backPreview()}{/snippet}
 							</SettingRow>
-							<SettingRow
-								label="Back arrow"
-								value={prefs.value.backButton}
-								options={[
-									{ v: 'always' as ChromeWhen, l: 'Always' },
-									{ v: 'mobile' as ChromeWhen, l: 'Mobile' },
-									{ v: 'off' as ChromeWhen, l: 'Off' }
-								]}
-								onchange={(v) => prefs.set('backButton', v)}
-							>
-								{#snippet preview()}{@render chromePreview()}{/snippet}
-							</SettingRow>
-							<p class="px-3.5 pb-2 text-[12px] text-muted">
-								One step to the agents list. A conversation is the only screen with no tab bar — the
-								composer has the bottom of it.
-							</p>
-							<SettingRow
-								label="Menu button"
-								value={prefs.value.menuButton}
-								options={[
-									{ v: 'always' as ChromeWhen, l: 'Always' },
-									{ v: 'mobile' as ChromeWhen, l: 'Mobile' },
-									{ v: 'off' as ChromeWhen, l: 'Off' }
-								]}
-								onchange={(v) => prefs.set('menuButton', v)}
-							>
-								{#snippet preview()}{@render chromePreview()}{/snippet}
-							</SettingRow>
-							<p class="px-3.5 pb-2 text-[12px] text-muted">
-								Opens the machines, workspaces and panes. On a desktop it collapses the sidebar
-								instead.
-							</p>
-							<SettingRow
-								label="bordr mark"
-								value={prefs.value.logoButton}
-								options={[
-									{ v: 'always' as ChromeWhen, l: 'Always' },
-									{ v: 'mobile' as ChromeWhen, l: 'Mobile' },
-									{ v: 'off' as ChromeWhen, l: 'Off' }
-								]}
-								onchange={(v) => prefs.set('logoButton', v)}
-							>
-								{#snippet preview()}{@render chromePreview()}{/snippet}
-							</SettingRow>
-							<p class="px-3.5 pb-2 text-[12px] text-muted">
-								The collie, which is also a link to the agents list. It stands down under 360px when
-								the back arrow is there, so the two cannot push the header off the screen.
-							</p>
 							<SettingRow
 								label="Home in the drawer"
 								value={prefs.value.drawerHome}

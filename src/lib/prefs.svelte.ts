@@ -235,6 +235,14 @@ export interface Prefs {
 	backButton: ChromeWhen;
 	menuButton: ChromeWhen;
 	logoButton: ChromeWhen;
+	/**
+	 * The tab strip under the title.
+	 *
+	 * A row of the tabs in this workspace, and the panes in this tab. Worth 40px
+	 * of a 179px header, so it is worth being able to decide about — swiping
+	 * already moves between the same panes.
+	 */
+	tabStrip: ChromeWhen;
 	/** The model and effort on the conversation header's location row. */
 	headerModel: HeaderModel;
 	/** Which clock that time is written on; 'auto' follows the device. */
@@ -330,6 +338,7 @@ export const DEFAULTS: Prefs = {
 	backButton: 'always',
 	menuButton: 'always',
 	logoButton: 'always',
+	tabStrip: 'always',
 	headerModel: 'model-effort',
 	clockFormat: 'auto',
 	showTabName: true,
@@ -489,6 +498,7 @@ export function normalisePrefs(raw: unknown): Prefs {
 		backButton: pick(stored.backButton, CHROME_WHENS, DEFAULTS.backButton),
 		menuButton: pick(stored.menuButton, CHROME_WHENS, DEFAULTS.menuButton),
 		logoButton: pick(stored.logoButton, CHROME_WHENS, DEFAULTS.logoButton),
+		tabStrip: pick(stored.tabStrip, CHROME_WHENS, DEFAULTS.tabStrip),
 		headerModel: pick(stored.headerModel, HEADER_MODELS, DEFAULTS.headerModel),
 		clockFormat: pick(stored.clockFormat, CLOCKS, DEFAULTS.clockFormat),
 		showTabName: bool(stored.showTabName, DEFAULTS.showTabName),
