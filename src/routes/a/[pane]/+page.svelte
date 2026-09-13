@@ -8,7 +8,7 @@
 	import { shrinkImage } from '$lib/shrink-image';
 	import { prefs } from '$lib/prefs.svelte';
 	import { agentTitle, collapseHome, flatOrder } from '$lib/grouping';
-	import { decideSwipe, inHorizontalScroller, neighbourPane } from '$lib/swipe';
+	import { decideSwipe, inEdgeZone, inHorizontalScroller, neighbourPane } from '$lib/swipe';
 	import { harnessBorder, harnessBubble, harnessHex, harnessText, STATUS_INK } from '$lib/theme';
 	import { ansiToHtml } from '$lib/ansi';
 	import { termGrid } from '$lib/term-grid';
@@ -1943,7 +1943,14 @@
 			return;
 		}
 		// A tool block or the screen peek scrolls sideways; it owns the gesture.
-		tracking = !(swipeRoot && inHorizontalScroller(event.target, swipeRoot));
+		//
+		// And neither edge is ours: the phone reserves both for its own back and
+		// forward. Refusing here rather than at the end of the gesture is the
+		// difference between doing nothing and dragging the whole transcript
+		// across the screen before admitting the swipe was never ours.
+		tracking =
+			!(swipeRoot && inHorizontalScroller(event.target, swipeRoot)) &&
+			!inEdgeZone(touch.clientX, window.innerWidth);
 		startX = touch.clientX;
 		startY = touch.clientY;
 		dragX = 0;

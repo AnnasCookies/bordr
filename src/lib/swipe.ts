@@ -22,6 +22,23 @@ export const SWIPE: SwipeLimits = { distance: 60, ratio: 2, edge: 32 };
  * Right means "next agent down the list": the list order is what the reader
  * just came from, so moving forward through it is the natural direction.
  */
+/**
+ * Does this gesture start in the strip the system has reserved?
+ *
+ * Both edges belong to the phone's own back and forward gestures. Checking it
+ * only when the gesture ENDS is too late: by then the transcript has been
+ * dragged across the screen and the system has navigated underneath it, so
+ * the two fight in full view and bordr snaps back from a swipe it was never
+ * going to honour.
+ */
+export function inEdgeZone(
+	startX: number,
+	viewportWidth: number,
+	limits: SwipeLimits = SWIPE
+): boolean {
+	return startX <= limits.edge || startX >= viewportWidth - limits.edge;
+}
+
 export function decideSwipe(
 	dx: number,
 	dy: number,
@@ -29,9 +46,9 @@ export function decideSwipe(
 	viewportWidth: number,
 	limits: SwipeLimits = SWIPE
 ): SwipeDirection | null {
-	// Both edges belong to the system back gesture, not to us.
-	if (startX <= limits.edge) return null;
-	if (startX >= viewportWidth - limits.edge) return null;
+	// Both edges belong to the system back gesture, not to us. Checked at the
+	// start of the gesture too, so nothing moves in the first place.
+	if (inEdgeZone(startX, viewportWidth, limits)) return null;
 	if (Math.abs(dx) < limits.distance) return null;
 	if (Math.abs(dx) < Math.abs(dy) * limits.ratio) return null;
 	return dx > 0 ? 'next' : 'previous';

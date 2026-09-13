@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { decideSwipe, neighbourPane, SWIPE } from './swipe';
+import { decideSwipe, inEdgeZone, neighbourPane, SWIPE } from './swipe';
 
 const WIDE = 402;
 
@@ -65,5 +65,31 @@ describe('neighbourPane', () => {
 		expect(neighbourPane(order, 'zz', 'next')).toBeNull();
 		expect(neighbourPane([], 'a', 'next')).toBeNull();
 		expect(neighbourPane(['only'], 'only', 'next')).toBeNull();
+	});
+});
+
+describe('inEdgeZone', () => {
+	/**
+	 * Both edges belong to the phone's own back and forward gestures. This is
+	 * checked when the gesture STARTS as well as when it ends: refusing only at
+	 * the end meant the transcript had already been dragged across the screen
+	 * while the system navigated underneath it.
+	 */
+	it('claims neither edge', () => {
+		expect(inEdgeZone(0, 430)).toBe(true);
+		expect(inEdgeZone(32, 430)).toBe(true);
+		expect(inEdgeZone(430, 430)).toBe(true);
+		expect(inEdgeZone(398, 430)).toBe(true);
+	});
+
+	it('leaves the middle alone', () => {
+		expect(inEdgeZone(33, 430)).toBe(false);
+		expect(inEdgeZone(215, 430)).toBe(false);
+		expect(inEdgeZone(397, 430)).toBe(false);
+	});
+
+	/** A narrow screen is nearly all edge, and that is the honest answer. */
+	it('copes with a screen narrower than both zones', () => {
+		expect(inEdgeZone(30, 50)).toBe(true);
 	});
 });

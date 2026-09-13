@@ -263,9 +263,13 @@ export interface Prefs {
 	/** Offer the harness's own ghost prompt above the composer. */
 	showSuggestions: boolean;
 	/**
-	 * Where the harness's status block sits. 'bottom' puts it under the
-	 * composer, where the on-screen keyboard covers it instead of the
-	 * conversation.
+	 * Where the harness's status block sits.
+	 *
+	 * 'bottom' is the default: under the composer, where the on-screen keyboard
+	 * covers it instead of the conversation, and where it is not part of a
+	 * header that had grown to 22% of a phone screen. It is reference material
+	 * — model, quota, spend — rather than anything you act on, so it belongs
+	 * out of the way of the thing you came to read.
 	 */
 	statusPosition: StatusPosition;
 	/** Where the show-the-work control lives: with the transcript, or in the header. */
@@ -349,7 +353,7 @@ export const DEFAULTS: Prefs = {
 	syntaxHighlight: true,
 	compactImages: true,
 	showSuggestions: true,
-	statusPosition: 'header',
+	statusPosition: 'bottom',
 	workControl: 'inline',
 	statusLine: {},
 	enterSends: false,
