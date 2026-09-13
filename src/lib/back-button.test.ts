@@ -10,15 +10,15 @@ describe('backPlacement', () => {
 		expect(backPlacement('off', MOUSE)).toBeUndefined();
 	});
 
-	/** The arrow and the mark go to the same place, so only one of them shows. */
-	it('replaces the mark when always on', () => {
-		expect(backPlacement('on', TOUCH)).toBe('instead');
-		expect(backPlacement('on', MOUSE)).toBe('instead');
+	it('keeps the mark when always on', () => {
+		expect(backPlacement('on', TOUCH)).toBe('beside');
+		expect(backPlacement('on', MOUSE)).toBe('beside');
 	});
 
-	it('keeps the mark when asked for both', () => {
-		expect(backPlacement('both', TOUCH)).toBe('beside');
-		expect(backPlacement('both', MOUSE)).toBe('beside');
+	/** The two go to the same place, so one of them may be dropped on purpose. */
+	it('replaces the mark when asked to', () => {
+		expect(backPlacement('only', TOUCH)).toBe('only');
+		expect(backPlacement('only', MOUSE)).toBe('only');
 	});
 
 	/**
@@ -30,7 +30,12 @@ describe('backPlacement', () => {
 		expect(backPlacement('auto', 1)).toBeUndefined();
 	});
 
-	it('draws one where there is no gesture', () => {
-		expect(backPlacement('auto', MOUSE)).toBe('instead');
+	/**
+	 * Beside the mark, not instead of it. `auto` only fires where there is no
+	 * gesture — a desktop — which is the one place with room for both, so the
+	 * narrow-header argument for dropping the mark does not apply here.
+	 */
+	it('draws one beside the mark where there is no gesture', () => {
+		expect(backPlacement('auto', MOUSE)).toBe('beside');
 	});
 });

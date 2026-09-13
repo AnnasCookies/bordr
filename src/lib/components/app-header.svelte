@@ -36,12 +36,16 @@
 		/**
 		 * An explicit way back to the agents list.
 		 *
-		 *   instead  the arrow replaces the mark; they go to the same place, and
-		 *            keeping both spends 56px of a 320px header saying "home"
-		 *            twice
-		 *   beside   both, for anyone who would rather keep the dog
+		 *   beside  the arrow and the mark, which is the usual case
+		 *   only    the arrow alone; they go to the same place, and on a narrow
+		 *           header keeping both is 56px spent saying "home" twice
+		 *
+		 * Below 360px the mark stands down even in 'beside'. The two together
+		 * push the actions past the edge of a 320px screen, and no setting
+		 * should be able to make the page scroll sideways — the arrow is the
+		 * one of the pair that reads as a control, so it is the one that stays.
 		 */
-		back?: 'instead' | 'beside';
+		back?: 'only' | 'beside';
 	} = $props();
 </script>
 
@@ -97,10 +101,12 @@
 		both spent 56px of a 320px header on saying "home" twice, which is what
 		pushed the actions off the end of it.
 	-->
-		{#if back !== 'instead'}
+		{#if back !== 'only'}
 			<a
 				href={resolve('/')}
-				class="group relative flex shrink-0 items-center self-stretch"
+				class="group relative flex shrink-0 items-center self-stretch {back
+					? 'max-[359px]:hidden'
+					: ''}"
 				aria-label="bordr — all agents"
 			>
 				<!--

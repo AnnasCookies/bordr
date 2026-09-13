@@ -51,13 +51,17 @@ export type DrawerHome = 'mark' | 'icon' | 'off';
  * the drawer's home. On a desktop there is no gesture, and a logo reads as a
  * logo rather than as a control.
  *
- *   auto  shown where there is no back gesture to rely on, INSTEAD of the
- *         mark, since the two go to the same place
- *   on    always, instead of the mark
- *   both  always, beside the mark, for anyone who wants the dog back
+ *   auto  where there is no back gesture to rely on, beside the mark
+ *   on    always, beside the mark
+ *   only  always, INSTEAD of the mark — the two go to the same place, and on a
+ *         narrow header that is 56px spent saying "home" twice
  *   off   never; the gesture and the mark are enough
+ *
+ * The mark stays by default. Replacing it was a space argument borrowed from a
+ * 320px phone and applied to `auto`, which only ever fires on a desktop — the
+ * one place with room for both.
  */
-export type BackButton = 'auto' | 'on' | 'both' | 'off';
+export type BackButton = 'auto' | 'on' | 'only' | 'off';
 
 /**
  * The model, and how hard it is being asked to think, in the header.
@@ -372,7 +376,7 @@ const BACKS: BackTo[] = ['home', 'history'];
 const MESSAGE_TIMES: MessageTime[] = ['off', 'runs', 'all'];
 const SUBAGENT_STRIPS: SubagentStrip[] = ['off', 'running', 'all'];
 const DRAWER_HOMES: DrawerHome[] = ['mark', 'icon', 'off'];
-const BACK_BUTTONS: BackButton[] = ['auto', 'on', 'both', 'off'];
+const BACK_BUTTONS: BackButton[] = ['auto', 'on', 'only', 'off'];
 const HEADER_MODELS: HeaderModel[] = ['off', 'model', 'model-effort'];
 const CLOCKS: ClockFormat[] = ['auto', 'h24', 'h12'];
 const ACCENTS: HarnessAccent[] = ['edge', 'tint', 'fill', 'off'];

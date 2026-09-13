@@ -717,7 +717,7 @@
 		<span class="flex h-9 w-9 items-center justify-center text-[22px] leading-none text-muted"
 			>☰</span
 		>
-		{#if prefs.value.backButton === 'off' || prefs.value.backButton === 'both'}
+		{#if prefs.value.backButton !== 'only'}
 			<img src="/collie.svg" alt="" class="h-6 w-6" style="image-rendering: pixelated" />
 		{/if}
 		<span class="truncate text-[13px] font-medium">checkout-flow</span>
@@ -1287,11 +1287,12 @@
 								{#snippet preview()}{@render backPreview()}{/snippet}
 							</SettingRow>
 							<SettingRow
-								label="Back button in a conversation"
+								label="Back button"
 								value={prefs.value.backButton}
 								options={[
 									{ v: 'auto' as BackButton, l: 'Auto' },
 									{ v: 'on' as BackButton, l: 'Always' },
+									{ v: 'only' as BackButton, l: 'No logo' },
 									{ v: 'off' as BackButton, l: 'Off' }
 								]}
 								onchange={(v) => prefs.set('backButton', v)}
@@ -1299,9 +1300,11 @@
 								{#snippet preview()}{@render backButtonPreview()}{/snippet}
 							</SettingRow>
 							<p class="px-3.5 pb-2 text-[12px] text-muted">
-								A conversation is the only screen with no tab bar — the composer has the bottom of
-								it. Auto shows the arrow where there is no back gesture to rely on, which in
-								practice means a desktop.
+								On a conversation and here. Auto draws it where there is no back gesture to fall
+								back on, which in practice means a desktop — a conversation is the only screen with
+								no tab bar, because the composer has the bottom of it. The collie stays; “No logo”
+								drops it, since the two go to the same place and a narrow header has better uses for
+								the room.
 							</p>
 							<SettingRow
 								label="Home in the drawer"

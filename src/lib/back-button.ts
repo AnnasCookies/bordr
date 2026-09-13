@@ -12,13 +12,16 @@
 import type { BackButton } from './prefs.svelte';
 
 /** Where the arrow sits, or undefined for no arrow at all. */
-export type BackPlacement = 'instead' | 'beside' | undefined;
+export type BackPlacement = 'only' | 'beside' | undefined;
 
 export function backPlacement(mode: BackButton, touchPoints: number): BackPlacement {
 	if (mode === 'off') return undefined;
-	if (mode === 'both') return 'beside';
-	if (mode === 'on') return 'instead';
+	if (mode === 'only') return 'only';
+	if (mode === 'on') return 'beside';
 	// `touchPoints` rather than a viewport width: a narrow window on a desktop
 	// is still a desktop, and a tablet in landscape still swipes.
-	return touchPoints > 0 ? undefined : 'instead';
+	//
+	// Beside the mark, not instead of it: this fires only where there is no
+	// gesture, which is a desktop, which is the one place with room for both.
+	return touchPoints > 0 ? undefined : 'beside';
 }
