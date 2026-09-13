@@ -44,6 +44,20 @@ export type SubagentStrip = 'off' | 'running' | 'all';
 export type DrawerHome = 'mark' | 'icon' | 'off';
 
 /**
+ * An explicit way out of a conversation.
+ *
+ * It is the only screen with no tab bar — the composer owns the bottom of it —
+ * so the ways back are the phone's own gesture, the mark in the header, and
+ * the drawer's home. On a desktop there is no gesture, and a logo reads as a
+ * logo rather than as a control.
+ *
+ *   auto  shown where there is no back gesture to rely on
+ *   on    always
+ *   off   never; the gesture and the mark are enough
+ */
+export type BackButton = 'auto' | 'on' | 'off';
+
+/**
  * The model, and how hard it is being asked to think, in the header.
  *
  * Both are already in the harness's status block, but that is a dense row of
@@ -213,6 +227,8 @@ export interface Prefs {
 	subagentStrip: SubagentStrip;
 	/** What the phone drawer offers for getting back to the agents list. */
 	drawerHome: DrawerHome;
+	/** An explicit back control in a conversation's header. */
+	backButton: BackButton;
 	/** The model and effort on the conversation header's location row. */
 	headerModel: HeaderModel;
 	/** Which clock that time is written on; 'auto' follows the device. */
@@ -305,6 +321,7 @@ export const DEFAULTS: Prefs = {
 	messageTime: 'runs',
 	subagentStrip: 'running',
 	drawerHome: 'mark',
+	backButton: 'auto',
 	headerModel: 'model-effort',
 	clockFormat: 'auto',
 	showTabName: true,
@@ -352,6 +369,7 @@ const BACKS: BackTo[] = ['home', 'history'];
 const MESSAGE_TIMES: MessageTime[] = ['off', 'runs', 'all'];
 const SUBAGENT_STRIPS: SubagentStrip[] = ['off', 'running', 'all'];
 const DRAWER_HOMES: DrawerHome[] = ['mark', 'icon', 'off'];
+const BACK_BUTTONS: BackButton[] = ['auto', 'on', 'off'];
 const HEADER_MODELS: HeaderModel[] = ['off', 'model', 'model-effort'];
 const CLOCKS: ClockFormat[] = ['auto', 'h24', 'h12'];
 const ACCENTS: HarnessAccent[] = ['edge', 'tint', 'fill', 'off'];
@@ -460,6 +478,7 @@ export function normalisePrefs(raw: unknown): Prefs {
 		messageTime: pick(stored.messageTime, MESSAGE_TIMES, DEFAULTS.messageTime),
 		subagentStrip: pick(stored.subagentStrip, SUBAGENT_STRIPS, DEFAULTS.subagentStrip),
 		drawerHome: pick(stored.drawerHome, DRAWER_HOMES, DEFAULTS.drawerHome),
+		backButton: pick(stored.backButton, BACK_BUTTONS, DEFAULTS.backButton),
 		headerModel: pick(stored.headerModel, HEADER_MODELS, DEFAULTS.headerModel),
 		clockFormat: pick(stored.clockFormat, CLOCKS, DEFAULTS.clockFormat),
 		showTabName: bool(stored.showTabName, DEFAULTS.showTabName),

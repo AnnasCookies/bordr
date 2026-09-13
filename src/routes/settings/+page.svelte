@@ -26,6 +26,7 @@
 		MessageTime,
 		SubagentStrip,
 		DrawerHome,
+		BackButton,
 		HeaderModel,
 		FillStyle,
 		SoundAlerts,
@@ -693,6 +694,24 @@
 	</div>
 {/snippet}
 
+{#snippet backButtonPreview()}
+	<div class="flex items-center gap-1 rounded-lg bg-page p-2">
+		{#if prefs.value.backButton !== 'off'}
+			<span class="flex h-8 w-7 items-center justify-center text-[18px] text-muted">&#x2190;</span>
+		{/if}
+		<span class="flex h-9 w-9 items-center justify-center text-[22px] leading-none text-muted"
+			>☰</span
+		>
+		<img src="/collie.svg" alt="" class="h-6 w-6" style="image-rendering: pixelated" />
+		<span class="truncate text-[13px] font-medium">checkout-flow</span>
+	</div>
+	{#if prefs.value.backButton === 'auto'}
+		<p class="mt-1 text-[11.5px] text-faint">
+			Hidden on a touch screen, which has its own gesture.
+		</p>
+	{/if}
+{/snippet}
+
 {#snippet drawerHomePreview()}
 	<div class="flex items-center gap-1 rounded-lg bg-page p-2">
 		<span class="flex h-9 w-9 items-center justify-center text-[22px] leading-none text-muted"
@@ -1249,6 +1268,23 @@
 							>
 								{#snippet preview()}{@render backPreview()}{/snippet}
 							</SettingRow>
+							<SettingRow
+								label="Back button in a conversation"
+								value={prefs.value.backButton}
+								options={[
+									{ v: 'auto' as BackButton, l: 'Auto' },
+									{ v: 'on' as BackButton, l: 'Always' },
+									{ v: 'off' as BackButton, l: 'Off' }
+								]}
+								onchange={(v) => prefs.set('backButton', v)}
+							>
+								{#snippet preview()}{@render backButtonPreview()}{/snippet}
+							</SettingRow>
+							<p class="px-3.5 pb-2 text-[12px] text-muted">
+								A conversation is the only screen with no tab bar — the composer has the bottom of
+								it. Auto shows the arrow where there is no back gesture to rely on, which in
+								practice means a desktop.
+							</p>
 							<SettingRow
 								label="Home in the drawer"
 								value={prefs.value.drawerHome}

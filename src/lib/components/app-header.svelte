@@ -18,7 +18,8 @@
 		menuExpanded = false,
 		middle,
 		actions,
-		below
+		below,
+		back
 	}: {
 		onmenu: () => void;
 		menuLabel?: string;
@@ -32,6 +33,8 @@
 		 * and a branch. Anything that needs the room goes here.
 		 */
 		below?: Snippet;
+		/** Draw an explicit way back to the agents list. */
+		back?: boolean;
 	} = $props();
 </script>
 
@@ -59,6 +62,18 @@
 		which wants the room; these two do not.
 	-->
 	<span class="flex shrink-0 items-stretch gap-0.5">
+		{#if back}
+			<!--
+				First, where a back control belongs, and narrower than the menu
+				beside it: the row is about 178px wide on a phone once the mark and
+				the actions have taken theirs, and the title needs what is left.
+			-->
+			<a
+				href={resolve('/')}
+				class="flex w-8 shrink-0 grow-0 items-center justify-center self-stretch rounded-lg text-[20px] leading-none text-muted"
+				aria-label="Back to agents">&#x2190;</a
+			>
+		{/if}
 		<button
 			class="flex w-10 shrink-0 grow-0 items-center justify-center self-stretch rounded-lg text-[26px] leading-none text-muted"
 			aria-label={menuLabel}
@@ -69,13 +84,19 @@
 		The mark alone. The name is on the tab, the manifest and the address bar
 		already, and next to a pane's own title it was the least useful word on
 		the screen — so it only speaks when spoken to.
+
+		Dropped entirely when there is a back arrow, because the two go to the
+		same place and the arrow is the one that reads as a control. Keeping
+		both spent 56px of a 320px header on saying "home" twice, which is what
+		pushed the actions off the end of it.
 	-->
-		<a
-			href={resolve('/')}
-			class="group relative flex shrink-0 items-center self-stretch"
-			aria-label="bordr — all agents"
-		>
-			<!--
+		{#if !back}
+			<a
+				href={resolve('/')}
+				class="group relative flex shrink-0 items-center self-stretch"
+				aria-label="bordr — all agents"
+			>
+				<!--
 				The dog out of a hole.
 
 				The hole is a 40px disc at the bottom of a 56×52 box. He is drawn
@@ -104,15 +125,15 @@
 				so anything overhanging the hole would drag a white square with it.
 				The SVG is the same pixel art as bare 1×1 rects on nothing.
 			-->
-			<span class="relative block h-[52px] w-14 shrink-0 self-center">
-				<span
-					class="absolute bottom-0 left-1/2 h-10 w-10 -translate-x-1/2 rounded-full bg-chip ring-1 ring-black/10 dark:ring-white/15"
-				></span>
-				<img
-					src="/collie.svg"
-					alt=""
-					class="absolute bottom-[-2px] left-1/2 h-14 w-14 max-w-none -translate-x-1/2"
-					style="image-rendering: pixelated;
+				<span class="relative block h-[52px] w-14 shrink-0 self-center">
+					<span
+						class="absolute bottom-0 left-1/2 h-10 w-10 -translate-x-1/2 rounded-full bg-chip ring-1 ring-black/10 dark:ring-white/15"
+					></span>
+					<img
+						src="/collie.svg"
+						alt=""
+						class="absolute bottom-[-2px] left-1/2 h-14 w-14 max-w-none -translate-x-1/2"
+						style="image-rendering: pixelated;
 						-webkit-mask-image: radial-gradient(circle 20px at 28px 34px, #000 100%, transparent 100%), linear-gradient(#000, #000);
 						mask-image: radial-gradient(circle 20px at 28px 34px, #000 100%, transparent 100%), linear-gradient(#000, #000);
 						-webkit-mask-size: 100% 100%, 100% 34px;
@@ -121,17 +142,18 @@
 						mask-repeat: no-repeat;
 						-webkit-mask-composite: source-over;
 						mask-composite: add"
-				/>
-			</span>
-			<span
-				class="pointer-events-none absolute top-full left-1/2 z-20 mt-1.5 -translate-x-1/2 rounded-lg bg-ink px-2 py-1 text-[11px] font-medium whitespace-nowrap text-card opacity-0 transition-opacity group-hover:opacity-100 group-focus-visible:opacity-100 motion-reduce:transition-none"
-				aria-hidden="true"
-			>
-				<!-- The bubble's tail, drawn as a rotated corner of the bubble itself. -->
-				<span class="absolute -top-1 left-1/2 h-2 w-2 -translate-x-1/2 rotate-45 bg-ink"></span>
-				woof
-			</span>
-		</a>
+					/>
+				</span>
+				<span
+					class="pointer-events-none absolute top-full left-1/2 z-20 mt-1.5 -translate-x-1/2 rounded-lg bg-ink px-2 py-1 text-[11px] font-medium whitespace-nowrap text-card opacity-0 transition-opacity group-hover:opacity-100 group-focus-visible:opacity-100 motion-reduce:transition-none"
+					aria-hidden="true"
+				>
+					<!-- The bubble's tail, drawn as a rotated corner of the bubble itself. -->
+					<span class="absolute -top-1 left-1/2 h-2 w-2 -translate-x-1/2 rotate-45 bg-ink"></span>
+					woof
+				</span>
+			</a>
+		{/if}
 	</span>
 
 	<!--

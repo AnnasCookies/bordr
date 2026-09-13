@@ -401,6 +401,24 @@
 		});
 	}
 
+	/**
+	 * Whether to draw an explicit way out of this conversation.
+	 *
+	 * 'auto' means "where there is no gesture to rely on". A touch screen has
+	 * an edge swipe and a phone has a system button; a desktop has neither, and
+	 * the mark in the header is the only affordance there — which reads as a
+	 * logo, not as a control.
+	 *
+	 * `maxTouchPoints` rather than the viewport: a narrow window on a desktop
+	 * is still a desktop, and a tablet in landscape still swipes.
+	 */
+	const showBack = $derived.by(() => {
+		const mode = prefs.value.backButton;
+		if (mode !== 'auto') return mode === 'on';
+		const gesture = typeof navigator !== 'undefined' && navigator.maxTouchPoints > 0;
+		return !gesture;
+	});
+
 	let controlling = $state(false);
 	let worktrees = $state(false);
 	/** The pane, and the tab holding it — both worth naming, one sheet. */
@@ -2038,7 +2056,16 @@
 		so the height moved about as you walked between panes. Splitting it by
 		meaning is stable at two rows and each row has the full width to itself.
 	-->
-	<span class="flex items-center gap-x-1 font-mono text-[10.5px] text-muted">
+	<!--
+		Clipped, not pushed. Every chip on this row is short and is `shrink-0`
+		because none of them reads truncated — so when the row finally runs out
+		of width, something has to give, and it is the row rather than the page.
+		Without this the header pushed the whole document sideways the moment
+		anything else joined the left of it.
+	-->
+	<span
+		class="flex min-w-0 items-center gap-x-1 overflow-hidden font-mono text-[10.5px] text-muted"
+	>
 		<StatusMark status={detail.status} size={10} />
 		{#if prefs.value.statusIndicators !== 'text'}
 			<span class="shrink-0 {STATUS_INK[detail.status] ?? 'text-faint'}">{detail.status}</span>
@@ -2075,7 +2102,8 @@
 	than growing an empty row.
 -->
 {#snippet headerLocation()}
-	<span class="flex items-center gap-x-1 font-mono text-[10.5px]">
+	<!-- Clips rather than pushing the page, same as the row above it. -->
+	<span class="flex min-w-0 items-center gap-x-1 overflow-hidden font-mono text-[10.5px]">
 		{#if modelLine.model}
 			<!--
 				First on the row, and it keeps its width. The path and the branch
@@ -3152,6 +3180,7 @@
 		menuExpanded={wideScreen ? prefs.value.sidebarOpen : treeOpen}
 		middle={headerTitle}
 		actions={headerActions}
+		back={showBack}
 		below={detail.cwd || detail.branch || modelLine.model ? headerLocation : undefined}
 	/>
 {/snippet}
