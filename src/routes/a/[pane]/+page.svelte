@@ -40,6 +40,7 @@
 	import StatusBlock from '$lib/components/status-block.svelte';
 	import NewAgentSheet from '$lib/components/new-agent-sheet.svelte';
 	import ControlSheet from '$lib/components/control-sheet.svelte';
+	import type { ControlScope } from '$lib/components/control-sheet.svelte';
 	import WorktreeSheet from '$lib/components/worktree-sheet.svelte';
 	import SubagentSheet from '$lib/components/subagent-sheet.svelte';
 	import Spinner from '$lib/components/spinner.svelte';
@@ -47,6 +48,7 @@
 	import BubbleMeta from '$lib/components/bubble-meta.svelte';
 	import { track } from '$lib/pending.svelte';
 	import { nextFollowing } from '$lib/follow';
+	import { afterClose } from '$lib/after-close';
 	import { keepPending, onScreen, say, type PendingSend } from '$lib/pending-sends';
 	import { queueVerdict } from '$lib/queue';
 	import { parseModelLine } from '$lib/model-line';
@@ -381,6 +383,24 @@
 		if (dictating) void holdScreen();
 	}
 	/** Which scope the controls sheet is open for, if any. */
+	async function afterControl(action: 'focus' | 'rename' | 'close', scope: ControlScope) {
+		if (action !== 'close') {
+			await invalidateAll();
+			return;
+		}
+		// Replace rather than push: the pane behind this entry is gone, so back
+		// would land on a 404 for something the reader closed on purpose.
+		const next = afterClose({
+			scope,
+			current: detail.paneId,
+			siblings: tabSiblings,
+			all: order
+		});
+		await goto(next ? resolve('/a/[pane]', { pane: next }) : resolve('/'), {
+			replaceState: true
+		});
+	}
+
 	let controlling = $state(false);
 	let worktrees = $state(false);
 	/** The pane, and the tab holding it — both worth naming, one sheet. */
@@ -3228,7 +3248,7 @@
 		<ControlSheet
 			targets={controlTargets}
 			onclose={() => (controlling = false)}
-			ondone={() => void invalidateAll()}
+			ondone={afterControl}
 			onworktrees={detail.cwd
 				? () => {
 						controlling = false;

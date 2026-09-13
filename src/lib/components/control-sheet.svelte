@@ -40,8 +40,12 @@
 		 */
 		targets: ControlTarget[];
 		onclose: () => void;
-		/** Something changed; the caller refetches its tree. */
-		ondone: () => void;
+		/**
+		 * Something changed. The action is passed on because a close leaves
+		 * the page looking at something that no longer exists, and only the
+		 * caller knows where to go instead.
+		 */
+		ondone: (action: 'focus' | 'rename' | 'close', scope: ControlScope) => void;
 		/** Offered only when the caller knows a repository to look in. */
 		onworktrees?: () => void;
 	} = $props();
@@ -90,7 +94,7 @@
 				busy = '';
 				return;
 			}
-			ondone();
+			ondone(action, scope);
 			onclose();
 		} catch (e) {
 			failed = `Nothing was sent: ${(e as Error).message}`;

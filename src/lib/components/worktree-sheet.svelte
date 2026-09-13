@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { onMount, untrack } from 'svelte';
 	import { track } from '$lib/pending.svelte';
 	import Spinner from './spinner.svelte';
 	import { collapseHome } from '$lib/grouping';
@@ -29,6 +30,17 @@
 		ondone: () => void;
 	} = $props();
 
+	/**
+	 * The pane and directory as they were when this opened.
+	 *
+	 * `detail.cwd` is the AGENT's working directory, read out of its transcript
+	 * — so it moves the moment a tool call does a `cd`, several times a minute
+	 * on a busy pane. Following it re-ran the load and blanked the list on
+	 * every poll, which is the flicker. The repository does not change because
+	 * a command changed directory inside it.
+	 */
+	const openedFor = untrack(() => ({ pane, cwd }));
+
 	let list = $state<WorktreeList | null>(null);
 	let loading = $state(true);
 	let failed = $state<string | null>(null);
@@ -37,11 +49,14 @@
 	let busy = $state('');
 
 	async function load() {
-		loading = true;
+		// Only the FIRST read blanks the list. A refresh after creating or
+		// opening one already has something to show, and swapping it for a
+		// spinner is a flash that says nothing.
+		loading = list === null;
 		failed = null;
 		try {
 			const response = await fetch(
-				`/api/worktrees?pane=${encodeURIComponent(pane)}&cwd=${encodeURIComponent(cwd)}`
+				`/api/worktrees?pane=${encodeURIComponent(openedFor.pane)}&cwd=${encodeURIComponent(openedFor.cwd)}`
 			);
 			const body = await response.json();
 			// herdr's own sentence — "requires a path inside a Git work tree" —
@@ -54,11 +69,18 @@
 		loading = false;
 	}
 
-	$effect(() => {
-		void pane;
-		void cwd;
-		void load();
-	});
+	/**
+	 * Once, on mount.
+	 *
+	 * NOT an `$effect`. `load` reads `list` to decide whether to blank it, and
+	 * an effect tracks every state read in its synchronous part — so writing
+	 * `list` at the end of the load retriggered the effect that started it.
+	 * Measured before this was moved: 338 requests on open and 3,058 within
+	 * fourteen seconds, which is the flicker.
+	 *
+	 * The sheet is mounted fresh each time it is opened, so mount IS once.
+	 */
+	onMount(() => void load());
 
 	async function act(action: 'create' | 'open', extra: Record<string, string> = {}) {
 		if (busy) return;
@@ -69,7 +91,14 @@
 				fetch('/api/worktrees', {
 					method: 'POST',
 					headers: { 'content-type': 'application/json' },
-					body: JSON.stringify({ action, pane, cwd, branch, base, ...extra })
+					body: JSON.stringify({
+						action,
+						pane: openedFor.pane,
+						cwd: openedFor.cwd,
+						branch,
+						base,
+						...extra
+					})
 				})
 			);
 			if (!response.ok) {
