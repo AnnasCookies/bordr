@@ -21,6 +21,15 @@ export type BackTo = 'home' | 'history';
  */
 export type MessageTime = 'off' | 'runs' | 'all';
 
+/**
+ * Which sub-agents the strip above a conversation carries.
+ *
+ *   off       none; the Task rows in the transcript still open them
+ *   running   only the ones still working, with the finished behind a count
+ *   all       every sub-agent this session has ever spawned
+ */
+export type SubagentStrip = 'off' | 'running' | 'all';
+
 /** Which clock a time is written on, when the locale's own is not wanted. */
 export type ClockFormat = 'auto' | 'h24' | 'h12';
 
@@ -177,6 +186,8 @@ export interface Prefs {
 	messageTicks: boolean;
 	/** How often a bubble carries the time it was written. */
 	messageTime: MessageTime;
+	/** Which sub-agents appear in the strip above a conversation. */
+	subagentStrip: SubagentStrip;
 	/** Which clock that time is written on; 'auto' follows the device. */
 	clockFormat: ClockFormat;
 	/** The herdr tab name on list rows and in the sidebar. */
@@ -265,6 +276,7 @@ export const DEFAULTS: Prefs = {
 	appBadge: true,
 	messageTicks: true,
 	messageTime: 'runs',
+	subagentStrip: 'running',
 	clockFormat: 'auto',
 	showTabName: true,
 	showBranches: true,
@@ -309,6 +321,7 @@ const THEMES: Theme[] = ['light', 'dark', 'system'];
 const STRIPS: KeyStripMode[] = ['always', 'peek'];
 const BACKS: BackTo[] = ['home', 'history'];
 const MESSAGE_TIMES: MessageTime[] = ['off', 'runs', 'all'];
+const SUBAGENT_STRIPS: SubagentStrip[] = ['off', 'running', 'all'];
 const CLOCKS: ClockFormat[] = ['auto', 'h24', 'h12'];
 const ACCENTS: HarnessAccent[] = ['edge', 'tint', 'fill', 'off'];
 const INDICATORS: StatusIndicators[] = ['dot', 'symbol', 'text'];
@@ -414,6 +427,7 @@ export function normalisePrefs(raw: unknown): Prefs {
 		appBadge: bool(stored.appBadge, DEFAULTS.appBadge),
 		messageTicks: bool(stored.messageTicks, DEFAULTS.messageTicks),
 		messageTime: pick(stored.messageTime, MESSAGE_TIMES, DEFAULTS.messageTime),
+		subagentStrip: pick(stored.subagentStrip, SUBAGENT_STRIPS, DEFAULTS.subagentStrip),
 		clockFormat: pick(stored.clockFormat, CLOCKS, DEFAULTS.clockFormat),
 		showTabName: bool(stored.showTabName, DEFAULTS.showTabName),
 		showBranches: bool(stored.showBranches, DEFAULTS.showBranches),

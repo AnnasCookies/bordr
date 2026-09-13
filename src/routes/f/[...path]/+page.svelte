@@ -1,4 +1,5 @@
 <script lang="ts">
+	import NetDot from '$lib/components/net-dot.svelte';
 	import { track } from '$lib/pending.svelte';
 	import { resolve } from '$app/paths';
 	import type { ResolvedPathname } from '$app/types';
@@ -221,6 +222,9 @@
 						>{#if i < crumbs.length - 1}<span class="text-faint">/</span>{/if}{/each}
 				{/if}
 			</span>
+			<!-- Every screen says whether the app can still reach anything. This
+			     one and search were the two that never did. -->
+			<NetDot />
 		</div>
 	</header>
 

@@ -6,7 +6,11 @@ test('a long draft does not sit under the scrollbar', async ({ page }) => {
 	await link.waitFor({ state: 'attached' });
 	await page.goto((await link.getAttribute('href')) as string);
 
-	const box = page.getByPlaceholder(/Type a reply|Or type a reply|Runs on the host/);
+	// By its name, not its placeholder: the placeholder moves with the pane's
+	// state — "Runs on the host…" for a shell, "Type into the question…" when a
+	// picker is on screen — so matching it made the test depend on which agent
+	// happened to be first in the list and what it was doing.
+	const box = page.getByRole('textbox', { name: 'Message' });
 	await box.fill(Array.from({ length: 14 }, (_, i) => `line ${i} of a long draft`).join('\n'));
 
 	const m = await box.evaluate((el) => {

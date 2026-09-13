@@ -398,10 +398,13 @@
 	 * pushing the transcript down, with nothing left to say. The finished ones
 	 * are still one tap away behind their count.
 	 */
-	const running = $derived(subs.filter((a) => !a.done));
-	const finished = $derived(subs.filter((a) => a.done));
+	const strip = $derived(prefs.value.subagentStrip);
+	const running = $derived(strip === 'off' ? [] : subs.filter((a) => !a.done));
+	const finished = $derived(strip === 'off' ? [] : subs.filter((a) => a.done));
 	let showFinished = $state(false);
-	const shownSubs = $derived(showFinished ? [...running, ...finished] : running);
+	// 'all' is the old behaviour, kept for anyone who wants it: every sub-agent
+	// the session ever spawned, with no count to expand.
+	const shownSubs = $derived(strip === 'all' || showFinished ? [...running, ...finished] : running);
 	const openSubAgent = $derived(subs.find((a) => a.id === openSub) ?? null);
 
 	/**
@@ -2169,7 +2172,7 @@
 							<span class="font-mono text-[10px] text-faint">{sub.entries}</span>
 						</button>
 					{/each}
-					{#if finished.length > 0}
+					{#if finished.length > 0 && strip !== 'all'}
 						<button
 							class="shrink-0 rounded-full px-2 py-1 font-mono text-[10.5px] text-faint"
 							onclick={() => (showFinished = !showFinished)}
@@ -2833,12 +2836,20 @@
 							of every wrapped line. A reserved gutter does nothing about an
 							overlay; padding is what moves the text out from under it.
 						-->
+						<!--
+							`aria-label` as well as the placeholder. The placeholder says what
+							this box does RIGHT NOW — run a command on the host, answer the
+							question on screen — which is useful and is exactly why it cannot
+							be the name: it moves with the pane's state, and a placeholder
+							disappears the moment you type into it.
+						-->
 						<textarea
 							bind:this={textarea}
 							bind:value={draft}
 							onkeydown={onKeydown}
 							onpaste={onPaste}
 							rows="1"
+							aria-label="Message"
 							placeholder={isShell
 								? 'Runs on the host…'
 								: detail.picker

@@ -24,6 +24,7 @@
 		BackTo,
 		ClockFormat,
 		MessageTime,
+		SubagentStrip,
 		FillStyle,
 		SoundAlerts,
 		GradientEnd,
@@ -41,6 +42,7 @@
 	import Bubble from '$lib/components/bubble.svelte';
 	import BubbleMeta from '$lib/components/bubble-meta.svelte';
 	import Ticks from '$lib/components/ticks.svelte';
+	import Spinner from '$lib/components/spinner.svelte';
 	import { clockTime } from '$lib/clock-time';
 	// Aliased: `ToolDetail` is already the name of the preference type.
 	import ToolDetailView from '$lib/components/tool-detail.svelte';
@@ -191,11 +193,35 @@
 		prefs.set('agentBorder', p.agent);
 	}
 
+	/**
+	 * Whether the install banner has been dismissed on this browser.
+	 *
+	 * Read straight from the key the banner writes rather than through `prefs`:
+	 * it is a fact about this browser, not a preference, and it has no business
+	 * in an exported settings object.
+	 */
+	const INSTALL_DISMISSED = 'bordr-install-dismissed';
+	let installHidden = $state(false);
+
+	function showInstall() {
+		try {
+			localStorage.removeItem(INSTALL_DISMISSED);
+		} catch {
+			// Storage blocked; the banner was never hidden in the first place.
+		}
+		installHidden = false;
+	}
+
 	let pushState = $state<PushState>('unknown');
 	let pushMessage = $state<string | null>(null);
 	let testState = $state<'idle' | 'sending' | 'sent' | 'failed'>('idle');
 
 	onMount(async () => {
+		try {
+			installHidden = Number(localStorage.getItem(INSTALL_DISMISSED)) > 0;
+		} catch {
+			installHidden = false;
+		}
 		pushState = await checkPush();
 	});
 
@@ -621,6 +647,32 @@
 		<span class="self-center font-mono text-[10.5px] text-muted">
 			{prefs.value.theme === 'system' ? 'follows the device' : `always ${prefs.value.theme}`}
 		</span>
+	</div>
+{/snippet}
+
+{#snippet subagentPreview()}
+	<div class="flex items-center gap-1.5 overflow-hidden rounded-lg bg-page p-2">
+		{#if prefs.value.subagentStrip === 'off'}
+			<span class="text-[12px] text-muted">No strip; Task rows still open them.</span>
+		{:else}
+			<span
+				class="flex shrink-0 items-center gap-1.5 rounded-full border border-edge px-2 py-1 text-[11px]"
+			>
+				<Spinner size={10} label="running" />
+				<span class="font-mono text-working">Explore</span>
+				<span class="text-muted">find the callers</span>
+			</span>
+			{#if prefs.value.subagentStrip === 'all'}
+				<span
+					class="flex shrink-0 items-center gap-1.5 rounded-full border border-hairline px-2 py-1 text-[11px] opacity-60"
+				>
+					<span class="font-mono text-muted">general-purpose</span>
+					<span class="text-muted">research</span>
+				</span>
+			{:else}
+				<span class="shrink-0 font-mono text-[10.5px] text-faint">+2 done</span>
+			{/if}
+		{/if}
 	</div>
 {/snippet}
 
@@ -1403,6 +1455,23 @@
 							>
 								{#snippet preview()}{@render clockPreview()}{/snippet}
 							</SettingRow>
+							<SettingRow
+								label="Sub-agents above the conversation"
+								value={prefs.value.subagentStrip}
+								options={[
+									{ v: 'off' as SubagentStrip, l: 'Off' },
+									{ v: 'running' as SubagentStrip, l: 'Running' },
+									{ v: 'all' as SubagentStrip, l: 'All' }
+								]}
+								onchange={(v) => prefs.set('subagentStrip', v)}
+							>
+								{#snippet preview()}{@render subagentPreview()}{/snippet}
+							</SettingRow>
+							<p class="px-3.5 pb-2 text-[12px] text-muted">
+								A Task spawns an agent with its own transcript. Running shows only the ones still
+								working and folds the rest behind a count; the Task rows in the transcript open any
+								of them either way.
+							</p>
 							<ToggleRow
 								label="Group tool calls"
 								hint="A run of turns that only ran tools folds into one row you can open. A single call is left alone."
@@ -1492,6 +1561,26 @@
 						<div
 							class="divide-y divide-black/[.06] overflow-hidden rounded-xl border border-hairline bg-card dark:divide-white/[.06]"
 						>
+							<!--
+								Dismissing the install banner hides it for sixty days, and there was
+								no way back to it — the one control in the app with no route to undo
+								it. Only shown once it has actually been dismissed.
+							-->
+							{#if installHidden}
+								<button
+									class="flex w-full items-center gap-3 px-3.5 py-3 text-left"
+									onclick={showInstall}
+								>
+									<span class="min-w-0 flex-1">
+										<span class="block text-[15px]">Offer to install bordr again</span>
+										<span class="block text-[12px] text-muted"
+											>The badge, the share sheet and answer buttons on a notification only work for
+											an installed app.</span
+										>
+									</span>
+									<span class="shrink-0 text-[13px] text-working">Show</span>
+								</button>
+							{/if}
 							<ToggleRow
 								label="Count waiting agents on the app icon"
 								hint="A badge on the installed app, like a mail app. A notification cannot still be there tomorrow; this can. Chrome on Android has no badging API at all, and on macOS it needs notification permission as well."
