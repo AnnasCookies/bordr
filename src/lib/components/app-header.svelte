@@ -64,7 +64,7 @@
 	pixels off the edge of the screen and reading as cropped.
 -->
 <div
-	class="flex gap-2 px-2 pt-[max(0.625rem,env(safe-area-inset-top))] pb-1.5 [@media(max-height:430px)]:pb-0.5"
+	class="flex gap-2 px-2 pt-[max(0.625rem,env(safe-area-inset-top))] pb-0.5 [@media(max-height:430px)]:pb-0"
 >
 	<!--
 		The menu and the brand are one control group, so they get their own

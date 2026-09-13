@@ -170,7 +170,7 @@
 		Top only — the active tab's underline is the bottom edge and belongs
 		against the pane strip it labels.
 	-->
-	<div class="flex items-stretch gap-1 border-b border-hairline px-2 pt-1.5">
+	<div class="flex items-stretch gap-1 border-b border-hairline px-2 pt-0.5">
 		<div
 			class="flex min-w-0 flex-1 gap-1 overflow-x-auto"
 			role="tablist"
