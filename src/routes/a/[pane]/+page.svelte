@@ -8,7 +8,13 @@
 	import { shrinkImage } from '$lib/shrink-image';
 	import { prefs } from '$lib/prefs.svelte';
 	import { agentTitle, collapseHome, flatOrder } from '$lib/grouping';
-	import { decideSwipe, inEdgeZone, inHorizontalScroller, neighbourPane } from '$lib/swipe';
+	import {
+		decideSwipe,
+		dragTarget,
+		inEdgeZone,
+		inHorizontalScroller,
+		neighbourPane
+	} from '$lib/swipe';
 	import {
 		CHECK_INK,
 		CHECK_MARK,
@@ -2035,8 +2041,10 @@
 	 */
 	const revealing = $derived.by(() => {
 		if (!dragging || Math.abs(dragX) < 4) return null;
-		const to = neighbourPane(swipeOrder, detail.paneId, dragX < 0 ? 'next' : 'previous');
-		if (!to || to === detail.paneId) return null;
+		// `dragX` keeps the sign of the finger's travel, so this names the pane
+		// `decideSwipe` will commit to on release — one mapping, in `$lib/swipe`.
+		const to = dragTarget(swipeOrder, detail.paneId, dragX);
+		if (!to) return null;
 		return (
 			store.agents.find((a) => a.paneId === to) ?? {
 				paneId: to,
@@ -2107,8 +2115,7 @@
 		// anything; it is the wrong one in the middle, where the drag has to
 		// open a gap wide enough to actually read the card underneath before
 		// deciding to let go.
-		const reachable = neighbourPane(swipeOrder, detail.paneId, dx < 0 ? 'next' : 'previous');
-		dragX = dx * (reachable && reachable !== detail.paneId ? 0.66 : 0.33);
+		dragX = dx * (dragTarget(swipeOrder, detail.paneId, dx) ? 0.66 : 0.33);
 	}
 
 	function onTouchCancel() {

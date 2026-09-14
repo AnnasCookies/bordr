@@ -1,7 +1,30 @@
 import { describe, expect, it } from 'vitest';
-import { decideSwipe, inEdgeZone, neighbourPane, SWIPE } from './swipe';
+import { decideSwipe, dragTarget, inEdgeZone, neighbourPane, SWIPE } from './swipe';
 
 const WIDE = 402;
+
+describe('dragTarget', () => {
+	/**
+	 * The preview card must name the pane letting go lands on. Three agents,
+	 * because with two the ring makes next and previous the same pane and the
+	 * card was right by accident.
+	 */
+	it('previews the pane the finished gesture commits to', () => {
+		const ring = ['a', 'b', 'c'];
+		for (const dx of [120, -120]) {
+			const direction = decideSwipe(dx, 0, 200, WIDE);
+			if (!direction) throw new Error(`a ${dx}px drag should be a swipe`);
+			expect(dragTarget(ring, 'b', dx)).toBe(neighbourPane(ring, 'b', direction));
+		}
+		expect(dragTarget(ring, 'b', 120)).toBe('c');
+		expect(dragTarget(ring, 'b', -120)).toBe('a');
+	});
+
+	it('has nothing to preview when there is nowhere to go', () => {
+		expect(dragTarget(['a'], 'a', 80)).toBeNull();
+		expect(dragTarget(['a', 'b'], 'zz', 80)).toBeNull();
+	});
+});
 
 describe('decideSwipe', () => {
 	it('reads a clear rightward drag as the next agent', () => {
