@@ -2777,12 +2777,17 @@
 							{#each rows as row (row.key)}
 								{#if row.kind === 'pending'}
 									{@const sent = row.sent}
-									{@const verdict = queueVerdict(sent.text, detail.queue ?? [])}
+									<!--
+										`sent.at`: the queue is keyed by text, and a record from before
+										this send is an earlier message with the same words.
+									-->
+									{@const verdict = queueVerdict(sent.text, detail.queue ?? [], sent.at)}
 									{@const held =
 										sent.state !== 'sending' &&
 										(verdict !== null
 											? verdict === 'taken'
 											: onScreen(sent.text, detail.screenTail ?? ''))}
+									{@const tick = sent.state === 'sending' ? 'sending' : held ? 'read' : 'sent'}
 									{#if prefs.value.bubbles}
 										<div class="flex justify-end {tight(row.run)}">
 											<Bubble
@@ -2810,11 +2815,7 @@
 													>
 												{/if}<span class="whitespace-pre-wrap">{sent.text.trimEnd()}</span>
 												{#snippet meta()}
-													<BubbleMeta
-														at={sent.at}
-														run={row.run}
-														state={sent.state === 'sending' ? 'sending' : held ? 'read' : 'sent'}
-													/>
+													<BubbleMeta at={sent.at} run={row.run} state={tick} />
 												{/snippet}
 											</Bubble>
 										</div>
@@ -2830,6 +2831,15 @@
 												{#if sent.question}<span class="block text-[12.5px] font-normal text-muted"
 														>{sent.question}</span
 													>{/if}{sent.text.trimEnd()}
+											</span>
+											<!--
+												The same mark the bubble carries. Bubbles are off by default,
+												and this row showed no delivery status at all once the old
+												"queued behind this turn" / "sent" line went: a send could not
+												be told from one that never left.
+											-->
+											<span class="shrink-0 self-end">
+												<BubbleMeta at={sent.at} run={row.run} state={tick} />
 											</span>
 										</div>
 									{/if}
