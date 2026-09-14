@@ -235,6 +235,20 @@
 	.thinking :global(pre) {
 		font-style: normal;
 	}
+	/* A thinking-only turn already sits in the transcript's row layout. Do not
+	   add an inner top and bottom gap as well; margins remain where thinking
+	   shares a turn with prose or a tool. */
+	.thinking:first-child {
+		margin-top: 0;
+	}
+	.thinking:last-child {
+		margin-bottom: 0;
+	}
+	/* Pi can emit several thinking blocks in one turn. Their adjoining margins
+	   would otherwise make each fragment look like a separate message. */
+	.thinking + .thinking {
+		margin-top: -0.2em;
+	}
 
 	.fold {
 		margin: 0.35em 0;

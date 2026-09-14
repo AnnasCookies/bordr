@@ -28,6 +28,7 @@
 	import {
 		messageSegments,
 		hasTodoPlan,
+		onlyThinking,
 		onlyToolWork,
 		proseBlocks,
 		workBlocks,
@@ -715,7 +716,14 @@
 	}
 
 	type Row =
-		| { kind: 'message'; message: (typeof visibleMessages)[number]; key: string; run: RunPos }
+		| {
+				kind: 'message';
+				message: (typeof visibleMessages)[number];
+				key: string;
+				run: RunPos;
+				/** Pull this row towards the thinking-only row directly above it. */
+				thinkingJoin: boolean;
+		  }
 		| { kind: 'pending'; sent: Pending; key: string; run: RunPos }
 		| {
 				kind: 'tools';
@@ -741,6 +749,29 @@
 			row.message.role === 'assistant' &&
 			prose(row.message).length === 0 &&
 			onlyToolWork(row.message.blocks)
+		);
+	}
+
+	/** A row whose only VISIBLE content is thinking.
+	 *
+	 * Pi commonly records one thinking block beside one tool call. When tools
+	 * are hidden that is still a thinking-only row on screen, and it should join
+	 * the next one. A todo remains visible regardless of the tools switch, so it
+	 * must keep the normal gap.
+	 */
+	function thinkingOnly(row: Row): boolean {
+		if (
+			row.kind !== 'message' ||
+			row.message.role !== 'assistant' ||
+			!prefs.value.showThinking ||
+			prose(row.message).length > 0 ||
+			hasTodoPlan(row.message.blocks)
+		) {
+			return false;
+		}
+		const blocks = work(row.message);
+		return (
+			blocks.some((block) => block.kind === 'thinking') && (!showTools || onlyThinking(blocks))
 		);
 	}
 
@@ -803,7 +834,8 @@
 			kind: 'message' as const,
 			message,
 			key: `m${base + i}`,
-			run: 'only' as RunPos
+			run: 'only' as RunPos,
+			thinkingJoin: false
 		}));
 		// Slot each queued prompt where it was actually sent, not at the end.
 		// Appending piled every unclaimed prompt below whatever the agent said
@@ -818,6 +850,25 @@
 			let i = out.findIndex((row) => at(row) > sent.at);
 			if (i < 0) i = out.length;
 			out.splice(i, 0, { kind: 'pending', sent, key: `p${sent.id}`, run: 'only' as RunPos });
+		}
+
+		// Join adjacent VISIBLE thinking-only rows. A hidden tool-only turn is not
+		// a gap on screen and must not break the stack; a visible tool or reply is.
+		let previousThinking = false;
+		for (const row of out) {
+			if (row.kind === 'message' && thinkingOnly(row)) {
+				row.thinkingJoin = previousThinking;
+				previousThinking = true;
+				continue;
+			}
+			const hiddenAssistantWork =
+				row.kind === 'message' &&
+				row.message.role === 'assistant' &&
+				!row.message.text &&
+				prose(row.message).length === 0 &&
+				!hasTodoPlan(row.message.blocks) &&
+				!optionalWorkVisible(row.message);
+			if (!hiddenAssistantWork) previousThinking = false;
 		}
 
 		// Second pass, once the list is whole: a row's place in its run depends
@@ -2897,7 +2948,7 @@
 										the picture went with it whenever the work was hidden. An
 										image is something the agent SAID, not work it did.
 									-->
-										<div class="flex gap-2 {tight(row.run)}">
+										<div class="flex gap-2 {tight(row.run)} {row.thinkingJoin ? '-mt-2' : ''}">
 											{#if !prefs.value.bubbles}
 												<span
 													class="shrink-0 font-mono text-[13px] leading-[1.7] {harnessText(
