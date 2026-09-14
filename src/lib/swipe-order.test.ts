@@ -7,7 +7,12 @@ const ORDER = ['a1', 'b1', 'c1', 'd1'];
 describe('currentTabPanes', () => {
 	// Tab one is a split holding p1 and p2; tab two holds p3 alone.
 	const WORKSPACES = [
-		{ tabs: [{ panes: [{ paneId: 'w1:p1' }, { paneId: 'w1:p2' }] }, { panes: [{ paneId: 'w1:p3' }] }] },
+		{
+			tabs: [
+				{ panes: [{ paneId: 'w1:p1' }, { paneId: 'w1:p2' }] },
+				{ panes: [{ paneId: 'w1:p3' }] }
+			]
+		},
 		{ tabs: [{ panes: [{ paneId: 'w2:p1' }] }] }
 	];
 
@@ -25,7 +30,9 @@ describe('currentTabPanes', () => {
 	/** Ids are opaque: a machine-prefixed id is a different pane, not a match. */
 	it('compares ids whole', () => {
 		expect(currentTabPanes(WORKSPACES, 'p1')).toEqual([]);
-		expect(currentTabPanes([{ tabs: [{ panes: [{ paneId: 'box:w1:p1' }] }] }], 'w1:p1')).toEqual([]);
+		expect(currentTabPanes([{ tabs: [{ panes: [{ paneId: 'box:w1:p1' }] }] }], 'w1:p1')).toEqual(
+			[]
+		);
 	});
 
 	/**
