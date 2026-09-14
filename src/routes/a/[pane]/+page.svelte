@@ -1964,9 +1964,16 @@
 
 	function ownsPickerKey(target: EventTarget | null, key: string): boolean {
 		if (!(target instanceof Element)) return false;
-		// Text fields need their characters and arrows. A focused button or link
-		// owns Enter too, or the global handler and its native click both fire.
-		if (target.closest('input, textarea, select, [contenteditable="true"]')) return true;
+		const editable = target.closest('input, textarea, select, [contenteditable="true"]');
+		if (editable) {
+			// Claude leaves focus in the composer when its picker appears. An empty
+			// composer must therefore behave like the terminal: arrows, digits and
+			// Enter drive the question. Once the user has typed anything it becomes
+			// text again, and none of those keys may steal or submit their draft.
+			return editable !== textarea || draft.length > 0;
+		}
+		// A focused button or link owns Enter, or the global handler and its native
+		// click both fire.
 		return key === 'Enter' && Boolean(target.closest('button, a'));
 	}
 
@@ -2009,8 +2016,10 @@
 			}
 			pickerKeyQueue = pickerKeyQueue.then(() => sendKeys([shortcut.key]));
 		};
-		window.addEventListener('keydown', onPickerKey);
-		return () => window.removeEventListener('keydown', onPickerKey);
+		// Capture first so Enter cannot be taken by the composer's normal send rule
+		// before a focused Claude picker sees it.
+		window.addEventListener('keydown', onPickerKey, true);
+		return () => window.removeEventListener('keydown', onPickerKey, true);
 	});
 
 	const KEY_STRIP: Array<{ k: string; l: string }> = [
@@ -2209,6 +2218,9 @@
 	 * so losing the newline key to "send" would be the worse default.
 	 */
 	function onKeydown(event: KeyboardEvent) {
+		// A desktop picker handles its terminal keys during capture. Do not turn
+		// its Enter into an empty composer send as the event reaches the textarea.
+		if (event.defaultPrevented) return;
 		// Bordr owns the slash popup because a complete `agent.prompt` never
 		// exposes Pi's character-by-character completer. Match its useful keys.
 		if (slashQuery && suggestions.length > 0) {
