@@ -1712,8 +1712,8 @@
 								{#snippet preview()}{@render messageTimePreview()}{/snippet}
 							</SettingRow>
 							<p class="px-3.5 pb-2 text-[12px] text-muted">
-								Per run stamps only the last bubble of a run from the same speaker: five replies
-								inside the same minute get one time, not five.
+								Per run stamps only the last message in a run from the same speaker: five replies
+								inside the same minute get one time, not five. This works with bubbles on or off.
 							</p>
 							<SettingRow
 								label="Clock"

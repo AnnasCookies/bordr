@@ -258,7 +258,7 @@ export interface Prefs {
 	 */
 	appBadge: boolean;
 	messageTicks: boolean;
-	/** How often a bubble carries the time it was written. */
+	/** How often a message carries the time it was written. */
 	messageTime: MessageTime;
 	/** Which sub-agents appear in the strip above a conversation. */
 	subagentStrip: SubagentStrip;

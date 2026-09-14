@@ -53,7 +53,6 @@
 	import WorktreeSheet from '$lib/components/worktree-sheet.svelte';
 	import SubagentSheet from '$lib/components/subagent-sheet.svelte';
 	import Spinner from '$lib/components/spinner.svelte';
-	import Ticks from '$lib/components/ticks.svelte';
 	import BubbleMeta from '$lib/components/bubble-meta.svelte';
 	import { track } from '$lib/pending.svelte';
 	import { nextFollowing } from '$lib/follow';
@@ -2786,6 +2785,12 @@
 														>{sent.question}</span
 													>{/if}{sent.text.trimEnd()}
 											</span>
+											<BubbleMeta
+												at={sent.at}
+												run={row.run}
+												state={sent.state === 'sending' ? 'sending' : held ? 'read' : 'sent'}
+												row
+											/>
 										</div>
 									{/if}
 								{:else if row.kind === 'tools'}
@@ -2870,9 +2875,7 @@
 														plain
 													/>
 												</span>
-												{#if prefs.value.messageTicks}
-													<span class="mt-[3px] shrink-0 text-faint"><Ticks state="read" /></span>
-												{/if}
+												<BubbleMeta at={message.at ?? 0} run={row.run} state="read" row />
 											</div>
 										{/if}
 									{:else if message.text || prose(message).length > 0 || hasTodoPlan(message.blocks) || (showWork && (message.blocks?.length ?? 0) > 0)}
@@ -2949,6 +2952,9 @@
 													</div>
 												{/if}
 											</div>
+											{#if !prefs.value.bubbles}
+												<BubbleMeta at={message.at ?? 0} run={row.run} row />
+											{/if}
 										</div>
 									{/if}
 								{/if}
