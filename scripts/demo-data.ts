@@ -401,9 +401,15 @@ export async function stub(page: Page, initial: Phase = 'blocked') {
 	await page.route(/\/api\/layout/, (route) => route.fulfill(json({ ok: true })));
 	await page.route(/\/api\/tabs/, (route) => route.fulfill(json({ ok: true })));
 	// Answering must succeed, or the recording shows "no picker on screen".
-	await page.route(/\/api\/agents\/[^/]+\/(answer|prompt|keys|type)/, (route) =>
-		route.fulfill(json({ ok: true, verified: true }))
-	);
+	//
+	// And it must take a moment. Answering is a round trip to the host, which
+	// is the whole reason the option you pressed marks itself while it is in
+	// flight; an instant stub would leave that state on screen for no frames at
+	// all and the recording would not show the thing it is demonstrating.
+	await page.route(/\/api\/agents\/[^/]+\/(answer|prompt|keys|type)/, async (route) => {
+		await new Promise((r) => setTimeout(r, 700));
+		await route.fulfill(json({ ok: true, verified: true }));
+	});
 	await page.route(/\/api\/agents\/[^/]+\/commands/, (route) =>
 		route.fulfill(json({ agent: 'claude', commands: COMMANDS }))
 	);

@@ -139,9 +139,16 @@ async function moveTo(target: import('@playwright/test').Locator, settle = 200) 
 /** Point at something, press it, then actually click it. */
 async function tap(target: import('@playwright/test').Locator, after = 700) {
 	await moveTo(target);
+	const box = await target.boundingBox();
+	if (!box) throw new Error('nothing to press');
 	await page.evaluate(() => (window as never as { __demo: { press(): void } }).__demo.press());
-	await page.waitForTimeout(150);
-	await target.click();
+	// Held, not clicked. `click()` presses and releases in one go, so at 9fps
+	// the app's own :active state — the thing that tells you a tap landed —
+	// exists for less than a frame and never reaches the recording.
+	await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
+	await page.mouse.down();
+	await page.waitForTimeout(260);
+	await page.mouse.up();
 	await beat(after);
 }
 
