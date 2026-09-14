@@ -38,6 +38,25 @@ test('Enter in the composer makes a newline instead of sending', async ({ page }
 	expect(await box.inputValue()).toBe('first line\nsecond line');
 });
 
+test('Tab completes the highlighted slash command', async ({ page }) => {
+	const href = await firstPane(page);
+	if (!href) test.skip(true, 'no agents running');
+	await page.goto(href as string);
+
+	const box = page.getByRole('textbox', { name: 'Message' });
+	await box.fill('/mo');
+	const option = page.locator('[role="option"][aria-selected="true"]');
+	try {
+		await option.waitFor({ state: 'visible', timeout: 10_000 });
+	} catch {
+		test.skip(true, 'active harness has no matching slash command');
+	}
+	const command = ((await option.locator('span').first().textContent()) ?? '').trim();
+	await box.press('Tab');
+	expect(await box.inputValue()).toBe(`${command} `);
+	await expect(page.getByRole('listbox', { name: 'Slash commands' })).toBeHidden();
+});
+
 test('the conversation never scrolls horizontally', async ({ page }) => {
 	const href = await firstPane(page);
 	if (!href) test.skip(true, 'no agents running');

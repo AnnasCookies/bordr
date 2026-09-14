@@ -250,11 +250,23 @@
 	let commandList = $state<SlashCommand[] | null>(null);
 	let commandsPane = '';
 	let commandsLoading = false;
+	let commandIndex = $state(0);
+	let previousSlashQuery: string | null = null;
+	let commandBox = $state<HTMLDivElement | undefined>();
 	/** The draft while it is still a single slash-word: the query for the list. */
 	const slashQuery = $derived(/^\/\S*$/.test(draft) ? draft : null);
 	const suggestions = $derived(
 		slashQuery && commandList ? rankCommands(commandList, slashQuery) : []
 	);
+	const selectedCommand = $derived(suggestions[commandIndex] ?? suggestions[0]);
+	$effect(() => {
+		const query = slashQuery;
+		if (query !== previousSlashQuery) {
+			previousSlashQuery = query;
+			commandIndex = 0;
+		}
+		if (suggestions.length > 0 && commandIndex >= suggestions.length) commandIndex = 0;
+	});
 	$effect(() => {
 		if (!slashQuery) return;
 		const pane = detail.paneId;
@@ -279,6 +291,17 @@
 	function pickCommand(command: SlashCommand) {
 		draft = `/${command.name} `;
 		textarea?.focus();
+	}
+
+	/** Move the highlighted slash command and keep it inside the scroll box. */
+	function moveCommand(by: number) {
+		if (suggestions.length === 0) return;
+		commandIndex = (commandIndex + by + suggestions.length) % suggestions.length;
+		requestAnimationFrame(() => {
+			commandBox
+				?.querySelector<HTMLElement>('[aria-selected="true"]')
+				?.scrollIntoView({ block: 'nearest' });
+		});
 	}
 	let busy = $state(false);
 	/**
@@ -2025,6 +2048,21 @@
 	 * so losing the newline key to "send" would be the worse default.
 	 */
 	function onKeydown(event: KeyboardEvent) {
+		// Bordr owns the slash popup because a complete `agent.prompt` never
+		// exposes Pi's character-by-character completer. Match its useful keys.
+		if (slashQuery && suggestions.length > 0) {
+			if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
+				event.preventDefault();
+				moveCommand(event.key === 'ArrowDown' ? 1 : -1);
+				return;
+			}
+			if (event.key === 'Tab' && !event.shiftKey && selectedCommand) {
+				event.preventDefault();
+				pickCommand(selectedCommand);
+				return;
+			}
+		}
+
 		if (event.key !== 'Enter') return;
 		const modifier = event.metaKey || event.ctrlKey;
 		const shouldSend = prefs.value.enterSends ? !event.shiftKey && !modifier : modifier;
@@ -3208,6 +3246,7 @@
 
 					{#if slashQuery}
 						<div
+							bind:this={commandBox}
 							class="mb-2 max-h-[45vh] overflow-y-auto rounded-xl border border-edge bg-card"
 							role="listbox"
 							aria-label="Slash commands"
@@ -3217,12 +3256,16 @@
 							{:else if suggestions.length === 0}
 								<p class="px-3 py-2 text-[12.5px] text-muted">Nothing matches {draft}.</p>
 							{:else}
-								{#each suggestions as command (command.name)}
+								{#each suggestions as command, i (command.name)}
 									<button
 										type="button"
 										role="option"
-										aria-selected="false"
-										class="flex w-full items-baseline gap-2 border-b border-hairline px-3 py-2 text-left last:border-b-0"
+										aria-selected={i === commandIndex}
+										class="flex w-full items-baseline gap-2 border-b border-hairline px-3 py-2 text-left last:border-b-0 {i ===
+										commandIndex
+											? 'bg-working-bg'
+											: ''}"
+										onpointerenter={() => (commandIndex = i)}
 										onclick={() => pickCommand(command)}
 									>
 										<span class="shrink-0 font-mono text-[13px] text-working">/{command.name}</span>
