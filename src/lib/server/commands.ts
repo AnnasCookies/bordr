@@ -1,6 +1,6 @@
 import { execFile } from 'node:child_process';
 import { mkdtemp, readdir, readFile, rm, stat, writeFile } from 'node:fs/promises';
-import { homedir, tmpdir, userInfo } from 'node:os';
+import { homedir, tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { BUILTIN_COMMANDS } from './commands-builtin';
 import type { SlashCommand } from '$lib/commands';
@@ -33,12 +33,31 @@ export function resetCommandCache(): void {
 	cache.clear();
 }
 
-export async function commandsFor(agent: string, cwd: string): Promise<SlashCommand[]> {
-	const key = `${agent}\0${cwd}`;
+export interface CommandOptions {
+	/**
+	 * The pane lives on another machine.
+	 *
+	 * Its cwd then names a directory on THAT machine, reported by that
+	 * machine's herdr — but everything here runs on this host. Using it would
+	 * let a compromised remote machine pick the local directory omp is started
+	 * in, and the local project files that get read. So a remote pane gets no
+	 * live probe and no project-directory scan: the built-in snapshot and this
+	 * host's user-level files, the same fallback a failed probe gets.
+	 */
+	remote?: boolean;
+}
+
+export async function commandsFor(
+	agent: string,
+	cwd: string,
+	options: CommandOptions = {}
+): Promise<SlashCommand[]> {
+	const remote = options.remote === true;
+	const key = `${agent}\0${cwd}\0${remote}`;
 	const hit = cache.get(key);
 	if (hit && Date.now() - hit.at < CACHE_MS) return hit.value;
 
-	const installed = await discover(agent, cwd);
+	const installed = await discover(agent, cwd, remote);
 	const hasLiveBuiltins =
 		agent === 'omp' && installed.some((command) => command.source === 'builtin');
 	const builtin = hasLiveBuiltins
@@ -65,15 +84,19 @@ export async function commandsFor(agent: string, cwd: string): Promise<SlashComm
 const HOME = () => homedir();
 const AGENTS_SKILLS = () => join(HOME(), '.agents', 'skills');
 
-async function discover(agent: string, cwd: string): Promise<SlashCommand[]> {
+async function discover(agent: string, cwd: string, remote: boolean): Promise<SlashCommand[]> {
+	/** Scans of the pane's own project directory, which only means something locally. */
+	const project = (parts: Array<Promise<SlashCommand[]>>) => (remote ? [] : parts);
 	switch (agent) {
 		case 'claude': {
 			const configDir = process.env.CLAUDE_CONFIG_DIR || join(HOME(), '.claude');
 			return flatten([
 				skills(join(configDir, 'skills')),
 				commands(join(configDir, 'commands')),
-				skills(join(cwd, '.claude', 'skills')),
-				commands(join(cwd, '.claude', 'commands')),
+				...project([
+					skills(join(cwd, '.claude', 'skills')),
+					commands(join(cwd, '.claude', 'commands'))
+				]),
 				plugins(join(configDir, 'plugins', 'installed_plugins.json'))
 			]);
 		}
@@ -88,14 +111,14 @@ async function discover(agent: string, cwd: string): Promise<SlashCommand[]> {
 			]);
 		}
 		case 'omp': {
-			const live = await probeOmpCommands(cwd);
+			const live = remote ? [] : await probeOmpCommands(cwd);
 			if (live.length > 0) return live;
 			const own = join(HOME(), '.omp', 'agent');
 			return flatten([
 				skills(AGENTS_SKILLS(), 'skill:'),
 				skills(join(own, 'skills'), 'skill:'),
 				skills(join(own, 'managed-skills'), 'skill:'),
-				commands(join(cwd, '.omp', 'commands')),
+				...project([commands(join(cwd, '.omp', 'commands'))]),
 				commands(join(own, 'commands')),
 				prompts(join(own, 'prompts')),
 				npmPackages(join(own, 'npm', 'node_modules'))
@@ -268,15 +291,22 @@ export function parseOmpCommandProbe(output: string): SlashCommand[] {
 	return commands;
 }
 
+/**
+ * Run omp itself, with no shell in between.
+ *
+ * It used to go through `$SHELL -ic 'exec omp "$@"'` to pick up the login
+ * PATH. That put an interactive shell's startup files between bordr and a
+ * process started in an agent-reported directory, and on a fish login shell
+ * it never worked at all: fish rejects `"$@"`, so the probe always failed and
+ * the fallback always ran. Set OMP_BIN when omp is not on the service's PATH.
+ */
 function runOmpProbe(extension: string, cwd: string): Promise<string> {
 	const args = ['--no-session', '--extension', extension];
-	const configured = process.env.OMP_BIN?.trim();
-	const executable = configured || userInfo().shell || '/bin/sh';
-	const executableArgs = configured ? args : ['-ic', 'exec omp "$@"', 'bordr-omp-probe', ...args];
+	const executable = process.env.OMP_BIN?.trim() || 'omp';
 	const { promise, resolve, reject } = Promise.withResolvers<string>();
 	const child = execFile(
 		executable,
-		executableArgs,
+		args,
 		{ cwd, timeout: 15_000, maxBuffer: 1024 * 1024, encoding: 'utf8' },
 		(error, stdout) => {
 			if (error) reject(error);

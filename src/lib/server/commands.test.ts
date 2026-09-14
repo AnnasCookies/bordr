@@ -11,6 +11,32 @@ vi.mock('node:os', async (importOriginal) => {
 	return { ...original, homedir: () => HOME };
 });
 
+/**
+ * Every process the OMP probe starts. It always fails here, which is also how
+ * the fallback gets exercised: nothing in a test should launch a real omp.
+ */
+const probe = vi.hoisted(() => ({
+	calls: [] as Array<{ file: string; args: string[]; options: { cwd?: string } }>
+}));
+vi.mock('node:child_process', async (importOriginal) => {
+	const original = await importOriginal<typeof import('node:child_process')>();
+	return {
+		...original,
+		execFile: vi.fn(
+			(
+				file: string,
+				args: string[],
+				options: { cwd?: string },
+				callback: (error: Error | null, stdout: string) => void
+			) => {
+				probe.calls.push({ file, args, options });
+				callback(new Error('omp: not found'), '');
+				return { stdin: null };
+			}
+		)
+	};
+});
+
 function file(path: string, content: string): void {
 	mkdirSync(join(HOME, path, '..'), { recursive: true });
 	writeFileSync(join(HOME, path), content);
@@ -145,6 +171,60 @@ describe('commandsFor: pi and agy', () => {
 	it('gives an unknown harness nothing rather than an error', async () => {
 		const { commandsFor } = await load();
 		expect(await commandsFor('mystery', '/tmp')).toEqual([]);
+	});
+});
+
+describe('commandsFor: omp probe', () => {
+	const savedBin = process.env.OMP_BIN;
+	beforeEach(() => {
+		probe.calls.length = 0;
+		delete process.env.OMP_BIN;
+		vi.spyOn(console, 'warn').mockImplementation(() => {});
+	});
+	afterAll(() => {
+		if (savedBin === undefined) delete process.env.OMP_BIN;
+		else process.env.OMP_BIN = savedBin;
+	});
+
+	/**
+	 * A remote pane's cwd comes from that machine's herdr, but the probe runs
+	 * HERE: a compromised remote machine would choose the local directory omp
+	 * starts in.
+	 */
+	it('never starts omp for a remote pane, and still offers the fallback list', async () => {
+		const { commandsFor } = await load();
+		const list = await commandsFor('omp', '/home/someone/on-the-remote', { remote: true });
+		expect(probe.calls).toEqual([]);
+		expect(list.find((c) => c.name === 'skill:auditing-a-code-review')).toBeDefined();
+	});
+
+	/** No `$SHELL -ic`: fish rejected `"$@"`, so the probe never once worked there. */
+	it('runs omp directly, with no shell, in the pane directory', async () => {
+		const { commandsFor } = await load();
+		const cwd = join(HOME, 'project');
+		const list = await commandsFor('omp', cwd);
+		expect(probe.calls).toHaveLength(1);
+		expect(probe.calls[0].file).toBe('omp');
+		expect(probe.calls[0].args.slice(0, 2)).toEqual(['--no-session', '--extension']);
+		expect(probe.calls[0].args).not.toContain('-ic');
+		expect(probe.calls[0].options.cwd).toBe(cwd);
+		// The probe failed, so the files on disk answer instead.
+		expect(list.find((c) => c.name === 'skill:auditing-a-code-review')).toBeDefined();
+	});
+
+	it('uses OMP_BIN when it is set', async () => {
+		process.env.OMP_BIN = '/opt/omp/bin/omp';
+		const { commandsFor } = await load();
+		await commandsFor('omp', join(HOME, 'project'));
+		expect(probe.calls[0].file).toBe('/opt/omp/bin/omp');
+	});
+
+	it("does not read a remote pane's project directory off this disk", async () => {
+		const { commandsFor } = await load();
+		const list = await commandsFor('claude', join(HOME, 'project'), { remote: true });
+		expect(list.find((c) => c.name === 'local-only')).toBeUndefined();
+		// This host's user-level skills are still the fallback.
+		expect(list.find((c) => c.name === 'herdr')).toBeDefined();
 	});
 });
 
