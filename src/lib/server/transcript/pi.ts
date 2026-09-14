@@ -44,7 +44,8 @@ const SUMMARY_CHARS = 72;
 const MAX_IMAGE_BYTES = 1_100_000;
 const MAX_IMAGES_BYTES = 4_500_000;
 const BLOB_REFERENCE = /^blob:sha256:([a-f0-9]{64})$/;
-const IMAGE_MEDIA = /^image\/(?:avif|gif|jpeg|png|webp)$/;
+const INLINE_IMAGE_DATA = /^[A-Za-z0-9+/]+={0,2}$/;
+const IMAGE_MEDIA = /^image\/(?:avif|bmp|gif|jpeg|png|webp)$/i;
 const OMP_BLOB_DIR = join(homedir(), '.omp', 'agent', 'blobs');
 
 function record(value: unknown): Record<string, unknown> | null {
@@ -100,13 +101,12 @@ function resultText(content: unknown): string {
 }
 
 /**
- * Resolve OMP's content-addressed image blocks from its canonical blob store.
+ * Resolve image blocks from both transcript shapes handled by this adapter.
  *
- * Only a bare SHA-256 reference is accepted. The joined path therefore cannot
- * leave the blob directory, and symlinks are rejected before any bytes are
- * read. The caller shares one byte budget across the full transcript parse,
- * so repeated detail polling has a fixed response ceiling rather than one cap
- * per tool result.
+ * Native Pi stores base64 in the result itself. OMP stores a bare SHA-256
+ * reference to its canonical blob directory. Blob paths cannot escape that
+ * directory and symlinks are rejected. Inline data is strict standard base64,
+ * never an already-built URL. One shared byte budget bounds the full response.
  */
 export function ompResultImages(
 	content: unknown,
@@ -122,8 +122,30 @@ export function ompResultImages(
 		if (block?.type !== 'image') continue;
 		const reference = str(block.data);
 		const media = str(block.mimeType);
+		if (!IMAGE_MEDIA.test(media)) continue;
+
 		const hash = BLOB_REFERENCE.exec(reference)?.[1];
-		if (!hash || !IMAGE_MEDIA.test(media)) continue;
+		if (!hash) {
+			// A blob-looking value with a bad hash is not inline image data.
+			if (reference.startsWith('blob:')) continue;
+			const maxBase64 = 4 * Math.ceil(MAX_IMAGE_BYTES / 3);
+			if (reference.length > maxBase64) {
+				dropped++;
+				continue;
+			}
+			if (reference.length % 4 !== 0 || !INLINE_IMAGE_DATA.test(reference)) continue;
+			const bytes = Buffer.from(reference, 'base64');
+			// Buffer's decoder is forgiving; the round trip makes this strict.
+			if (bytes.length === 0 || bytes.toString('base64') !== reference) continue;
+			if (bytes.length > MAX_IMAGE_BYTES || bytes.length > budget.remaining) {
+				dropped++;
+				continue;
+			}
+			budget.remaining -= bytes.length;
+			images.push(`data:${media.toLowerCase()};base64,${reference}`);
+			continue;
+		}
+
 		const path = join(blobDir, hash);
 		let descriptor: number | undefined;
 		try {
@@ -140,7 +162,7 @@ export function ompResultImages(
 				continue;
 			}
 			budget.remaining -= bytes.length;
-			images.push(`data:${media};base64,${bytes.toString('base64')}`);
+			images.push(`data:${media.toLowerCase()};base64,${bytes.toString('base64')}`);
 		} catch {
 			// A missing, linked or unreadable blob leaves the text result intact.
 		} finally {

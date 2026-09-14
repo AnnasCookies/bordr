@@ -311,6 +311,45 @@ describe('piAdapter.parse', () => {
 		expect(result.result?.text.split('\n')).toHaveLength(40);
 	});
 
+	it('puts a native Pi Read image on the matching tool result', () => {
+		const data = Buffer.from('inline image fixture').toString('base64');
+		const jsonl = [
+			JSON.stringify({
+				type: 'message',
+				message: {
+					role: 'assistant',
+					content: [
+						{
+							type: 'toolCall',
+							id: 'read-image',
+							name: 'read',
+							arguments: { path: '/tmp/screenshot.png' }
+						}
+					]
+				}
+			}),
+			JSON.stringify({
+				type: 'message',
+				message: {
+					role: 'toolResult',
+					toolCallId: 'read-image',
+					content: [
+						{ type: 'text', text: 'Read image file [image/png]' },
+						{ type: 'image', data, mimeType: 'image/png' }
+					]
+				}
+			})
+		].join('\n');
+		expect(piAdapter.parse(jsonl)[0].blocks?.[0]).toMatchObject({
+			kind: 'tool',
+			name: 'read',
+			result: {
+				text: 'Read image file [image/png]',
+				images: [`data:image/png;base64,${data}`]
+			}
+		});
+	});
+
 	it('offers an unanswered ask and clears it when its result arrives', () => {
 		const call = JSON.stringify({
 			type: 'message',
@@ -370,6 +409,19 @@ describe('ompResultImages', () => {
 		}
 	});
 
+	it('accepts native Pi inline base64 without a blob-store round trip', () => {
+		const bytes = Buffer.from('inline image fixture');
+		const data = bytes.toString('base64');
+		expect(ompResultImages([image(data, 'IMAGE/PNG')])).toEqual({
+			images: [`data:image/png;base64,${data}`],
+			dropped: 0
+		});
+		expect(ompResultImages([image(data)], undefined, { remaining: bytes.length - 1 })).toEqual({
+			images: [],
+			dropped: 1
+		});
+	});
+
 	it('shares one image byte budget across tool results', async () => {
 		const dir = await mkdtemp(join(tmpdir(), 'bordr-omp-blobs-'));
 		try {
@@ -386,7 +438,7 @@ describe('ompResultImages', () => {
 		}
 	});
 
-	it('rejects traversal, unsafe media and linked blobs', async () => {
+	it('rejects traversal, unsafe media, bad inline data and linked blobs', async () => {
 		const dir = await mkdtemp(join(tmpdir(), 'bordr-omp-blobs-'));
 		try {
 			await symlink('/etc/passwd', join(dir, hash));
@@ -395,6 +447,8 @@ describe('ompResultImages', () => {
 					[
 						image('blob:sha256:../../etc/passwd'),
 						image(`blob:sha256:${hash}`, 'text/html'),
+						image('data:image/png;base64,AAAA', 'image/png'),
+						image('not base64!', 'image/png'),
 						image(`blob:sha256:${hash}`)
 					],
 					dir
