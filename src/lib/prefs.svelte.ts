@@ -83,6 +83,17 @@ export type ConversationWidth = 'comfortable' | 'wide' | 'full';
 export type Motion = 'auto' | 'full' | 'none';
 
 /**
+ * The pull request the branch is on, beside the branch.
+ *
+ *   off     nothing; the branch alone, as before
+ *   number  the number and whether it is open, merged or closed
+ *   checks  that, and one mark for how CI is doing
+ *
+ * Local panes only, and read in the background — see `pullFor`.
+ */
+export type HeaderPull = 'off' | 'number' | 'checks';
+
+/**
  * The model, and how hard it is being asked to think, in the header.
  *
  * Both are already in the harness's status block, but that is a dense row of
@@ -273,6 +284,8 @@ export interface Prefs {
 	conversationWidth: ConversationWidth;
 	/** Whether "Latest" glides to the bottom or jumps there. */
 	motion: Motion;
+	/** The pull request and its CI, beside the branch in the header. */
+	headerPull: HeaderPull;
 	/** The model and effort on the conversation header's location row. */
 	headerModel: HeaderModel;
 	/** Which clock that time is written on; 'auto' follows the device. */
@@ -375,6 +388,7 @@ export const DEFAULTS: Prefs = {
 	tabStrip: 'always',
 	conversationWidth: 'full',
 	motion: 'auto',
+	headerPull: 'checks',
 	headerModel: 'model-effort',
 	clockFormat: 'auto',
 	showTabName: true,
@@ -425,6 +439,7 @@ const DRAWER_HOMES: DrawerHome[] = ['mark', 'icon', 'off'];
 const CHROME_WHENS: ChromeWhen[] = ['always', 'mobile', 'off'];
 const WIDTHS: ConversationWidth[] = ['comfortable', 'wide', 'full'];
 const MOTIONS: Motion[] = ['auto', 'full', 'none'];
+const HEADER_PULLS: HeaderPull[] = ['off', 'number', 'checks'];
 const HEADER_MODELS: HeaderModel[] = ['off', 'model', 'model-effort'];
 const CLOCKS: ClockFormat[] = ['auto', 'h24', 'h12'];
 const ACCENTS: HarnessAccent[] = ['edge', 'tint', 'fill', 'off'];
@@ -539,6 +554,7 @@ export function normalisePrefs(raw: unknown): Prefs {
 		tabStrip: pick(stored.tabStrip, CHROME_WHENS, DEFAULTS.tabStrip),
 		conversationWidth: pick(stored.conversationWidth, WIDTHS, DEFAULTS.conversationWidth),
 		motion: pick(stored.motion, MOTIONS, DEFAULTS.motion),
+		headerPull: pick(stored.headerPull, HEADER_PULLS, DEFAULTS.headerPull),
 		headerModel: pick(stored.headerModel, HEADER_MODELS, DEFAULTS.headerModel),
 		clockFormat: pick(stored.clockFormat, CLOCKS, DEFAULTS.clockFormat),
 		showTabName: bool(stored.showTabName, DEFAULTS.showTabName),

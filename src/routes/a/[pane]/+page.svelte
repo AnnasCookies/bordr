@@ -9,7 +9,16 @@
 	import { prefs } from '$lib/prefs.svelte';
 	import { agentTitle, collapseHome, flatOrder } from '$lib/grouping';
 	import { decideSwipe, inEdgeZone, inHorizontalScroller, neighbourPane } from '$lib/swipe';
-	import { harnessBorder, harnessBubble, harnessHex, harnessText, STATUS_INK } from '$lib/theme';
+	import {
+		CHECK_INK,
+		CHECK_MARK,
+		harnessBorder,
+		harnessBubble,
+		harnessHex,
+		harnessText,
+		PULL_INK,
+		STATUS_INK
+	} from '$lib/theme';
 	import { ansiToHtml } from '$lib/ansi';
 	import { termGrid } from '$lib/term-grid';
 	import { throttleTrailing } from '$lib/throttle';
@@ -58,6 +67,7 @@
 	import { keepPending, onScreen, say, type PendingSend } from '$lib/pending-sends';
 	import { queueVerdict } from '$lib/queue';
 	import { parseModelLine } from '$lib/model-line';
+	import { shortModel } from '$lib/short-model';
 	import type { Block } from '$lib/server/transcript/types';
 	import type { AgentStatus, SplitNode, WorkspaceNode } from '$lib/types';
 	let { data } = $props();
@@ -509,7 +519,10 @@
 		const model = detail.model || line.model;
 		// Effort exists nowhere else at all — not in either transcript, and not
 		// in herdr, whose API schema does not contain the word once.
-		return { model, effort: prefs.value.headerModel === 'model' ? '' : line.effort };
+		return {
+			model: shortModel(model, detail.agent),
+			effort: prefs.value.headerModel === 'model' ? '' : line.effort
+		};
 	});
 
 	/**
@@ -2207,17 +2220,29 @@
 		{#if prefs.value.statusIndicators !== 'text'}
 			<span class="shrink-0 {STATUS_INK[detail.status] ?? 'text-faint'}">{detail.status}</span>
 		{/if}
-		<span class="shrink-0 text-faint">·</span>
 		<!--
+			The harness goes WITH the model, and the model is on the row below —
+			so when there is a model to show, the mark has gone down to sit beside
+			it and this row does not repeat it.
+
+			That way round because of the room. This column is squeezed between
+			the brand and the actions: measured on a phone it is 56px at 360 and
+			126px at 430, and "claude-opus-5 high" is about 110px. Moving the
+			model up here would have clipped it; moving the mark down costs the
+			full-width row 14px.
+
 			The mark alone when marks are on. Spelling "claude" out cost 60px of a
 			178px row on a phone — a third of it — to repeat what the mark beside
 			it and the title above it both already say.
 		-->
-		<span class="shrink-0 {harnessText(detail.agent)}"
-			>{#if prefs.value.harnessIcons}<HarnessMark
-					agent={detail.agent}
-				/>{:else}{detail.agent}{/if}</span
-		>
+		{#if !modelLine.model}
+			<span class="shrink-0 text-faint">·</span>
+			<span class="shrink-0 {harnessText(detail.agent)}"
+				>{#if prefs.value.harnessIcons}<HarnessMark
+						agent={detail.agent}
+					/>{:else}{detail.agent}{/if}</span
+			>
+		{/if}
 		{#if detail.workspaceLabel}
 			<span class="shrink-0 text-faint">·</span>
 			<span class="truncate">{detail.workspaceLabel}</span>
@@ -2241,31 +2266,48 @@
 {#snippet headerLocation()}
 	<!-- Clips rather than pushing the page, same as the row above it. -->
 	<span class="flex min-w-0 items-center gap-x-1 overflow-hidden font-mono text-[10.5px]">
+		<!--
+			The harness and its model, first and together: the mark says which
+			harness, the model says which model of it, and a row apart you had to
+			assemble that yourself. This is the row with the room — the one above
+			is 56px wide on a 360px phone.
+
+			Both keep their width where everything else here gives way. The path
+			and the branch can be recognised cut short; "Opus" is a different
+			model from "Opus 5", so this one cannot.
+		-->
 		{#if modelLine.model}
-			<!--
-				First on the row, and it keeps its width. The path and the branch
-				can be recognised cut short; "Opus" is a different model from
-				"Opus 5", so this one cannot.
-			-->
+			<span class="shrink-0 {harnessText(detail.agent)}"
+				>{#if prefs.value.harnessIcons}<HarnessMark
+						agent={detail.agent}
+					/>{:else}{detail.agent}{/if}</span
+			>
 			<span class="shrink-0 text-working">{modelLine.model}</span>
 			{#if modelLine.effort}
 				<span class="shrink-0 text-faint">{modelLine.effort}</span>
 			{/if}
-			<span class="shrink-0 text-faint">·</span>
+			{#if detail.cwd || detail.branch}<span class="shrink-0 text-faint">·</span>{/if}
 		{/if}
-		{#if detail.cwd}
+		{#if detail.cwd && !(layout.tight && detail.branch)}
 			<!--
 				The path is short after collapseHome and is the half you orient
 				by, so it keeps its width and the branch gives way first. max-w
 				still catches a pathological one rather than letting it push the
 				branch off the row entirely.
+
+				It stands down on a phone when there is a branch, because five
+				chips do not fit: measured at 390px the row is 234px and wanted
+				270px, and the branch had already given up every pixel it had —
+				rendering as a git glyph with no name after it. The branch names
+				the repository too, and it is the half that changes.
 			-->
 			<span class="max-w-[60%] shrink-0 truncate text-path" title={detail.cwd}
 				>{collapseHome(detail.cwd)}</span
 			>
 		{/if}
 		{#if detail.branch}
-			{#if detail.cwd}<span class="shrink-0 text-faint">·</span>{/if}
+			{#if detail.cwd && !(layout.tight && detail.branch)}<span class="shrink-0 text-faint">·</span
+				>{/if}
 			<!--
 				The name and the arrows are one thing, so they are one target: at
 				10.5px the branch alone is a thin thing to hit with a thumb, and
@@ -2295,6 +2337,43 @@
 				<span class="flex min-w-0 items-center gap-x-1" title={detail.branch}
 					>{@render gitState()}</span
 				>
+			{/if}
+			<!--
+				The pull request sits with the branch, because it is the question
+				you were asking the branch: is it up, and did it pass.
+
+				Its own link, not folded into the branch's: they go to different
+				pages, and a branch chip that sometimes lands on a pull request
+				is a chip you stop trusting. Never truncated — half a number is a
+				different pull request.
+			-->
+			{#if detail.pull && prefs.value.headerPull !== 'off'}
+				<span class="shrink-0 text-faint">·</span>
+				<a
+					class="flex shrink-0 items-center gap-x-1 underline decoration-branch/40 decoration-dotted underline-offset-[3px] active:decoration-branch"
+					href={detail.pull.url}
+					target="_blank"
+					rel="noopener noreferrer"
+					title="Pull request #{detail.pull.number}{detail.pull.draft ? ' (draft)' : ''} · {detail
+						.pull.state}{prefs.value.headerPull === 'checks'
+						? ` · checks ${detail.pull.checks}`
+						: ''}"
+				>
+					<span class={PULL_INK[detail.pull.state] ?? 'text-muted'}
+						>#{detail.pull.number}{detail.pull.draft ? ' draft' : ''}</span
+					>
+					{#if prefs.value.headerPull === 'checks' && detail.pull.checks !== 'none'}
+						<!--
+							A glyph AND its word would be the same thing twice on the
+							row with the least room. The colour is not the message —
+							it cannot be, for anyone who cannot see it — so the mark
+							differs in shape as well: a tick, a cross, a half-circle.
+						-->
+						<span class={CHECK_INK[detail.pull.checks]} aria-label="checks {detail.pull.checks}"
+							>{CHECK_MARK[detail.pull.checks]}</span
+						>
+					{/if}
+				</a>
 			{/if}
 		{/if}
 	</span>

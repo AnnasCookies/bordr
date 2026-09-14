@@ -5,6 +5,7 @@ import type { Message } from './server/transcript/types';
 import type { Picker } from './server/picker';
 import type { SubagentSummary } from './server/transcript/subagents';
 import type { QueuedPrompt } from './queue';
+import type { Pull } from './server/herdr/pulls';
 
 export type AgentStatus = 'idle' | 'working' | 'blocked' | 'done' | 'unknown';
 
@@ -91,6 +92,14 @@ export interface AgentDetail extends AgentSummary {
 	behind: number;
 	/** That branch on GitHub, for the header to link to. Empty when unknown. */
 	branchUrl: string;
+	/**
+	 * The pull request that branch is on, and how its checks are doing.
+	 *
+	 * Null for a branch with no pull request, for a repository `gh` cannot
+	 * speak for, and on the first read of a directory — the answer is fetched
+	 * in the background rather than made the header's problem.
+	 */
+	pull: Pull | null;
 	messages: Message[];
 	/**
 	 * Sub-agents this session has spawned, newest activity first.

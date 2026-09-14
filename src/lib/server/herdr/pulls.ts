@@ -1,0 +1,176 @@
+import { execFile } from 'node:child_process';
+import type { Machine } from './machines';
+
+/**
+ * The pull request a branch is on, and whether its checks are green.
+ *
+ * The branch is already in the header, and the branch is the question you ask
+ * on the way to the real one: is it up, and did it pass. Both answers live on
+ * GitHub, and `gh` is already on the machine and already authenticated, so
+ * this reads them rather than making you leave the app to find out.
+ */
+
+/**
+ * What every check adds up to.
+ *
+ *   passing  everything that ran, passed
+ *   failing  something failed — the one state worth interrupting for
+ *   pending  something is still running, or queued
+ *   none     the pull request has no checks at all
+ */
+export type Checks = 'passing' | 'failing' | 'pending' | 'none';
+
+export interface Pull {
+	number: number;
+	/** OPEN, MERGED or CLOSED, as GitHub spells it. */
+	state: string;
+	url: string;
+	checks: Checks;
+	/** True while the pull request is a draft, which changes what green means. */
+	draft: boolean;
+}
+
+/**
+ * A rollup entry is one of two shapes and they do not agree with each other.
+ *
+ * A `CheckRun` (GitHub Actions) reports a `status` and, once it is COMPLETED,
+ * a `conclusion`. A `StatusContext` — the older commit-status API, which is
+ * what most third-party CI still posts — has neither, only a `state`. Reading
+ * just one of them silently calls half the world's CI "no checks".
+ */
+interface RollupEntry {
+	status?: string;
+	conclusion?: string;
+	state?: string;
+}
+
+const BAD = new Set([
+	'FAILURE',
+	'ERROR',
+	'TIMED_OUT',
+	'CANCELLED',
+	'STARTUP_FAILURE',
+	'ACTION_REQUIRED'
+]);
+// NEUTRAL and SKIPPED are not failures: a skipped job is a job that correctly
+// decided it had nothing to do, and calling that red would make every
+// path-filtered workflow look broken.
+const GOOD = new Set(['SUCCESS', 'NEUTRAL', 'SKIPPED']);
+
+/**
+ * Every check as one word, worst-first.
+ *
+ * Failing beats pending beats passing: a run with one red job and nine still
+ * going is a run you already know about, and showing it as "pending" would
+ * hide the only part worth acting on.
+ */
+export function rollup(entries: readonly RollupEntry[]): Checks {
+	if (entries.length === 0) return 'none';
+	let pending = false;
+	for (const entry of entries) {
+		const verdict = (entry.conclusion || entry.state || '').toUpperCase();
+		if (BAD.has(verdict)) return 'failing';
+		// A CheckRun that has not completed has no conclusion yet; a
+		// StatusContext says PENDING outright.
+		if (verdict === 'PENDING' || (entry.status && entry.status.toUpperCase() !== 'COMPLETED')) {
+			pending = true;
+		} else if (!GOOD.has(verdict)) {
+			// An unknown verdict is not a pass. Treating it as one is how a new
+			// GitHub conclusion would quietly turn red into green.
+			pending = true;
+		}
+	}
+	return pending ? 'pending' : 'passing';
+}
+
+/** `gh pr view --json` output, which is an object or nothing at all. */
+export function parsePull(stdout: string): Pull | null {
+	const text = stdout.trim();
+	if (!text) return null;
+	let raw: {
+		number?: number;
+		state?: string;
+		url?: string;
+		isDraft?: boolean;
+		statusCheckRollup?: RollupEntry[] | null;
+	};
+	try {
+		raw = JSON.parse(text);
+	} catch {
+		return null;
+	}
+	if (typeof raw.number !== 'number') return null;
+	return {
+		number: raw.number,
+		state: raw.state ?? '',
+		url: raw.url ?? '',
+		// Null, not just absent: gh sends null for a pull request whose head
+		// commit has no checks.
+		checks: rollup(raw.statusCheckRollup ?? []),
+		draft: raw.isDraft === true
+	};
+}
+
+const FIELDS = 'number,state,url,isDraft,statusCheckRollup';
+
+function ghPull(cwd: string): Promise<Pull | null> {
+	return new Promise((resolve) => {
+		execFile(
+			'gh',
+			['pr', 'view', '--json', FIELDS],
+			// Long enough for a cold API call, short enough that a hung gh does
+			// not hold a cache entry open forever.
+			{ cwd, timeout: 8_000, maxBuffer: 4 * 1024 * 1024 },
+			(error, stdout) => {
+				// Every failure is the same answer: no pull request to show. gh
+				// exits non-zero for a branch without one, for a directory that
+				// is not a repository, for no auth and for no network, and none
+				// of those is worth a different header.
+				resolve(error ? null : parsePull(stdout));
+			}
+		);
+	});
+}
+
+interface Entry {
+	at: number;
+	pull: Pull | null;
+}
+
+const cache = new Map<string, Entry>();
+const inflight = new Set<string>();
+
+/**
+ * A minute, which is the shortest useful answer.
+ *
+ * A run takes minutes, so a fresher number would be the same number at the
+ * cost of an API call every poll — and gh is rate-limited per hour, shared
+ * with every other thing on this machine that uses it.
+ */
+const TTL_MS = 60_000;
+
+/**
+ * The pull request for a directory, from cache, refreshing in the background.
+ *
+ * Never awaits the fetch. The pane detail is polled, `gh` takes about half a
+ * second on a warm API and eight on a cold one, and a header is not worth
+ * making the transcript wait for. So the first read of a directory says
+ * nothing and the next one has the answer.
+ *
+ * ponytail: local panes only. A remote pane's repository is on its own
+ * machine, and whether `gh` is installed and authenticated over there is not
+ * something this can assume. To lift it, run the same command through
+ * `runOn` the way `remoteBranches` does.
+ */
+export function pullFor(machine: Machine | null, cwd: string): Pull | null {
+	if (machine || !cwd) return null;
+	const hit = cache.get(cwd);
+	const fresh = hit && Date.now() - hit.at < TTL_MS;
+	if (!fresh && !inflight.has(cwd)) {
+		inflight.add(cwd);
+		void ghPull(cwd)
+			.then((pull) => cache.set(cwd, { at: Date.now(), pull }))
+			.finally(() => inflight.delete(cwd));
+	}
+	return hit?.pull ?? null;
+}

@@ -4,6 +4,7 @@ import { adapterFor } from '$lib/server/transcript';
 import { agentCwd } from '$lib/server/transcript/cwd';
 import { parsePane } from '$lib/server/herdr/address';
 import { branchesFor } from '$lib/server/herdr/branches';
+import { pullFor } from '$lib/server/herdr/pulls';
 import { ensureConnection, remoteTranscriptTail } from '$lib/server/herdr/connections';
 import { backfillBlocks } from '$lib/server/transcript/types';
 import {
@@ -329,6 +330,9 @@ export const GET: RequestHandler = async ({ params, url }) => {
 		ahead: git?.ahead ?? 0,
 		behind: git?.behind ?? 0,
 		branchUrl: git?.url ?? '',
+		// Read from cache only; the first poll after opening a pane says nothing
+		// and the next one has the answer. Never awaited — see pullFor.
+		pull: git?.branch ? pullFor(gitMachine, cwd) : null,
 		messages,
 		subagents,
 		queue,

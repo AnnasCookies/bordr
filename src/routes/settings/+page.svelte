@@ -31,6 +31,7 @@
 		ChromeWhen,
 		ConversationWidth,
 		Motion,
+		HeaderPull,
 		HeaderModel,
 		FillStyle,
 		SoundAlerts,
@@ -701,6 +702,19 @@
 	</div>
 {/snippet}
 
+{#snippet pullPreview()}
+	<p class="font-mono text-[10.5px]">
+		<span class="text-branch">&#xe0a0; main</span>
+		<span class="text-faint">·</span>
+		{#if prefs.value.headerPull === 'off'}
+			<span class="text-faint">no pull request shown</span>
+		{:else}
+			<span class="text-branch">#945</span>
+			{#if prefs.value.headerPull === 'checks'}<span class="text-done">&#x2713;</span>{/if}
+		{/if}
+	</p>
+{/snippet}
+
 {#snippet motionPreview()}
 	<!--
 		What the browser reports, spelled out. Without it a "System" that says
@@ -1265,6 +1279,24 @@
 								1260px. A cap is not wrong, though: prose past about 90 characters a line is harder
 								to read, which is why there was one. Diffs and terminal output want the room; long
 								prose does not.
+							</p>
+							<SettingRow
+								label="Pull request"
+								value={prefs.value.headerPull}
+								options={[
+									{ v: 'off' as HeaderPull, l: 'Off' },
+									{ v: 'number' as HeaderPull, l: 'Number' },
+									{ v: 'checks' as HeaderPull, l: 'CI' }
+								]}
+								onchange={(v) => prefs.set('headerPull', v)}
+							>
+								{#snippet preview()}{@render pullPreview()}{/snippet}
+							</SettingRow>
+							<p class="px-3.5 pb-2 text-[12px] text-muted">
+								Beside the branch, because it is the question you were asking the branch: is it up,
+								and did it pass. Read with `gh` in the background, so the first look at a pane shows
+								nothing and the next one has it, and only for panes on this machine — whether `gh`
+								is installed and signed in on another machine is not something bordr can assume.
 							</p>
 							<SettingRow
 								label="Motion"
