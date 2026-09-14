@@ -132,6 +132,36 @@ describe('listMachines', () => {
 		).toEqual(['a', 'b']);
 	});
 
+	/**
+	 * ssh is handed the target as an argument, so one beginning with `-` would
+	 * be read as an option: `-oProxyCommand=…` runs a local command.
+	 */
+	it('refuses a target ssh could read as an option, or one with whitespace or control characters', async () => {
+		const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+		try {
+			const contents = JSON.stringify({
+				version: 1,
+				ssh: [
+					{ id: 'ok', label: 'ok', target: 'user@tm-dev.tail1234.ts.net' },
+					{ id: 'opt', label: 'opt', target: '-oProxyCommand=touch /tmp/pwned' },
+					{ id: 'dash', label: 'dash', target: '-p2222' },
+					{ id: 'space', label: 'space', target: 'tm-dev -oProxyCommand=x' },
+					{ id: 'tab', label: 'tab', target: 'tm-dev\tx' },
+					{ id: 'newline', label: 'newline', target: 'tm-dev\nx' },
+					{ id: 'nul', label: 'nul', target: `tm-dev${String.fromCharCode(0)}x` },
+					{ id: 'del', label: 'del', target: `tm-dev${String.fromCharCode(0x7f)}x` }
+				]
+			});
+			const machines = await load(withEndpoints(contents), {
+				BORDR_MACHINES: 'ok,opt,dash,space,tab,newline,nul,del'
+			});
+			expect(machines.map((m) => m.id)).toEqual(['ok']);
+			expect(warn).toHaveBeenCalled();
+		} finally {
+			warn.mockRestore();
+		}
+	});
+
 	it('is empty rather than throwing when there is no file', async () => {
 		// The normal case for anyone who has never added a machine.
 		expect(await load('/nowhere/endpoints.json')).toEqual([]);

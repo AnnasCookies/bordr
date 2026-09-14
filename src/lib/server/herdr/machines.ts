@@ -40,6 +40,22 @@ function endpointsPath(): string {
 	);
 }
 
+/**
+ * A target ssh will read as a destination and nothing else.
+ *
+ * It comes from a file, and ssh is handed it as an argument: one beginning
+ * with `-` would be parsed as an OPTION — `-oProxyCommand=…` runs a local
+ * command — and whitespace or a control character has no business in a host
+ * name or ssh config alias. Every spawn also puts `--` before the target;
+ * this is the first of the two locks, not the only one.
+ */
+export function isSafeTarget(target: string): boolean {
+	return !target.startsWith('-') && !/[\s\p{Cc}]/u.test(target);
+}
+
+/** Targets already reported, so a poll every few seconds does not repeat itself. */
+const refusedTargets = new Set<string>();
+
 export function listMachines(): Machine[] {
 	let raw: unknown;
 	try {
@@ -60,7 +76,19 @@ export function listMachines(): Machine[] {
 			target: String(entry.target ?? ''),
 			session: String(entry.session ?? 'default'),
 			enabled: entry.enabled !== false
-		}));
+		}))
+		.filter((machine) => {
+			if (isSafeTarget(machine.target)) return true;
+			// Named in the log, not silently dropped: a machine missing from the
+			// sidebar with no reason anywhere reads as bordr having lost it.
+			if (!refusedTargets.has(machine.target)) {
+				refusedTargets.add(machine.target);
+				console.warn(
+					`bordr: machine ${JSON.stringify(machine.label)} ignored — its ssh target ${JSON.stringify(machine.target)} starts with "-" or contains whitespace or a control character`
+				);
+			}
+			return false;
+		});
 
 	// `BORDR_MACHINES` NARROWS the list; it no longer switches it on.
 	//
