@@ -17,15 +17,29 @@ afterEach(() => {
 	for (const dir of dirs.splice(0)) rmSync(dir, { recursive: true, force: true });
 });
 
-async function load(path: string, machines = 'a,b,tm-dev,hermes') {
+/**
+ * Everything `listMachines` reads from the environment. HOST is deliberately
+ * absent unless a test names it: with no bind to vouch for, nothing is
+ * inherited, so a test about narrowing cannot pass by accident through the
+ * inherit branch.
+ */
+async function load(path: string, env: Record<string, string> = {}) {
 	// Reset here, not only in afterEach: a test that loads twice would
 	// otherwise get the first call's module and silently assert nothing.
 	vi.resetModules();
 	vi.doMock('$env/dynamic/private', () => ({
-		env: { HERDR_ENDPOINTS: path, BORDR_MACHINES: machines }
+		env: { HERDR_ENDPOINTS: path, BORDR_MACHINES: 'a,b,tm-dev,hermes', ...env }
 	}));
 	return (await import('./machines')).listMachines();
 }
+
+const TWO_MACHINES = JSON.stringify({
+	version: 1,
+	ssh: [
+		{ id: 'a', label: 'tm-dev', target: 'tm-dev', session: 'default', enabled: true },
+		{ id: 'b', label: 'hermes', target: 'hermes', session: 'default', enabled: true }
+	]
+});
 
 describe('listMachines', () => {
 	it("reads herdr's own client state", async () => {
@@ -45,35 +59,77 @@ describe('listMachines', () => {
 	});
 
 	/**
-	 * The whole point of the opt-in: herdr's endpoints file is a list of
-	 * machines someone once typed into a terminal, and bordr has no login, so
-	 * inheriting it wholesale hands every one of them to anyone who reaches
-	 * the port. Nothing is reachable until it is named here.
+	 * With no list, what is reachable depends on the bind (`machinesInherit`).
+	 * A bind nobody can vouch for — HOST unset, which svelte-adapter-bun turns
+	 * into every interface — inherits nothing.
 	 */
-	it('reaches no machine at all until BORDR_MACHINES names it', async () => {
-		const contents = JSON.stringify({
-			version: 1,
-			ssh: [
-				{ id: 'a', label: 'tm-dev', target: 'tm-dev', session: 'default', enabled: true },
-				{ id: 'b', label: 'hermes', target: 'hermes', session: 'default', enabled: true }
-			]
-		});
+	it('reaches no machine without BORDR_MACHINES when the bind cannot be vouched for', async () => {
 		for (const unset of ['', '   ', ',', ' , ']) {
-			expect(await load(withEndpoints(contents), unset), JSON.stringify(unset)).toEqual([]);
+			expect(
+				await load(withEndpoints(TWO_MACHINES), { BORDR_MACHINES: unset }),
+				JSON.stringify(unset)
+			).toEqual([]);
 		}
 	});
 
-	it('names a machine by either its id or its label', async () => {
-		const contents = JSON.stringify({
-			version: 1,
-			ssh: [
-				{ id: 'a', label: 'tm-dev', target: 'tm-dev', session: 'default', enabled: true },
-				{ id: 'b', label: 'hermes', target: 'hermes', session: 'default', enabled: true }
-			]
+	/**
+	 * Loopback, no flag, no proxy host: whoever can reach bordr is whoever can
+	 * already use herdr on this host, so herdr's own list is the grant.
+	 */
+	it('inherits every machine on a loopback bind with BORDR_MACHINES empty', async () => {
+		for (const unset of ['', ' , ']) {
+			const machines = await load(withEndpoints(TWO_MACHINES), {
+				HOST: '127.0.0.1',
+				BORDR_MACHINES: unset
+			});
+			expect(
+				machines.map((m) => m.id),
+				JSON.stringify(unset)
+			).toEqual(['a', 'b']);
+		}
+	});
+
+	/** The no-auth flag means bordr was bound somewhere wider; the list must be explicit. */
+	it('inherits nothing once the no-auth flag is set', async () => {
+		expect(
+			await load(withEndpoints(TWO_MACHINES), {
+				HOST: '127.0.0.1',
+				BORDR_MACHINES: '',
+				BORDR_I_UNDERSTAND_THIS_HAS_NO_AUTH: '1'
+			})
+		).toEqual([]);
+	});
+
+	/** A proxy on your own domain admits a wider set than the tailnet. */
+	it('inherits nothing once BORDR_ALLOWED_HOSTS names a proxy', async () => {
+		expect(
+			await load(withEndpoints(TWO_MACHINES), {
+				HOST: '127.0.0.1',
+				BORDR_MACHINES: '',
+				BORDR_ALLOWED_HOSTS: 'bordr.example.com'
+			})
+		).toEqual([]);
+	});
+
+	/** Naming machines narrows even a bind that would otherwise inherit them all. */
+	it('narrows an inheriting bind to the machines BORDR_MACHINES names', async () => {
+		const machines = await load(withEndpoints(TWO_MACHINES), {
+			HOST: '127.0.0.1',
+			BORDR_MACHINES: 'hermes'
 		});
-		expect((await load(withEndpoints(contents), 'a')).map((m) => m.id)).toEqual(['a']);
-		expect((await load(withEndpoints(contents), ' HERMES ')).map((m) => m.id)).toEqual(['b']);
-		expect((await load(withEndpoints(contents), 'a,hermes')).map((m) => m.id)).toEqual(['a', 'b']);
+		expect(machines.map((m) => m.id)).toEqual(['b']);
+	});
+
+	it('names a machine by either its id or its label', async () => {
+		expect(
+			(await load(withEndpoints(TWO_MACHINES), { BORDR_MACHINES: 'a' })).map((m) => m.id)
+		).toEqual(['a']);
+		expect(
+			(await load(withEndpoints(TWO_MACHINES), { BORDR_MACHINES: ' HERMES ' })).map((m) => m.id)
+		).toEqual(['b']);
+		expect(
+			(await load(withEndpoints(TWO_MACHINES), { BORDR_MACHINES: 'a,hermes' })).map((m) => m.id)
+		).toEqual(['a', 'b']);
 	});
 
 	it('is empty rather than throwing when there is no file', async () => {

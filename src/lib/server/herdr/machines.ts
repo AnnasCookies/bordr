@@ -79,7 +79,7 @@ export function listMachines(): Machine[] {
 		.map((entry) => entry.trim().toLowerCase())
 		.filter(Boolean);
 	if (allowed.length === 0) {
-		return machinesInherit(env.HOST, env[ALLOW_FLAG]) ? machines : [];
+		return machinesInherit(env.HOST, env[ALLOW_FLAG], env.BORDR_ALLOWED_HOSTS) ? machines : [];
 	}
 
 	return machines.filter(

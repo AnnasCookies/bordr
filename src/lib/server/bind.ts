@@ -88,6 +88,12 @@ export function judgeBind(host: string | undefined, allowPublic: string | undefi
  * somewhere else, and "everyone on this network" is a wider set than "whoever
  * is sitting at this terminal".
  *
+ * `BORDR_ALLOWED_HOSTS` is the other place they diverge. It exists for a proxy
+ * on your own domain, and a loopback bind behind such a proxy is reachable by
+ * whoever that proxy lets through — a wider set than the tailnet, and one the
+ * bind cannot see. Naming a host there is the operator saying so, which is
+ * enough to stop inheriting.
+ *
  * WHAT THIS CANNOT SEE: `tailscale funnel` fronts a loopback bind exactly as
  * `serve` does, so from here they look identical. Funnel sets no identity
  * header, which is precisely what `BORDR_ALLOWED_USERS` refuses — that list is
@@ -95,9 +101,17 @@ export function judgeBind(host: string | undefined, allowPublic: string | undefi
  */
 export function machinesInherit(
 	host: string | undefined,
-	allowPublic: string | undefined
+	allowPublic: string | undefined,
+	allowedHosts: string | undefined
 ): boolean {
 	if (allowPublic === '1') return false;
+	// Parsed the way `judgeHost` parses it, so a stray comma or blank value does
+	// not count as naming a proxy.
+	const proxied = (allowedHosts ?? '')
+		.split(',')
+		.map((entry) => entry.trim())
+		.some(Boolean);
+	if (proxied) return false;
 	const value = (host ?? '').trim();
 	if (!value) return false; // unset binds every interface; judgeBind refuses to serve at all
 	return isLoopback(value) || isTailscale(value);

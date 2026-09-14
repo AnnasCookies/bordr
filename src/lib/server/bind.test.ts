@@ -134,15 +134,15 @@ describe('machinesInherit', () => {
 	 * bookkeeping that duplicates the first.
 	 */
 	it('inherits on a loopback bind', () => {
-		expect(machinesInherit('127.0.0.1', undefined)).toBe(true);
-		expect(machinesInherit('localhost', undefined)).toBe(true);
-		expect(machinesInherit('::1', undefined)).toBe(true);
+		expect(machinesInherit('127.0.0.1', undefined, undefined)).toBe(true);
+		expect(machinesInherit('localhost', undefined, undefined)).toBe(true);
+		expect(machinesInherit('::1', undefined, undefined)).toBe(true);
 	});
 
 	/** The tailnet is the boundary this whole app is built on. */
 	it('inherits on a tailnet bind', () => {
-		expect(machinesInherit('100.64.0.1', undefined)).toBe(true);
-		expect(machinesInherit('100.127.255.254', undefined)).toBe(true);
+		expect(machinesInherit('100.64.0.1', undefined, undefined)).toBe(true);
+		expect(machinesInherit('100.127.255.254', undefined, undefined)).toBe(true);
 	});
 
 	/**
@@ -151,9 +151,26 @@ describe('machinesInherit', () => {
 	 * terminal" — which is exactly when the explicit list earns its keep.
 	 */
 	it('refuses to inherit once the no-auth flag is set', () => {
-		expect(machinesInherit('127.0.0.1', '1')).toBe(false);
-		expect(machinesInherit('100.64.0.1', '1')).toBe(false);
-		expect(machinesInherit('0.0.0.0', '1')).toBe(false);
+		expect(machinesInherit('127.0.0.1', '1', undefined)).toBe(false);
+		expect(machinesInherit('100.64.0.1', '1', undefined)).toBe(false);
+		expect(machinesInherit('0.0.0.0', '1', undefined)).toBe(false);
+	});
+
+	/**
+	 * BORDR_ALLOWED_HOSTS exists for a proxy on your own domain. A loopback
+	 * bind behind one is reachable by whoever the proxy admits, which the bind
+	 * cannot see and the tailnet does not bound.
+	 */
+	it('refuses to inherit once a proxy hostname is allowed', () => {
+		expect(machinesInherit('127.0.0.1', undefined, 'bordr.example.com')).toBe(false);
+		expect(machinesInherit('100.64.0.1', undefined, 'a.example.com, b.example.com')).toBe(false);
+	});
+
+	/** Parsed as `judgeHost` parses it: nothing named is nothing allowed. */
+	it('does not count an empty or comma-only host list as a proxy', () => {
+		for (const blank of ['', '   ', ',', ' , ']) {
+			expect(machinesInherit('127.0.0.1', undefined, blank), JSON.stringify(blank)).toBe(true);
+		}
 	});
 
 	/**
@@ -162,17 +179,17 @@ describe('machinesInherit', () => {
 	 * inherit, so neither depends on the other being right.
 	 */
 	it('never inherits without a bind it can vouch for', () => {
-		expect(machinesInherit(undefined, undefined)).toBe(false);
-		expect(machinesInherit('', undefined)).toBe(false);
-		expect(machinesInherit('   ', undefined)).toBe(false);
-		expect(machinesInherit('0.0.0.0', undefined)).toBe(false);
-		expect(machinesInherit('192.168.1.10', undefined)).toBe(false);
-		expect(machinesInherit('10.0.0.5', undefined)).toBe(false);
+		expect(machinesInherit(undefined, undefined, undefined)).toBe(false);
+		expect(machinesInherit('', undefined, undefined)).toBe(false);
+		expect(machinesInherit('   ', undefined, undefined)).toBe(false);
+		expect(machinesInherit('0.0.0.0', undefined, undefined)).toBe(false);
+		expect(machinesInherit('192.168.1.10', undefined, undefined)).toBe(false);
+		expect(machinesInherit('10.0.0.5', undefined, undefined)).toBe(false);
 	});
 
 	/** 100.x outside the CGNAT range is somebody's public address, not a tailnet. */
 	it('is not fooled by an address that merely starts with 100', () => {
-		expect(machinesInherit('100.63.0.1', undefined)).toBe(false);
-		expect(machinesInherit('100.128.0.1', undefined)).toBe(false);
+		expect(machinesInherit('100.63.0.1', undefined, undefined)).toBe(false);
+		expect(machinesInherit('100.128.0.1', undefined, undefined)).toBe(false);
 	});
 });
