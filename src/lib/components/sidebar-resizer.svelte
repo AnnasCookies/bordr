@@ -22,22 +22,43 @@
 
 	function startDrag(event: PointerEvent) {
 		event.preventDefault();
-		const handle = event.target as HTMLElement;
+		const handle = event.currentTarget as HTMLElement;
+		const sidebar = handle.parentElement;
+		if (!sidebar) return;
 		handle.setPointerCapture(event.pointerId);
 		// Measured from the sidebar's own left edge, so the width follows the
 		// pointer exactly rather than drifting by wherever the grab started.
-		const left = handle.parentElement?.getBoundingClientRect().left ?? 0;
+		const left = sidebar.getBoundingClientRect().left;
 		document.body.style.userSelect = 'none';
+		let width = prefs.value.sidebarWidth;
+		let frame = 0;
 
-		const move = (e: PointerEvent) => prefs.set('sidebarWidth', clampSidebar(e.clientX - left));
-		const stop = (e: PointerEvent) => {
-			handle.releasePointerCapture(e.pointerId);
+		/** Paint at most once per frame; pointer events can arrive much faster. */
+		const paint = () => {
+			frame = 0;
+			sidebar.style.width = `${width}px`;
+		};
+		const move = (e: PointerEvent) => {
+			width = clampSidebar(e.clientX - left);
+			if (!frame) frame = requestAnimationFrame(paint);
+		};
+		const stop = () => {
+			if (frame) cancelAnimationFrame(frame);
+			paint();
+			if (handle.hasPointerCapture(event.pointerId)) handle.releasePointerCapture(event.pointerId);
 			document.body.style.userSelect = '';
 			window.removeEventListener('pointermove', move);
 			window.removeEventListener('pointerup', stop);
+			window.removeEventListener('pointercancel', stop);
+			// Persist once. Writing and normalising every pointer event made the
+			// desktop divider lag behind the cursor on a busy conversation.
+			prefs.set('sidebarWidth', width);
 		};
+		// Captured pointer events bubble here for both mouse and touch. Listening
+		// once at the window also keeps the drag alive past the narrow grab strip.
 		window.addEventListener('pointermove', move);
 		window.addEventListener('pointerup', stop);
+		window.addEventListener('pointercancel', stop);
 	}
 </script>
 

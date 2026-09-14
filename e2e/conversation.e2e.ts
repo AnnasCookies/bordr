@@ -26,6 +26,83 @@ test('the key strip offers exactly the eight allowed keys, including enter', asy
 	}
 });
 
+test('desktop transcript rows skip off-screen layout while the window resizes', async ({
+	page
+}) => {
+	await page.setViewportSize({ width: 1400, height: 900 });
+	const href = await firstPane(page);
+	if (!href) test.skip(true, 'no agents running');
+	await page.goto(href as string);
+
+	const row = page.locator('.transcript-rows > *').first();
+	await expect(row).toBeAttached();
+	expect(await row.evaluate((element) => getComputedStyle(element).contentVisibility)).toBe('auto');
+});
+
+test('desktop picker questions take arrow and number keys outside the composer', async ({
+	page
+}) => {
+	await page.setViewportSize({ width: 1400, height: 900 });
+	const href = await firstPane(page);
+	if (!href) test.skip(true, 'no agents running');
+	const pane = decodeURIComponent((href as string).replace('/a/', ''));
+	const detailPath = `/api/agents/${encodeURIComponent(pane)}`;
+	const keys: string[][] = [];
+	const answers: number[] = [];
+
+	await page.route(
+		(url) => url.pathname === detailPath,
+		async (route) => {
+			const response = await route.fetch();
+			const detail = await response.json();
+			await route.fulfill({
+				response,
+				json: {
+					...detail,
+					status: 'blocked',
+					picker: {
+						question: 'Pick a test option:',
+						context: [],
+						options: [
+							{ index: 1, label: 'One', selected: true },
+							{ index: 2, label: 'Two', selected: false }
+						],
+						multi: false,
+						numbered: true
+					}
+				}
+			});
+		}
+	);
+	await page.route(`**/api/agents/${encodeURIComponent(pane)}/keys`, async (route) => {
+		keys.push(((await route.request().postDataJSON()) as { keys: string[] }).keys);
+		await route.fulfill({ json: { ok: true } });
+	});
+	await page.route(`**/api/agents/${encodeURIComponent(pane)}/answer`, async (route) => {
+		answers.push(((await route.request().postDataJSON()) as { index: number }).index);
+		await route.fulfill({ json: { ok: true, chose: 'Two', outcome: 'accepted' } });
+	});
+
+	await page.locator(`main a[href="${href}"]`).first().click();
+	await expect(page.getByText('Pick a test option:', { exact: true })).toBeVisible();
+
+	// A focused composer owns its digits; shortcuts must not make text unsafe.
+	const composer = page.getByRole('textbox', { name: 'Message' });
+	await composer.press('2');
+	expect(await composer.inputValue()).toBe('2');
+	expect(answers).toEqual([]);
+	await composer.fill('');
+	await composer.evaluate((element) => element.blur());
+
+	await page.keyboard.press('ArrowDown');
+	await expect.poll(() => keys).toEqual([['down']]);
+	await page.keyboard.press('2');
+	await expect.poll(() => answers).toEqual([2]);
+	// The shortcut schedules the normal refresh burst; do not let a mocked
+	// detail fetch outlive the test that owns its route.
+	await page.unrouteAll({ behavior: 'ignoreErrors' });
+});
+
 test('Enter in the composer makes a newline instead of sending', async ({ page }) => {
 	const href = await firstPane(page);
 	if (!href) test.skip(true, 'no agents running');

@@ -115,6 +115,49 @@ test("the sidebar toggles to Herdr's grouped workspace, tab and pane order", asy
 	await expect(order).toHaveAccessibleName('Agent order: priority. Switch to grouped');
 });
 
+test('the desktop sidebar resizes live and persists only when released', async ({ page }) => {
+	await page.setViewportSize({ width: 1400, height: 900 });
+	await page.goto('/');
+
+	const handle = page.getByRole('button', { name: /Resize the sidebar/ });
+	await expect(handle).toBeVisible();
+	const panel = handle.locator('..');
+	const before = (await panel.boundingBox())!;
+	const grab = (await handle.boundingBox())!;
+
+	await page.evaluate(() => {
+		const state = window as typeof window & { __prefWrites: number };
+		state.__prefWrites = 0;
+		const original = localStorage.setItem.bind(localStorage);
+		localStorage.setItem = (key, value) => {
+			state.__prefWrites += 1;
+			original(key, value);
+		};
+	});
+
+	await page.mouse.move(grab.x + grab.width / 2, grab.y + 100);
+	await page.mouse.down();
+	await page.mouse.move(grab.x + grab.width / 2 + 80, grab.y + 100, { steps: 20 });
+	await page.evaluate(() => new Promise(requestAnimationFrame));
+
+	const during = (await panel.boundingBox())!;
+	expect(during.width).toBeGreaterThan(before.width + 70);
+	expect(
+		await page.evaluate(() => (window as typeof window & { __prefWrites: number }).__prefWrites)
+	).toBe(0);
+
+	await page.mouse.up();
+	expect(
+		await page.evaluate(() => (window as typeof window & { __prefWrites: number }).__prefWrites)
+	).toBe(1);
+	const stored = await page.evaluate(
+		() =>
+			(JSON.parse(localStorage.getItem('bordr-prefs') ?? '{}') as { sidebarWidth: number })
+				.sidebarWidth
+	);
+	expect(stored).toBe(Math.round(during.width));
+});
+
 /**
  * The divider used to leave its move handler bound to the window when the
  * browser cancelled the gesture, so every later scroll resized the sidebar.

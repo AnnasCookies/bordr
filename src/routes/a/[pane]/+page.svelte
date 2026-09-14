@@ -66,6 +66,7 @@
 	import { afterClose } from '$lib/after-close';
 	import { keepPending, onScreen, say, type PendingSend } from '$lib/pending-sends';
 	import { queueVerdict } from '$lib/queue';
+	import { pickerShortcut } from '$lib/picker-shortcut';
 	import { parseModelLine } from '$lib/model-line';
 	import { shortModel } from '$lib/short-model';
 	import type { Block } from '$lib/server/transcript/types';
@@ -1399,27 +1400,48 @@
 	 * the first character, so a two-second poll cannot land between tap and key.
 	 */
 	const COMPOSER_QUIET_MS = 600;
+	const RESIZE_QUIET_MS = 250;
 	let composerQuietUntil = 0;
 	let composerQuietTimer: ReturnType<typeof setTimeout> | undefined;
+	let resizeQuietUntil = 0;
+	let resizeQuietTimer: ReturnType<typeof setTimeout> | undefined;
 	let refreshDeferred = false;
+
+	function releaseDeferredRefresh() {
+		if (Date.now() < composerQuietUntil || Date.now() < resizeQuietUntil) return;
+		if (!refreshDeferred) return;
+		refreshDeferred = false;
+		refreshGate.call();
+	}
 
 	function holdComposerRefresh() {
 		composerQuietUntil = Date.now() + COMPOSER_QUIET_MS;
 		clearTimeout(composerQuietTimer);
 		composerQuietTimer = setTimeout(() => {
 			composerQuietUntil = 0;
-			if (!refreshDeferred) return;
-			refreshDeferred = false;
-			refreshGate.call();
+			releaseDeferredRefresh();
 		}, COMPOSER_QUIET_MS);
 	}
 
 	function onComposerBlur() {
 		clearTimeout(composerQuietTimer);
 		composerQuietUntil = 0;
-		if (!refreshDeferred) return;
-		refreshDeferred = false;
-		refreshGate.call();
+		releaseDeferredRefresh();
+	}
+
+	/**
+	 * A transcript refresh rebuilt roughly 15,000 DOM nodes in the middle of a
+	 * desktop window drag, producing measured 234–260ms main-thread stalls.
+	 * Hold that work until the resize stream has been quiet for one short beat.
+	 */
+	function holdResizeRefresh() {
+		if (!wideScreen) return;
+		resizeQuietUntil = Date.now() + RESIZE_QUIET_MS;
+		clearTimeout(resizeQuietTimer);
+		resizeQuietTimer = setTimeout(() => {
+			resizeQuietUntil = 0;
+			releaseDeferredRefresh();
+		}, RESIZE_QUIET_MS);
 	}
 
 	function scrollHost(): HTMLElement | null {
@@ -1601,6 +1623,7 @@
 		// visualViewport as well as window: the soft keyboard resizes the
 		// visual viewport and, on iOS, fires nothing on window at all.
 		window.addEventListener('resize', onScroll);
+		window.addEventListener('resize', holdResizeRefresh);
 		window.visualViewport?.addEventListener('resize', onScroll);
 		// The transcript growing is what a new turn looks like to the DOM. While
 		// following, that is the moment to stay at the end; while not, it must
@@ -1620,7 +1643,11 @@
 		return () => {
 			target.removeEventListener('scroll', onScroll);
 			window.removeEventListener('resize', onScroll);
+			window.removeEventListener('resize', holdResizeRefresh);
 			window.visualViewport?.removeEventListener('resize', onScroll);
+			clearTimeout(resizeQuietTimer);
+			resizeQuietTimer = undefined;
+			resizeQuietUntil = 0;
 			observer.disconnect();
 		};
 	});
@@ -1628,7 +1655,12 @@
 	/** Refresh from the server; keep the view pinned to the bottom unless the
 	 *  reader has deliberately scrolled up. */
 	async function refresh() {
-		if (Date.now() < composerQuietUntil) {
+		// Yield one paint before starting the expensive route load. A window
+		// resize or the first composer key queued in this frame gets to raise its
+		// quiet guard before a transcript rebuild has already become unstoppable.
+		await new Promise<void>((resolveFrame) => requestAnimationFrame(() => resolveFrame()));
+		if (!live) return;
+		if (Date.now() < composerQuietUntil || Date.now() < resizeQuietUntil) {
 			refreshDeferred = true;
 			return;
 		}
@@ -1926,6 +1958,60 @@
 			refreshSoon();
 		}
 	}
+
+	/** Arrow presses must reach the terminal in order, even on a fast repeat. */
+	let pickerKeyQueue: Promise<unknown> = Promise.resolve();
+
+	function ownsPickerKey(target: EventTarget | null, key: string): boolean {
+		if (!(target instanceof Element)) return false;
+		// Text fields need their characters and arrows. A focused button or link
+		// owns Enter too, or the global handler and its native click both fire.
+		if (target.closest('input, textarea, select, [contenteditable="true"]')) return true;
+		return key === 'Enter' && Boolean(target.closest('button, a'));
+	}
+
+	/**
+	 * A desktop already has a keyboard, so a visible picker should act like the
+	 * terminal it mirrors. Do not steal keys from the composer or from a sheet
+	 * over the conversation: digits there are text, not an answer.
+	 */
+	$effect(() => {
+		const picker = detail.picker;
+		if (
+			!wideScreen ||
+			!picker ||
+			askHidden ||
+			treeOpen ||
+			showNewAgent ||
+			controlling ||
+			worktrees ||
+			openSubAgent
+		)
+			return;
+
+		const onPickerKey = (event: KeyboardEvent) => {
+			if (
+				event.defaultPrevented ||
+				event.isComposing ||
+				event.metaKey ||
+				event.ctrlKey ||
+				event.altKey ||
+				ownsPickerKey(event.target, event.key) ||
+				busy
+			)
+				return;
+			const shortcut = pickerShortcut(event.key, picker);
+			if (!shortcut) return;
+			event.preventDefault();
+			if (shortcut.kind === 'answer') {
+				if (!event.repeat) void answer(shortcut.index);
+				return;
+			}
+			pickerKeyQueue = pickerKeyQueue.then(() => sendKeys([shortcut.key]));
+		};
+		window.addEventListener('keydown', onPickerKey);
+		return () => window.removeEventListener('keydown', onPickerKey);
+	});
 
 	const KEY_STRIP: Array<{ k: string; l: string }> = [
 		{ k: 'esc', l: 'esc' },
@@ -2860,7 +2946,7 @@
 						</div>
 					{/if}
 
-					<div class="flex flex-col gap-3 text-[14.5px] leading-[1.5]">
+					<div class="transcript-rows flex flex-col gap-3 text-[14.5px] leading-[1.5]">
 						{#if scrollback !== null}
 							<div
 								use:termGrid
@@ -3632,7 +3718,10 @@
 					</button>
 				{/if}
 				<p class="mt-2 text-[11px] text-faint">
-					{#if detail.picker.axis === 'horizontal'}
+					{#if wideScreen}
+						Desktop keyboard: {detail.picker.axis === 'horizontal' ? '←/→' : '↑/↓'} moves; 1–9 chooses;
+						Enter confirms the highlighted option.
+					{:else if detail.picker.axis === 'horizontal'}
 						Arrow keys move the slider and Enter confirms; verified against the screen.
 					{:else if detail.picker.numbered}
 						Digit is sent as a keystroke and verified against the screen.
@@ -3821,6 +3910,18 @@
 </div>
 
 <style>
+	/*
+	 * Desktop width changes used to reflow every off-screen tool result and code
+	 * block in the loaded transcript. Let Chromium skip those rows while keeping
+	 * their last measured height, so resizing works on what is actually visible.
+	 */
+	@media (min-width: 1024px) {
+		:global(.transcript-rows > *) {
+			content-visibility: auto;
+			contain-intrinsic-block-size: auto 5rem;
+		}
+	}
+
 	/*
 	 * The tail on the last bubble of a run.
 	 *
