@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { parsePull, rollup } from './pulls';
+import { latestRuns, parsePull, rollup } from './pulls';
 
 describe('rollup', () => {
 	it('is nothing at all when there are no checks', () => {
@@ -55,6 +55,105 @@ describe('rollup', () => {
 		expect(rollup([{ state: 'SUCCESS' }])).toBe('passing');
 		expect(rollup([{ state: 'FAILURE' }])).toBe('failing');
 		expect(rollup([{ state: 'PENDING' }])).toBe('pending');
+	});
+
+	/**
+	 * Taken from `gh pr view 33 --json statusCheckRollup` on this repository:
+	 * a push cancelled the first `CI / gate` run and a second one passed. The
+	 * cancelled run is history, not the check's verdict.
+	 */
+	it('judges each check by its latest run, not a run it superseded', () => {
+		const cancelled = {
+			__typename: 'CheckRun',
+			completedAt: '2026-09-14T09:43:21Z',
+			conclusion: 'CANCELLED',
+			name: 'gate',
+			startedAt: '2026-09-14T09:43:21Z',
+			status: 'COMPLETED',
+			workflowName: 'CI'
+		};
+		const passed = {
+			__typename: 'CheckRun',
+			completedAt: '2026-09-14T09:44:56Z',
+			conclusion: 'SUCCESS',
+			name: 'gate',
+			startedAt: '2026-09-14T09:43:25Z',
+			status: 'COMPLETED',
+			workflowName: 'CI'
+		};
+		expect(rollup([cancelled, passed])).toBe('passing');
+		// Order in the list is not what decides it; the timestamps are.
+		expect(rollup([passed, cancelled])).toBe('passing');
+	});
+
+	it('still fails when the latest run is the cancelled one', () => {
+		expect(
+			rollup([
+				{
+					name: 'gate',
+					workflowName: 'CI',
+					startedAt: '2026-09-14T09:00:00Z',
+					conclusion: 'SUCCESS'
+				},
+				{
+					name: 'gate',
+					workflowName: 'CI',
+					startedAt: '2026-09-14T10:00:00Z',
+					conclusion: 'CANCELLED'
+				}
+			])
+		).toBe('failing');
+	});
+
+	/** Two workflows can each have a job called `gate`; they are different checks. */
+	it('keeps same-named jobs from different workflows apart', () => {
+		expect(
+			rollup([
+				{
+					name: 'gate',
+					workflowName: 'CI',
+					startedAt: '2026-09-14T09:00:00Z',
+					conclusion: 'FAILURE'
+				},
+				{
+					name: 'gate',
+					workflowName: 'Deploy',
+					startedAt: '2026-09-14T10:00:00Z',
+					conclusion: 'SUCCESS'
+				}
+			])
+		).toBe('failing');
+	});
+
+	/** GitHub writes an unset timestamp as year 1, which must not outrank a real one. */
+	it('falls back to completedAt, and treats the year-one placeholder as unset', () => {
+		expect(
+			rollup([
+				{
+					name: 'gate',
+					workflowName: 'CI',
+					completedAt: '2026-09-14T09:00:00Z',
+					conclusion: 'CANCELLED'
+				},
+				{
+					name: 'gate',
+					workflowName: 'CI',
+					completedAt: '2026-09-14T10:00:00Z',
+					conclusion: 'SUCCESS'
+				}
+			])
+		).toBe('passing');
+		expect(
+			latestRuns([
+				{ name: 'gate', startedAt: '2026-09-14T09:00:00Z', conclusion: 'SUCCESS' },
+				{ name: 'gate', startedAt: '0001-01-01T00:00:00Z', conclusion: 'CANCELLED' }
+			])
+		).toEqual([{ name: 'gate', startedAt: '2026-09-14T09:00:00Z', conclusion: 'SUCCESS' }]);
+	});
+
+	it('never merges entries that carry no name to match on', () => {
+		expect(latestRuns([{ state: 'SUCCESS' }, { state: 'FAILURE' }])).toHaveLength(2);
+		expect(rollup([{ state: 'SUCCESS' }, { state: 'FAILURE' }])).toBe('failing');
 	});
 
 	/** A verdict nobody has taught it yet must not read as green. */

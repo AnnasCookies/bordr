@@ -42,6 +42,53 @@ interface RollupEntry {
 	status?: string;
 	conclusion?: string;
 	state?: string;
+	/** A CheckRun's job name. */
+	name?: string;
+	/** A CheckRun's workflow, which is what makes two jobs called `gate` different. */
+	workflowName?: string;
+	/** A StatusContext's name for itself. */
+	context?: string;
+	startedAt?: string;
+	completedAt?: string;
+}
+
+/**
+ * When a run happened, for ordering reruns of one check.
+ *
+ * GitHub fills an unset timestamp with `0001-01-01T00:00:00Z` rather than
+ * leaving it out, so anything before the epoch counts as unset too.
+ */
+function when(entry: RollupEntry): number {
+	for (const stamp of [entry.startedAt, entry.completedAt]) {
+		const at = stamp ? Date.parse(stamp) : NaN;
+		if (Number.isFinite(at) && at > 0) return at;
+	}
+	return -Infinity;
+}
+
+/**
+ * One entry per check: its latest run.
+ *
+ * The rollup lists every run on the head commit, superseded ones included.
+ * Pushing twice in quick succession cancels the first CI run, and `gh pr view`
+ * for this very repository returned that CANCELLED `CI / gate` beside the
+ * SUCCESS run that replaced it — so a green pull request showed a red cross.
+ * What a check says NOW is its latest run; the older ones are history.
+ *
+ * An entry with no name at all cannot be matched to a rerun, so it is kept
+ * as its own check rather than guessed at.
+ */
+export function latestRuns(entries: readonly RollupEntry[]): RollupEntry[] {
+	const latest = new Map<string, { entry: RollupEntry; at: number }>();
+	entries.forEach((entry, index) => {
+		const label = entry.name ?? entry.context;
+		const key = label === undefined ? `#${index}` : `${entry.workflowName ?? ''}\0${label}`;
+		const at = when(entry);
+		const held = latest.get(key);
+		// `>=` so that, with no usable timestamps, the later listing wins.
+		if (!held || at >= held.at) latest.set(key, { entry, at });
+	});
+	return [...latest.values()].map(({ entry }) => entry);
 }
 
 const BAD = new Set([
@@ -67,7 +114,7 @@ const GOOD = new Set(['SUCCESS', 'NEUTRAL', 'SKIPPED']);
 export function rollup(entries: readonly RollupEntry[]): Checks {
 	if (entries.length === 0) return 'none';
 	let pending = false;
-	for (const entry of entries) {
+	for (const entry of latestRuns(entries)) {
 		const verdict = (entry.conclusion || entry.state || '').toUpperCase();
 		if (BAD.has(verdict)) return 'failing';
 		// A CheckRun that has not completed has no conclusion yet; a
