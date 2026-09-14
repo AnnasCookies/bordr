@@ -142,7 +142,7 @@ export type GradientEnd = 'auto' | 'harness' | 'custom';
  * both gives a filled bubble with a rule, and neither leaves the text bare
  * on the page. Each has its own colour per side.
  */
-export type ToolDetail = 'formatted' | 'json';
+export type ToolDetail = 'formatted' | 'tree' | 'json';
 export type PaneView = 'auto' | 'conversation' | 'terminal';
 export type TerminalFit = 'fit' | 'wrap' | 'native';
 export type TerminalDensity = 'compact' | 'comfortable';
@@ -216,7 +216,7 @@ export interface Prefs {
 	bubbleBorderWidth: number;
 	userBorder: string;
 	agentBorder: string;
-	/** Render a tool call the way a terminal shows it, or as raw JSON. */
+	/** Render tool input for reading, as a collapsible tree, or as raw JSON. */
 	toolDetail: ToolDetail;
 	/** How the sidebar's agent section is ordered: by urgency, or by workspace. */
 	agentOrder: AgentOrder;
@@ -450,7 +450,7 @@ const INDICATORS: StatusIndicators[] = ['dot', 'symbol', 'text'];
 const SOUNDS: SoundAlerts[] = ['off', 'attention', 'all'];
 const FILL_STYLES: FillStyle[] = ['solid', 'gradient'];
 const GRADIENT_ENDS: GradientEnd[] = ['auto', 'harness', 'custom'];
-const TOOL_DETAILS: ToolDetail[] = ['formatted', 'json'];
+const TOOL_DETAILS: ToolDetail[] = ['formatted', 'tree', 'json'];
 const AGENT_ORDERS: AgentOrder[] = ['priority', 'workspace'];
 const STATUS_POSITIONS: StatusPosition[] = ['header', 'bottom'];
 const WORK_CONTROLS: WorkControl[] = ['inline', 'header'];

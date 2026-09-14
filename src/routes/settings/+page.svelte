@@ -544,10 +544,10 @@
 {#snippet workControlPreview()}
 	<div class="rounded-lg bg-page p-2">
 		{#if prefs.value.workControl === 'header'}
-			<span class="rounded-full bg-working-bg px-2.5 py-1 text-[12px] text-working">work 27</span>
+			<span class="rounded-full bg-working-bg px-2.5 py-1 text-[12px] text-working">tools 27</span>
 			<span class="ml-1 text-[11px] text-muted">in the header, always reachable</span>
 		{:else}
-			<span class="text-[11.5px] text-working">Hide the work (27)</span>
+			<span class="text-[11.5px] text-working">Hide tools (27)</span>
 			<span class="ml-1 text-[11px] text-muted">at the end of the transcript</span>
 		{/if}
 	</div>
@@ -1850,12 +1850,17 @@
 								value={prefs.value.toolDetail}
 								options={[
 									{ v: 'formatted' as ToolDetail, l: 'Readable' },
+									{ v: 'tree' as ToolDetail, l: 'JSON tree' },
 									{ v: 'json' as ToolDetail, l: 'Raw JSON' }
 								]}
 								onchange={(v) => prefs.set('toolDetail', v)}
 							>
 								{#snippet preview()}{@render toolPreview()}{/snippet}
 							</SettingRow>
+							<p class="px-3.5 pb-2 text-[12px] text-muted">
+								JSON tree folds nested objects and arrays. Raw JSON follows the syntax highlighting
+								switch above.
+							</p>
 						</div>
 					</SettingsSection>
 				{/if}

@@ -79,6 +79,11 @@ describe('normalisePrefs', () => {
 			showThinking: true
 		});
 	});
+
+	it('accepts the collapsible JSON tree tool view', () => {
+		expect(normalisePrefs({ toolDetail: 'tree' }).toolDetail).toBe('tree');
+		expect(normalisePrefs({ toolDetail: 'xml' }).toolDetail).toBe(DEFAULTS.toolDetail);
+	});
 });
 
 describe('resolveTheme', () => {

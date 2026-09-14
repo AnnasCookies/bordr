@@ -1,5 +1,6 @@
 <script lang="ts">
 	import CodeBlock from './code-block.svelte';
+	import JsonTree from './json-tree.svelte';
 	import { langForPath } from '$lib/highlight';
 	import { prefs } from '$lib/prefs.svelte';
 
@@ -140,7 +141,9 @@
 	);
 </script>
 
-{#if formatted}
+{#if prefs.value.toolDetail === 'tree' && input}
+	<JsonTree value={input} {mono} />
+{:else if formatted}
 	{#if formatted.fields.length > 0}
 		<dl class="fields" style="--mono: {mono}px">
 			{#each formatted.fields as field (field.k)}
