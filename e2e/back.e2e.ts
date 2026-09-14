@@ -84,6 +84,29 @@ test('the agents list drawer has the same toggle, and no Home of its own', async
 	await expect(close).toBeHidden();
 });
 
+test("the sidebar keeps Herdr's workspace, tab and pane order", async ({ page }) => {
+	await page.goto('/');
+	await page.getByRole('button', { name: 'Workspaces', exact: true }).click();
+
+	const expected = await page.evaluate(async () => {
+		const response = await fetch('/api/panes');
+		const body = await response.json();
+		return body.workspaces.flatMap(
+			(workspace: { tabs: Array<{ panes: Array<{ paneId: string; hasAgent: boolean }> }> }) =>
+				workspace.tabs.flatMap((tab) =>
+					tab.panes.filter((pane) => pane.hasAgent).map((pane) => pane.paneId)
+				)
+		);
+	});
+	const links = page.locator('[data-agent-list] a[href^="/a/"]');
+	await expect(links).toHaveCount(expected.length, { timeout: 10_000 });
+	const actual = await links.evaluateAll((rows) =>
+		rows.map((row) => decodeURIComponent((row.getAttribute('href') ?? '').replace('/a/', '')))
+	);
+
+	expect(actual).toEqual(expected);
+});
+
 /**
  * The divider used to leave its move handler bound to the window when the
  * browser cancelled the gesture, so every later scroll resized the sidebar.

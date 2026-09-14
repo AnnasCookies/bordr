@@ -4,7 +4,7 @@
 	import { SvelteSet } from 'svelte/reactivity';
 	import { agentTitle } from '$lib/grouping';
 	import { agentStore } from '$lib/agents.svelte';
-	import { prefs, type AgentOrder } from '$lib/prefs.svelte';
+	import { prefs } from '$lib/prefs.svelte';
 	import { harnessText } from '$lib/theme';
 	import HarnessMark from './harness-mark.svelte';
 	import PreviewText from './preview-text.svelte';
@@ -104,27 +104,14 @@
 	/** The workspace the open pane belongs to, so the list can mark it. */
 	const currentWorkspace = $derived(allPanes.find((p) => p.paneId === current)?.workspaceId ?? '');
 
-	const RANK: Record<string, number> = { blocked: 0, working: 1, done: 2, idle: 3, unknown: 4 };
-
 	/**
-	 * The agent section: agents, ordered by whichever rule is chosen.
+	 * The agent section in Herdr's workspace, tab and pane order.
 	 *
-	 * Panes with no agent are left out. A section called "agents" is a list of
-	 * things that might need you, and a shell never does — it sat there
-	 * outnumbering them, one row per terminal, pushing the ones that do off
-	 * the screen. Shells are reached where they live: the machines section
-	 * above, and the pane strip inside their own tab.
+	 * `allPanes` is flattened directly from Herdr's tree. Sorting it again by
+	 * status or title made this sidebar disagree with the TUI and moved rows as
+	 * work changed state. Panes with no agent stay in the machines tree above.
 	 */
-	const agentRows = $derived.by(() => {
-		return allPanes
-			.filter((p) => p.hasAgent)
-			.sort((a, b) => {
-				if (prefs.value.agentOrder === 'workspace') {
-					return a.workspaceLabel.localeCompare(b.workspaceLabel) || a.title.localeCompare(b.title);
-				}
-				return (RANK[a.status] ?? 9) - (RANK[b.status] ?? 9) || a.title.localeCompare(b.title);
-			});
-	});
+	const agentRows = $derived(allPanes.filter((pane) => pane.hasAgent));
 
 	/**
 	 * The machines section: one collapsible group per machine, this host first.
@@ -447,30 +434,8 @@
 		></span>
 	</button>
 
-	<div class="min-h-0 flex-1 overflow-y-auto overscroll-contain py-1">
-		<div class="flex items-center gap-1 px-2 py-0.5">
-			<span class="flex-1 font-mono text-[10px] tracking-[0.08em] text-faint uppercase">agents</span
-			>
-			<!-- One control with two positions, rather than two chips that happen
-			     to be adjacent — it is a single choice and should look like it. -->
-			<span class="flex gap-px rounded-md bg-chip p-px" role="group" aria-label="Order agents by">
-				{#each [{ v: 'priority', l: 'priority' }, { v: 'workspace', l: 'group' }] as option (option.v)}
-					<!--
-						Equal width, not text width: "priority" is twice the length of
-						"group", so sizing to content made the selected half jump about
-						as you switched. A fixed cell each keeps the control still.
-					-->
-					<button
-						class="w-[52px] rounded-[5px] py-0.5 font-mono text-[10px] transition-colors {prefs
-							.value.agentOrder === option.v
-							? 'bg-card text-ink shadow-sm'
-							: 'text-faint hover:text-muted'}"
-						aria-pressed={prefs.value.agentOrder === option.v}
-						onclick={() => prefs.set('agentOrder', option.v as AgentOrder)}>{option.l}</button
-					>
-				{/each}
-			</span>
-		</div>
+	<div data-agent-list class="min-h-0 flex-1 overflow-y-auto overscroll-contain py-1">
+		<p class="px-2 py-0.5 font-mono text-[10px] tracking-[0.08em] text-faint uppercase">agents</p>
 
 		{#if agentRows.length === 0}
 			<p class="px-2 py-2 text-[12px] text-muted">Nothing here.</p>
