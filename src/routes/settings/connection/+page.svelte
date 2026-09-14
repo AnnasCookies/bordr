@@ -156,13 +156,19 @@
 
 	{#if treeOpen}
 		<div class="fixed inset-0 z-40">
+			<!--
+				Presentational, as on every other screen: the drawer's own ☰ is the
+				labelled way out. `backTo` matches the header's, so the drawer leaves
+				room for the same back arrow and its ☰ lands on the header's.
+			-->
 			<button
-				class="absolute inset-0 bg-black/40"
-				aria-label="Close the workspaces list"
+				class="no-press absolute inset-0 bg-black/40"
+				aria-hidden="true"
+				tabindex="-1"
 				onclick={() => (treeOpen = false)}
 			></button>
 			<div class="absolute inset-y-0 left-0 w-[86%] max-w-[320px] shadow-2xl">
-				<SessionTree />
+				<SessionTree onclose={() => (treeOpen = false)} home backTo="/settings" />
 			</div>
 		</div>
 	{/if}
