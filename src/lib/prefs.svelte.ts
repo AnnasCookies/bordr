@@ -190,8 +190,10 @@ export interface Prefs {
 	theme: Theme;
 	monoSize: number;
 	keyStrip: KeyStripMode;
-	/** Show tool calls, results and thinking in a conversation by default. */
+	/** Show tool calls and their results in a conversation by default. */
 	showWork: boolean;
+	/** Show the agent's thinking as separate, quiet transcript rows. */
+	showThinking: boolean;
 	/**
 	 * How the harness's accent reaches a bubble. 'edge' is a stripe down the
 	 * side; 'tint' blends it into the background, which muddies every theme
@@ -315,7 +317,7 @@ export interface Prefs {
 	 * out of the way of the thing you came to read.
 	 */
 	statusPosition: StatusPosition;
-	/** Where the show-the-work control lives: with the transcript, or in the header. */
+	/** Where the show-tools control lives: with the transcript, or in the header. */
 	workControl: WorkControl;
 	/**
 	 * Which status row to show when the block is collapsed, per harness.
@@ -353,6 +355,7 @@ export const DEFAULTS: Prefs = {
 	monoSize: 11,
 	keyStrip: 'peek',
 	showWork: true,
+	showThinking: true,
 	harnessAccent: 'edge',
 	statusIndicators: 'dot',
 	soundAlerts: 'attention',
@@ -508,6 +511,10 @@ export function normalisePrefs(raw: unknown): Prefs {
 		keyStrip:
 			stored.v === VERSION ? pick(stored.keyStrip, STRIPS, DEFAULTS.keyStrip) : DEFAULTS.keyStrip,
 		showWork: bool(stored.showWork, DEFAULTS.showWork),
+		// Before this setting existed, showWork controlled both tools and thinking.
+		// Preserve that old choice on upgrade instead of making hidden thinking
+		// suddenly appear; once saved, the two switches are independent.
+		showThinking: bool(stored.showThinking, bool(stored.showWork, DEFAULTS.showThinking)),
 		harnessAccent: pick(stored.harnessAccent, ACCENTS, DEFAULTS.harnessAccent),
 		statusIndicators: pick(stored.statusIndicators, INDICATORS, DEFAULTS.statusIndicators),
 		soundAlerts: pick(stored.soundAlerts, SOUNDS, DEFAULTS.soundAlerts),

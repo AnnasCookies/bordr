@@ -12,9 +12,16 @@
 	let {
 		blocks,
 		mono = 11,
-		showWork = true,
+		showTools = true,
+		showThinking = true,
 		plain = false
-	}: { blocks: Block[]; mono?: number; showWork?: boolean; plain?: boolean } = $props();
+	}: {
+		blocks: Block[];
+		mono?: number;
+		showTools?: boolean;
+		showThinking?: boolean;
+		plain?: boolean;
+	} = $props();
 
 	/**
 	 * Adapters hand the view focused changed lines. Claude's Edit arguments are
@@ -75,15 +82,15 @@
 			</button>
 			{#if block.caption}<figcaption>{block.caption}</figcaption>{/if}
 		</figure>
-	{:else if block.kind === 'thinking' && showWork}
-		<!-- Thinking follows Show tools, but stays open and visually quieter than
-		     either the reply or a tool call. -->
+	{:else if block.kind === 'thinking' && showThinking}
+		<!-- Thinking follows its own setting, and stays open and visually quieter
+		     than either the reply or a tool call. -->
 		<div class="thinking"><RichText text={block.text} {mono} /></div>
 	{:else if block.kind === 'tool'}
 		{@const plan = todoPlanForBlock(block)}
 		{#if plan}
 			<TodoCard {plan} truncatedLines={block.result?.truncatedLines ?? 0} {mono} />
-		{:else if showWork}
+		{:else if showTools}
 			{#if hasBody(block)}
 				<details class="fold tool">
 					<summary>

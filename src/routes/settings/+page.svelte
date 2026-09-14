@@ -93,7 +93,11 @@
 			diffs: []
 		}
 	];
-	const sampleWork: Block[] = [{ kind: 'text', text: 'All 322 passed.' }, ...sampleTool];
+	const sampleWork: Block[] = [
+		{ kind: 'thinking', text: 'Checking the result before replying.' },
+		{ kind: 'text', text: 'All 322 passed.' },
+		...sampleTool
+	];
 
 	/**
 	 * The swatch is the REAL bubble component, not a copy of it. The copy was
@@ -461,10 +465,13 @@
 		<MessageBlocks
 			blocks={sampleWork}
 			mono={prefs.value.monoSize}
-			showWork={prefs.value.showWork}
+			showTools={prefs.value.showWork}
+			showThinking={prefs.value.showThinking}
 		/>
-		{#if !prefs.value.showWork}
-			<p class="text-[12px] text-muted">Tool calls hidden; the agent's prose still shows.</p>
+		{#if !prefs.value.showWork && !prefs.value.showThinking}
+			<p class="text-[12px] text-muted">
+				Tools and thinking hidden; the agent's reply still shows.
+			</p>
 		{/if}
 	</div>
 {/snippet}
@@ -1769,10 +1776,18 @@
 								onchange={(v) => prefs.set('groupTools', v)}
 							/>
 							<ToggleRow
-								label="Show the work"
-								hint="Tool calls, their results and the agent's thinking, as expandable rows. Each conversation's own toggle overrides this and is remembered."
+								label="Show tools"
+								hint="Tool calls and their results, as expandable rows. The conversation's own tools control updates this setting."
 								checked={prefs.value.showWork}
 								onchange={(v) => prefs.set('showWork', v)}
+							>
+								{#snippet preview()}{@render workPreview()}{/snippet}
+							</ToggleRow>
+							<ToggleRow
+								label="Show thinking"
+								hint="The agent's thinking as separate, quiet italic rows. This does not follow the tools control."
+								checked={prefs.value.showThinking}
+								onchange={(v) => prefs.set('showThinking', v)}
 							>
 								{#snippet preview()}{@render workPreview()}{/snippet}
 							</ToggleRow>
@@ -1788,7 +1803,7 @@
 								{#snippet preview()}{@render statusPositionPreview()}{/snippet}
 							</SettingRow>
 							<SettingRow
-								label="Show the work control"
+								label="Show tools control"
 								value={prefs.value.workControl}
 								options={[
 									{ v: 'inline' as WorkControl, l: 'In transcript' },

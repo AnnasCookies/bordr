@@ -75,11 +75,11 @@
 	const TAIL = 80;
 
 	/**
-	 * Tool calls, results and thinking. Starts from the persisted preference
-	 * so the choice survives leaving the conversation — it used to reset to
-	 * hidden on every open, which made the work look like it was not there.
+	 * Tool calls and results. Starts from the persisted preference so the choice
+	 * survives leaving the conversation — it used to reset on every open.
+	 * Thinking has its own setting and does not follow this quick control.
 	 */
-	let showWork = $state(prefs.value.showWork);
+	let showTools = $state(prefs.value.showWork);
 	/** The ＋ in the desktop tree opens the same sheet the agents list uses. */
 	let showNewAgent = $state(false);
 	/** The sub-agent being read, if any. */
@@ -213,6 +213,13 @@
 
 	function work(message: { blocks?: Block[] }): Block[] {
 		return workBlocks(message.blocks);
+	}
+
+	/** Whether an optional non-prose block in this turn will actually draw. */
+	function optionalWorkVisible(message: { blocks?: Block[] }): boolean {
+		return work(message).some((block) =>
+			block.kind === 'thinking' ? prefs.value.showThinking : showTools
+		);
 	}
 
 	/**
@@ -2380,22 +2387,22 @@
 
 {#snippet headerActions()}
 	<!--
-		The work switch, when it has been moved off the transcript. Up here it is
+		The tools switch, when it has been moved off the transcript. Up here it is
 		a state you set once, rather than a link you re-find at the bottom of a
 		growing conversation.
 	-->
 	{#if prefs.value.workControl === 'header' && toolCount > 0 && !layout.tight}
 		<button
-			class="flex h-9 shrink-0 items-center rounded-full border px-3 text-[12px] {showWork
+			class="flex h-9 shrink-0 items-center rounded-full border px-3 text-[12px] {showTools
 				? 'border-working-halo bg-working-bg text-working'
 				: 'border-edge text-muted'}"
-			aria-pressed={showWork}
+			aria-pressed={showTools}
 			onclick={() => {
-				showWork = !showWork;
-				prefs.set('showWork', showWork);
+				showTools = !showTools;
+				prefs.set('showWork', showTools);
 			}}
 		>
-			work {toolCount}
+			tools {toolCount}
 		</button>
 	{/if}
 	{#if detail.status === 'working'}
@@ -2799,8 +2806,8 @@
 									the transcript keeps the shape of the conversation and the
 									work is still one tap away.
 
-									Guarded by showWork like every other tool row. Folding is about
-									how the work is PRESENTED; the toggle is about whether it is
+									Guarded by showTools like every other tool row. Folding is about
+									how the tools are PRESENTED; the toggle is about whether they are
 									shown at all, and a group that ignored it put tool rows back on
 									screen for anyone who had turned them off.
 								-->
@@ -2808,7 +2815,7 @@
 									The kind check stays pure so the {:else} below still narrows to
 									a message row; the toggle is checked inside it.
 								-->
-									{#if showWork}
+									{#if showTools}
 										<details class="group">
 											<summary
 												class="flex cursor-pointer items-baseline gap-2 rounded-lg px-2 py-1.5 font-mono text-[11.5px] text-muted transition-colors hover:bg-chip/60"
@@ -2824,7 +2831,7 @@
 												</span>
 											</summary>
 											<div class="pl-2">
-												<MessageBlocks blocks={row.blocks} mono={prefs.value.monoSize} showWork />
+												<MessageBlocks blocks={row.blocks} mono={prefs.value.monoSize} showTools />
 											</div>
 										</details>
 									{/if}
@@ -2878,7 +2885,7 @@
 												<BubbleMeta at={message.at ?? 0} run={row.run} state="read" row />
 											</div>
 										{/if}
-									{:else if message.text || prose(message).length > 0 || hasTodoPlan(message.blocks) || (showWork && (message.blocks?.length ?? 0) > 0)}
+									{:else if message.text || prose(message).length > 0 || hasTodoPlan(message.blocks) || optionalWorkVisible(message)}
 										<!--
 										A turn that is only tool calls has nothing to show while the
 										work is hidden; rendering the prefix anyway left a column of
@@ -2934,7 +2941,8 @@
 															<MessageBlocks
 																blocks={segment.blocks}
 																mono={prefs.value.monoSize}
-																{showWork}
+																{showTools}
+																showThinking={prefs.value.showThinking}
 															/>
 														{/if}
 													{/each}
@@ -2947,7 +2955,8 @@
 														<MessageBlocks
 															blocks={message.blocks ?? []}
 															mono={prefs.value.monoSize}
-															{showWork}
+															{showTools}
+															showThinking={prefs.value.showThinking}
 														/>
 													</div>
 												{/if}
@@ -3000,11 +3009,11 @@
 								<button
 									class="rounded-full px-3 py-1 text-[11.5px] text-working"
 									onclick={() => {
-										showWork = !showWork;
-										prefs.set('showWork', showWork);
+										showTools = !showTools;
+										prefs.set('showWork', showTools);
 									}}
 								>
-									{showWork ? 'Hide' : 'Show'} the work ({toolCount})
+									{showTools ? 'Hide' : 'Show'} tools ({toolCount})
 								</button>
 							</div>
 						{/if}
@@ -3580,12 +3589,12 @@
 						...(prefs.value.workControl === 'header' && toolCount > 0
 							? [
 									{
-										label: `Show the work (${toolCount})`,
-										hint: 'Tool calls, results and thinking, inline in the transcript.',
-										on: showWork,
+										label: `Show tools (${toolCount})`,
+										hint: 'Tool calls and results, inline in the transcript.',
+										on: showTools,
 										onchange: () => {
-											showWork = !showWork;
-											prefs.set('showWork', showWork);
+											showTools = !showTools;
+											prefs.set('showWork', showTools);
 										}
 									}
 								]

@@ -70,6 +70,15 @@ describe('normalisePrefs', () => {
 		expect(normalisePrefs({ showGrouping: false }).showGrouping).toBe(false);
 		expect(normalisePrefs({ showGrouping: 'no' }).showGrouping).toBe(true);
 	});
+
+	it('splits thinking from tools without losing the old combined choice', () => {
+		expect(DEFAULTS.showThinking).toBe(true);
+		expect(normalisePrefs({ showWork: false }).showThinking).toBe(false);
+		expect(normalisePrefs({ showWork: false, showThinking: true })).toMatchObject({
+			showWork: false,
+			showThinking: true
+		});
+	});
 });
 
 describe('resolveTheme', () => {
