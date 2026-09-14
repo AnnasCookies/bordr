@@ -217,8 +217,19 @@
 			be lost. SvelteKit already makes the next navigation a full load;
 			this is for the page that never navigates.
 		-->
+		<!--
+			Along the bottom, not the top. At the top it sat straight over the
+			header — the title, the mark and the menu underneath it — on every
+			screen and every width, and it stays until you tap it, so the app's
+			own navigation was covered up for as long as you ignored it.
+
+			Measured rather than guessed: the tab bar stands 63px off the bottom
+			and a composer with its status block stands 122px, so 8.5rem clears
+			the taller of the two with room to spare, and the safe-area inset
+			keeps it off the home indicator below them.
+		-->
 		<button
-			class="fixed top-2 left-1/2 z-30 -translate-x-1/2 rounded-full bg-ink px-3.5 py-1.5 text-[12.5px] font-medium text-card shadow-[0_6px_18px_rgba(0,0,0,.18)]"
+			class="fixed bottom-[calc(8.5rem+env(safe-area-inset-bottom))] left-1/2 z-30 min-h-11 -translate-x-1/2 rounded-full bg-ink px-3.5 py-1.5 text-[12.5px] font-medium text-card shadow-[0_6px_18px_rgba(0,0,0,.18)]"
 			onclick={() => location.reload()}
 		>
 			bordr has updated · tap to reload

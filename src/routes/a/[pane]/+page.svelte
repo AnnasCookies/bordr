@@ -3198,7 +3198,7 @@
 							: 'border-edge bg-card'}"
 					>
 						<button
-							class="flex h-[34px] w-[34px] shrink-0 items-center justify-center rounded-lg {showControls
+							class="tap-44 flex h-[34px] w-[34px] shrink-0 items-center justify-center rounded-lg {showControls
 								? 'bg-working-bg text-working'
 								: 'text-muted'}"
 							aria-label="Manual controls"
@@ -3214,7 +3214,7 @@
 							<Icon name="keyboard" size={19} />
 						</button>
 						<button
-							class="flex h-[34px] w-[34px] shrink-0 items-center justify-center rounded-lg text-muted"
+							class="tap-44 flex h-[34px] w-[34px] shrink-0 items-center justify-center rounded-lg text-muted"
 							aria-label="Attach a photo"
 							onclick={() => fileInput?.click()}
 						>
@@ -3276,7 +3276,7 @@
 								</button>
 							{:else}
 								<button
-									class="flex h-[34px] w-[34px] shrink-0 items-center justify-center rounded-lg text-muted"
+									class="tap-44 flex h-[34px] w-[34px] shrink-0 items-center justify-center rounded-lg text-muted"
 									aria-label="Dictate"
 									onclick={toggleDictation}
 								>
@@ -3285,7 +3285,7 @@
 							{/if}
 						{/if}
 						<button
-							class="flex h-[34px] w-[34px] shrink-0 items-center justify-center rounded-lg text-white {draft.trim() ||
+							class="tap-44 flex h-[34px] w-[34px] shrink-0 items-center justify-center rounded-lg text-white {draft.trim() ||
 							attachments.length > 0
 								? 'bg-working'
 								: 'bg-idle-rail'}"

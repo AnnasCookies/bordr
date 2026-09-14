@@ -467,3 +467,26 @@ a:not(.no-press):active,
 		opacity: 0.5;
 	}
 }
+
+/**
+ * A control that LOOKS its size but is reachable at a thumb's size.
+ *
+ * The composer's four buttons are 34x34 — deliberately, because the bar they
+ * sit in is 48px tall and a 44px button in it leaves no room for the box you
+ * are typing in. But 34px is under every touch guideline there is, and these
+ * are the four controls the app is most often used through: send, dictate,
+ * attach, and the key strip.
+ *
+ * So the box stays 34px and the TARGET grows past it. The pseudo-element takes
+ * the taps, costs no layout, and overlaps its neighbours' padding rather than
+ * pushing them apart — which is exactly the trade a 48px bar is asking for.
+ */
+.tap-44 {
+	position: relative;
+}
+
+.tap-44::after {
+	content: '';
+	position: absolute;
+	inset: -5px;
+}
