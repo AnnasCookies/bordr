@@ -8,6 +8,15 @@ export interface PickerOption {
 
 export interface Picker {
 	question: string | null;
+	/**
+	 * What the question is ABOUT — the lines above it inside the same dialog.
+	 *
+	 * Claude Code asks "Do you want to proceed?" and puts the subject above:
+	 * the tool, the command, the file. Keeping only the question line left the
+	 * phone showing a bare yes/no with nothing to decide on, which is the one
+	 * thing an approval prompt must never do.
+	 */
+	context: string[];
 	options: PickerOption[];
 	/** True for checkbox pickers: digits toggle, Enter submits. */
 	multi: boolean;
@@ -33,6 +42,9 @@ export function pendingAsk(
 		if (message.ask && message.ask.options.length > 0) {
 			return {
 				question: message.ask.question,
+				// A question asked through a tool carries its own wording; there is
+				// no dialog above it to take context from.
+				context: [],
 				options: message.ask.options.map((label, n) => ({
 					index: n + 1,
 					label,
@@ -79,7 +91,7 @@ const CHECKBOX = /^\[([ xX✓✔●■])\]\s+(.*)$/;
  * (pi's model selector, where ✓ marks the current one). The prefix, marker
  * included, is the label column its siblings align to.
  */
-const CARET_ROW = /^([\s┃│┆┊┋|]*[❯›>→]\s+(?:[✓✔●○◉]\s+)?)(\S.*?)\s*$/;
+const CARET_ROW = /^([\s┃│┆┊┋|]*[❯›>→]\s+(?:[✓✔●○◉]\s+)?)(\S.*?)\s*$/;
 /** A boxed dialog pads every row to its width and closes it with a border glyph. */
 function bareLabel(label: string): string {
 	const trimmed = label.replace(/\s*[┃│┆┊┋|█]+\s*$/, '').trim();
@@ -88,7 +100,7 @@ function bareLabel(label: string): string {
 	return halves.length === 2 && halves[0] === halves[1] ? halves[0] : trimmed;
 }
 /** What may sit before a sibling's label: box border, blanks, an unselected radio. */
-const SIBLING_PREFIX = /^[\s┃│┆┊┋|]*(?:[✓✔●○◉]\s+)?\s*$/;
+const SIBLING_PREFIX = /^[\s┃│┆┊┋|]*(?:[✓✔●○◉]\s+)?\s*$/;
 /**
  * An unnumbered option is a short label. A prompt echoed under a `>` (agy,
  * and any harness that wraps the remainder to the label column) is the
@@ -187,7 +199,7 @@ export function parsePicker(visible: string): Picker | null {
 	}
 
 	return {
-		question: findQuestion(lines, firstOptionLine),
+		...askedAt(lines, firstOptionLine),
 		options,
 		multi: options.some((o) => o.checked !== undefined),
 		numbered: true
@@ -240,6 +252,8 @@ function parseSlider(lines: string[]): Picker | null {
 		});
 		return {
 			question: sliderTitle(lines, i),
+			// A slider's title IS the whole question — there is nothing above it.
+			context: [],
 			options: stops.map((m, n) => ({ index: n + 1, label: m[0], selected: n === selected })),
 			multi: false,
 			numbered: false,
@@ -321,7 +335,7 @@ function listAround(
 	if (options.some((r) => r.label.length > MAX_UNNUMBERED_LABEL)) return null;
 
 	return {
-		question: findQuestion(lines, options[0].line),
+		...askedAt(lines, options[0].line),
 		options: options.map((r, n) => ({ index: n + 1, label: r.label, selected: r.selected })),
 		multi: false,
 		numbered: false
@@ -333,19 +347,73 @@ function listAround(
  * few lines (Claude's dialogs put a "Security guide" link or tool details
  * between the question and the rows), else the nearest non-blank line.
  */
-function findQuestion(lines: string[], firstOptionLine: number): string | null {
+/** The question and what it is about, as one lookup so the two cannot drift. */
+function askedAt(
+	lines: string[],
+	firstOptionLine: number
+): { question: string | null; context: string[] } {
+	const found = findQuestion(lines, firstOptionLine);
+	return { question: found.text, context: findContext(lines, found.line) };
+}
+
+/** A boxed dialog's rows carry the border glyph; the phone does not want it. */
+function unbox(text: string): string {
+	return text
+		.replace(/^[┃│┆┊┋|]+\s*/, '')
+		.replace(/\s*[┃│┆┊┋|]+$/, '')
+		.trim();
+}
+
+/** The top or bottom rule of a dialog — the edge of what belongs to it. */
+const BOX_RULE = /^[╭╮╰╯┌┐└┘├┤┬┴┼─═╌╍━]{2,}/;
+
+function findQuestion(
+	lines: string[],
+	firstOptionLine: number
+): { text: string | null; line: number } {
 	let nearest: string | null = null;
+	let nearestLine = -1;
 	for (let i = firstOptionLine - 1; i >= 0 && i >= firstOptionLine - 8; i--) {
 		const text = lines[i].trim();
 		if (!text) continue;
+		if (BOX_RULE.test(text)) continue;
 		// The user's input line also starts with the caret — not a question.
-		if (/^[❯›>]/.test(text)) break;
-		// A boxed dialog's question carries the border glyph; the phone does not want it.
-		const bare = text.replace(/^[┃│┆┊┋|]+\s*/, '').replace(/\s*[┃│┆┊┋|]+$/, '');
-		if (nearest === null) nearest = bare;
-		if (bare.includes('?')) return bare;
+		if (/^[❯›>]/.test(text)) break;
+		const bare = unbox(text);
+		if (nearest === null) {
+			nearest = bare;
+			nearestLine = i;
+		}
+		if (bare.includes('?')) return { text: bare, line: i };
 	}
-	return nearest;
+	return { text: nearest, line: nearestLine };
+}
+
+/**
+ * The dialog's own lines above the question: what is being approved.
+ *
+ * Walks up from the question to the box's top rule, or 14 lines, whichever
+ * comes first. Stops at a caret because that is the transcript below the
+ * dialog rather than part of it, and drops anything that is only furniture.
+ *
+ * Capped at six rows and 160 characters each: a long diff in a permission
+ * dialog would otherwise push the buttons off a phone screen, and the point
+ * of the card is that the buttons are reachable.
+ */
+function findContext(lines: string[], questionLine: number): string[] {
+	if (questionLine < 0) return [];
+	const out: string[] = [];
+	for (let i = questionLine - 1; i >= 0 && i >= questionLine - 14; i--) {
+		const raw = lines[i].trim();
+		if (!raw) continue;
+		if (BOX_RULE.test(raw)) break;
+		if (/^[❯›>]/.test(raw)) break;
+		const bare = unbox(raw);
+		if (!bare || BOX_RULE.test(bare)) continue;
+		out.unshift(bare.length > 160 ? `${bare.slice(0, 159)}…` : bare);
+		if (out.length === 6) break;
+	}
+	return out;
 }
 
 /**
@@ -374,21 +442,32 @@ export function keysForOption(
 const MENU_LEAVE = /\besc(?:ape)?\b/i;
 const MENU_MOVE =
 	/\b(?:enter|tab|space|navigate|select|close|cancel|exit|dismiss)\b|↑\/↓|←\/→|type to/i;
+/** OMP's narrow model browser clips its trailing "Esc close" instruction. */
+const OMP_MODEL_BROWSER = /\bEnter assign roles\b.*↑\/↓ providers\b.*→ models\b.*\btype to sear/i;
+/** OMP's narrow settings panel also clips its trailing "Esc close" instruction. */
+const OMP_SETTINGS_PANEL = /\bEnter\/Space to change\b.*\bTab to jump sections\b.*←\/→ to switch/i;
 
 /**
  * A menu or panel is open on the terminal even though no option rows could
- * be read from it: omp's model browser, Claude Code's /config and /usage
- * panels. Their footers all say how to leave (Esc) alongside how to move or
- * choose, and no harness's idle footer says Esc at all (sampled across
- * claude, pi, omp, codex and agy, 2026-09-07). Returns that footer, tidied,
- * so the phone can say "a menu is open — drive it with the key strip".
- * Callers skip working panes: agy's generating footer is a bare "esc to
- * cancel".
+ * be read from it: OMP's model browser, Claude Code's /config and /usage
+ * panels. Their footers say how to leave alongside how to move or choose.
+ * OMP's two-column model browser is the exception on a narrow pane: the
+ * trailing Esc hint is clipped, so its otherwise unique controls identify it.
+ * No harness's idle footer has either shape (sampled across claude, pi, omp,
+ * codex and agy, 2026-09-07). Returns that footer, tidied, so the phone can
+ * say "a menu is open — drive it with the key strip". Callers skip working
+ * panes: agy's generating footer is a bare "esc to cancel".
  */
 export function menuFooter(visible: string): string | null {
 	const rows = visible.split('\n').filter((line) => line.trim() !== '');
 	for (const row of rows.slice(-8).reverse()) {
-		if (!MENU_LEAVE.test(row) || !MENU_MOVE.test(row)) continue;
+		if (
+			!OMP_MODEL_BROWSER.test(row) &&
+			!OMP_SETTINGS_PANEL.test(row) &&
+			(!MENU_LEAVE.test(row) || !MENU_MOVE.test(row))
+		) {
+			continue;
+		}
 		const tidy = row
 			.replace(/^[\s┃│┆┊┋|]+/, '')
 			.replace(/[\s┃│┆┊┋|]+$/, '')

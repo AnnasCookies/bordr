@@ -309,12 +309,17 @@ describe('claude adapter: the harness talking to itself', () => {
 			'[The user attached 3 images from their phone:\n- /a.png\n- /b.png\n- /c.png — ' +
 				'use your file-reading tool to view them before responding.]'
 		);
+		const ompPasted = user(
+			'look at this[The user attached an image from their phone: ' +
+				'/home/dev/.local/state/bordr/uploads/2-b.png — use your file-reading tool to view it ' +
+				'before responding.]\n\nlook at this'
+		);
 		// Applied by adapterFor for every harness, not by the Claude adapter itself.
 		expect(
 			adapterFor('claude')!
-				.parse(one + '\n' + three)
+				.parse(one + '\n' + three + '\n' + ompPasted)
 				.map((m) => m.text)
-		).toEqual(['📷 photo\nlook at this', '📷 3 photos']);
+		).toEqual(['📷 photo\nlook at this', '📷 3 photos', '📷 photo\nlook at this']);
 	});
 });
 
@@ -388,11 +393,13 @@ describe('blocks', () => {
 		// The full path, deliberately: the summary beside the row already
 		// carries the basename, so the diff keeps the information the summary
 		// threw away.
-		expect(tool && tool.kind === 'tool' && tool.diff).toEqual({
-			file: '/a/b/enrich.ts',
-			before: 'const a = 1',
-			after: 'const a = 2'
-		});
+		expect(tool && tool.kind === 'tool' && tool.diffs).toEqual([
+			{
+				file: '/a/b/enrich.ts',
+				before: 'const a = 1',
+				after: 'const a = 2'
+			}
+		]);
 	});
 
 	it('keeps thinking as its own block instead of dropping it', () => {
@@ -501,5 +508,106 @@ describe('shell commands run with !', () => {
 			text: 'nope: command not found',
 			isError: true
 		});
+	});
+});
+
+describe('claude adapter: images a tool returned', () => {
+	/** A turn that calls one tool and receives `content` back from it. */
+	const withResult = (content: unknown) =>
+		[
+			JSON.stringify({
+				type: 'assistant',
+				message: {
+					content: [{ type: 'tool_use', id: 't1', name: 'Read', input: { file_path: '/a.png' } }]
+				}
+			}),
+			JSON.stringify({
+				type: 'user',
+				message: { content: [{ type: 'tool_result', tool_use_id: 't1', content }] }
+			})
+		].join('\n');
+
+	const resultOf = (jsonl: string) => {
+		const block = claudeAdapter.parse(jsonl).flatMap((m) => m.blocks ?? [])[0];
+		return block && block.kind === 'tool' ? block.result : undefined;
+	};
+
+	const image = (data: string, media = 'image/png') => ({
+		type: 'image',
+		source: { type: 'base64', media_type: media, data }
+	});
+
+	it('turns a base64 image into a data URL', () => {
+		// The shape Claude Code actually writes — verified against a real
+		// transcript, where reading a PNG stored source.data inline.
+		const result = resultOf(withResult([image('AAAB')]));
+		expect(result?.images).toEqual(['data:image/png;base64,AAAB']);
+	});
+
+	it('keeps the text beside the picture', () => {
+		const result = resultOf(withResult([{ type: 'text', text: 'read 1 image' }, image('AAAB')]));
+		expect(result?.text).toBe('read 1 image');
+		expect(result?.images).toEqual(['data:image/png;base64,AAAB']);
+	});
+
+	it('drops an image past the cap instead of shipping it, and counts it', () => {
+		const result = resultOf(withResult([image('A'.repeat(1_500_001))]));
+		expect(result?.images).toBeUndefined();
+		expect(result?.imagesDropped).toBe(1);
+	});
+
+	it('ignores a source it has no bytes for', () => {
+		const result = resultOf(
+			withResult([{ type: 'image', source: { type: 'url', url: 'https://example.com/a.png' } }])
+		);
+		expect(result?.images).toBeUndefined();
+		expect(result?.imagesDropped).toBeUndefined();
+	});
+
+	it('refuses a media type that would change what the data URL parses as', () => {
+		// media_type is transcript content and lands in an <img src>. A comma or
+		// a semicolon in it re-parses the URL, so it is matched, not trusted.
+		for (const bad of ['text/html', 'image/png,x', 'image/png;charset=utf-8', '', 'png']) {
+			const result = resultOf(withResult([image('AAAB', bad)]));
+			expect(result?.images, bad).toBeUndefined();
+		}
+	});
+
+	it('allows the image types a harness actually returns', () => {
+		for (const good of ['image/png', 'image/jpeg', 'image/webp', 'image/svg+xml']) {
+			const result = resultOf(withResult([image('AAAB', good)]));
+			expect(result?.images, good).toEqual([`data:${good};base64,AAAB`]);
+		}
+	});
+
+	it('says nothing at all when a result has no image, which is nearly all of them', () => {
+		const result = resultOf(withResult('plain text'));
+		expect(result?.text).toBe('plain text');
+		expect(result).not.toHaveProperty('images');
+	});
+});
+
+describe('claude adapter: entry timestamps', () => {
+	const stamp = '2026-09-11T20:23:00.419Z';
+
+	it('carries `at` on a turn with block content, which is nearly all of them', () => {
+		// Dropping it here left every message timestampless, and the view has
+		// nothing to interleave a queued prompt against.
+		const jsonl = JSON.stringify({
+			type: 'assistant',
+			timestamp: stamp,
+			message: { content: [{ type: 'text', text: 'done' }] }
+		});
+		expect(claudeAdapter.parse(jsonl)[0].at).toBe(Date.parse(stamp));
+	});
+
+	it('carries `at` on a plain string turn too', () => {
+		const jsonl = JSON.stringify({ type: 'user', timestamp: stamp, message: { content: 'hi' } });
+		expect(claudeAdapter.parse(jsonl)[0].at).toBe(Date.parse(stamp));
+	});
+
+	it('omits `at` when the harness gave no timestamp', () => {
+		const jsonl = JSON.stringify({ type: 'user', message: { content: 'hi' } });
+		expect(claudeAdapter.parse(jsonl)[0]).not.toHaveProperty('at');
 	});
 });

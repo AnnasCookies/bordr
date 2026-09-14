@@ -139,6 +139,8 @@ async function treeFor(
 			number: Number(raw.number ?? 0),
 			focused: raw.focused === true,
 			branch: '',
+			ahead: 0,
+			behind: 0,
 			tabs: (byWorkspace.get(workspaceId) ?? []).sort((a, b) => a.number - b.number)
 		} satisfies WorkspaceNode;
 	});
@@ -148,7 +150,13 @@ async function treeFor(
 	// branch), so bordr reads git itself from the workspace's directory.
 	const dirs = new Map(nodes.map((n) => [n.workspaceId, workspaceDir(n)]));
 	const found = await branchesFor(machine ?? null, [...dirs.values()]);
-	for (const node of nodes) node.branch = found.get(dirs.get(node.workspaceId) ?? '') ?? '';
+	for (const node of nodes) {
+		const info = found.get(dirs.get(node.workspaceId) ?? '');
+		if (!info) continue;
+		node.branch = info.branch;
+		node.ahead = info.ahead;
+		node.behind = info.behind;
+	}
 	return nodes;
 }
 

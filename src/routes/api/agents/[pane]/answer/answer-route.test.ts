@@ -9,6 +9,7 @@ const herdr = vi.hoisted(() => ({
 	screens: [] as string[],
 	sent: [] as string[][],
 	readVisible: vi.fn(async () => herdr.screens.shift() ?? ''),
+	rawAgent: vi.fn(async () => null as null | { agent: string }),
 	// The route sends through sendKeys now, which resolves the pane's machine
 	// before it ever reaches a client.
 	sendKeys: vi.fn(async (_pane: string, keys: string[]) => {
@@ -28,6 +29,13 @@ const DIALOG = [
 	' Enter to select · ↑/↓ to navigate · n to add notes · Esc to cancel'
 ].join('\n');
 const DIALOG_ON_2 = DIALOG.replace('❯ 1. Red', '  1. Red').replace('  2. Green', '❯ 2. Green');
+const OMP_NERD_DIALOG = [
+	'│ Pick a colour. │',
+	'│   Red       │',
+	'│    Green     │',
+	'│    Blue      │',
+	'│ Enter select · n note · ↑/↓ move · Esc cancel'
+].join('\n');
 const PROMPT = '❯ \n';
 
 async function answer(index: number) {
@@ -44,6 +52,7 @@ beforeEach(() => {
 	vi.useFakeTimers({ shouldAdvanceTime: true });
 	herdr.screens.length = 0;
 	herdr.sent.length = 0;
+	herdr.rawAgent.mockResolvedValue(null);
 });
 
 describe('answer route: dialects', () => {
@@ -68,6 +77,20 @@ describe('answer route: dialects', () => {
 		const result = await answer(2);
 		expect(herdr.sent).toEqual([['2'], ['enter']]);
 		expect(result.outcome).toBe('accepted');
+	});
+
+	it('OMP nerd-symbol ask: navigates with arrows and Enter', async () => {
+		herdr.screens.push(OMP_NERD_DIALOG, PROMPT);
+		const result = await answer(2);
+		expect(herdr.sent).toEqual([['down', 'enter']]);
+		expect(result).toMatchObject({ chose: 'Green', outcome: 'accepted' });
+	});
+
+	it('refuses an unparsed OMP ask instead of guessing from transcript options', async () => {
+		herdr.screens.push('clipped OMP dialog');
+		herdr.rawAgent.mockResolvedValue({ agent: 'omp' });
+		await expect(answer(2)).rejects.toMatchObject({ status: 409 });
+		expect(herdr.sent).toEqual([]);
 	});
 
 	it('never sends more keys once a different dialog has replaced the first', async () => {

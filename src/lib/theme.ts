@@ -66,6 +66,34 @@ export const STATUS_INK: Record<string, string> = {
 };
 
 /**
+ * A glyph per status, for the sidebar's `symbol` indicator mode.
+ *
+ * herdr's own set, so the two read the same way side by side — a tick for
+ * work that finished, a hollow ring for ready, a half-filled ring for
+ * something in progress, a cross for something stopped and waiting on you,
+ * and a dot for a pane with no agent in it at all.
+ *
+ * They also differ by SHAPE, not only colour, so the list still scans for
+ * anyone who does not separate red from green.
+ */
+export const STATUS_SYMBOL: Record<string, string> = {
+	blocked: '✕',
+	working: '◑',
+	done: '✓',
+	idle: '○',
+	unknown: '·'
+};
+
+/** The same, spelled out, for the `text` mode. */
+export const STATUS_WORD: Record<string, string> = {
+	blocked: 'blocked',
+	working: 'working',
+	done: 'done',
+	idle: 'idle',
+	unknown: 'shell'
+};
+
+/**
  * A 4px dashed rail, drawn as a repeating gradient because a dashed border on
  * a 4px column renders as a solid line at this width.
  */

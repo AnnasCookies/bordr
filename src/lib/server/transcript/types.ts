@@ -1,3 +1,5 @@
+import type { TodoPlan } from '$lib/todo-plan';
+
 export interface ToolCall {
 	name: string;
 	summary: string;
@@ -9,9 +11,20 @@ export interface ToolResult {
 	isError: boolean;
 	/** Lines dropped from the end, so the view can say how many rather than lie. */
 	truncatedLines: number;
+	/**
+	 * Images the tool returned, as `data:` URLs, ready for an `<img src>`.
+	 *
+	 * A tool that reads a screenshot or a photo puts the picture IN its result;
+	 * flattening that to text threw the only useful part away and left the
+	 * expanded call showing nothing. Empty for the overwhelming majority of
+	 * results, which return no image at all.
+	 */
+	images?: string[];
+	/** Images dropped for exceeding the size budget, so the view can say so. */
+	imagesDropped?: number;
 }
 
-/** An in-place edit, kept as its two sides so the view can diff them. */
+/** One changed file, kept as its focused before and after hunk. */
 export interface EditDiff {
 	file: string;
 	before: string;
@@ -44,7 +57,9 @@ export type Block =
 			 */
 			input: Record<string, unknown> | null;
 			result: ToolResult | null;
-			diff: EditDiff | null;
+			diffs: EditDiff[];
+			/** Canonical OMP todo snapshot, normalised from TodoToolDetails. */
+			todo?: TodoPlan;
 	  }
 	| { kind: 'image'; src: string; caption: string };
 
@@ -131,7 +146,7 @@ export function backfillBlocks(message: Message): Message {
 			summary: tool.summary,
 			input: null,
 			result: null,
-			diff: null
+			diffs: []
 		});
 	}
 	return { ...message, blocks };

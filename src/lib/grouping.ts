@@ -86,13 +86,17 @@ export function sortAgents(agents: AgentSummary[], sort: SortBy): AgentSummary[]
 export function partitionAgents(
 	agents: AgentSummary[],
 	groupBy: GroupBy,
-	sort: SortBy
+	sort: SortBy,
+	filter: ListFilter | null = null
 ): { blocked: AgentSummary[]; groups: AgentGroup[] } {
+	// Narrowed here rather than at the caller, so every reader of the list —
+	// the page, and the conversation's swipe order — sees the same rows.
+	const shown = filter ? agents.filter((a) => matchesFilter(a, filter)) : agents;
 	const blocked = sortAgents(
-		agents.filter((a) => a.status === 'blocked'),
+		shown.filter((a) => a.status === 'blocked'),
 		sort
 	);
-	const rest = agents.filter((a) => a.status !== 'blocked');
+	const rest = shown.filter((a) => a.status !== 'blocked');
 
 	if (groupBy === 'none') {
 		return {
@@ -156,11 +160,45 @@ export function partitionAgents(
 	};
 }
 
-/** Rollup cells. `unknown` is deliberately absent — the grid shows four. */
-export function rollupCounts(agents: AgentSummary[]): Array<{ status: AgentStatus; n: number }> {
-	return (['blocked', 'working', 'done', 'idle'] as AgentStatus[]).map((status) => ({
-		status,
-		n: agents.filter((a) => a.status === status).length
+/**
+ * What the badges at the top of the list can narrow it to.
+ *
+ * A status, or `dirty` — every pane whose repository has commits its upstream
+ * does not, which is the question the badges could not answer before: not
+ * "what is running" but "what have I left unpushed".
+ */
+export type ListFilter = AgentStatus | 'dirty';
+
+/** Does this agent's directory have work its upstream has not got? */
+export function isDirty(agent: AgentSummary): boolean {
+	return (agent.ahead ?? 0) > 0;
+}
+
+export function matchesFilter(agent: AgentSummary, filter: ListFilter): boolean {
+	return filter === 'dirty' ? isDirty(agent) : agent.status === filter;
+}
+
+/**
+ * Rollup cells, each also a filter.
+ *
+ * `unknown` is deliberately absent — it is a state bordr could not read, not
+ * one you would go looking for. `dirty` is last because it is the only cell
+ * that is not a status, and it counts PANES rather than commits: the cell is
+ * a filter, and what it filters to is a set of rows.
+ */
+export function rollupCounts(
+	agents: AgentSummary[]
+): Array<{ status: ListFilter; n: number; label: string }> {
+	const cells: Array<{ status: ListFilter; label: string }> = [
+		{ status: 'blocked', label: 'blocked' },
+		{ status: 'working', label: 'working' },
+		{ status: 'done', label: 'done' },
+		{ status: 'idle', label: 'idle' },
+		{ status: 'dirty', label: 'unpushed' }
+	];
+	return cells.map((cell) => ({
+		...cell,
+		n: agents.filter((a) => matchesFilter(a, cell.status)).length
 	}));
 }
 
@@ -168,7 +206,12 @@ export function rollupCounts(agents: AgentSummary[]): Array<{ status: AgentStatu
  * The order the conversation view swipes through — the same order the list
  * renders, flattened, so "next" on a pane means the next one you can see.
  */
-export function flatOrder(agents: AgentSummary[], groupBy: GroupBy, sort: SortBy): string[] {
-	const { blocked, groups } = partitionAgents(agents, groupBy, sort);
+export function flatOrder(
+	agents: AgentSummary[],
+	groupBy: GroupBy,
+	sort: SortBy,
+	filter: ListFilter | null = null
+): string[] {
+	const { blocked, groups } = partitionAgents(agents, groupBy, sort, filter);
 	return [...blocked, ...groups.flatMap((g) => g.agents)].map((a) => a.paneId);
 }

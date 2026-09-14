@@ -46,7 +46,7 @@
 			summary: 'Run the unit tests',
 			input: sampleInput,
 			result: { text: 'Tests  322 passed (322)', isError: false, truncatedLines: 0 },
-			diff: null
+			diffs: []
 		}
 	];
 	const sampleWork: Block[] = [{ kind: 'text', text: 'All 322 passed.' }, ...sampleTool];

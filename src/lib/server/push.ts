@@ -6,6 +6,7 @@ import webpush, { WebPushError, type PushSubscription } from 'web-push';
 import { getManager, listAgents, readVisible } from './herdr';
 import { enrichAgents } from './enrich';
 import { parsePicker, type Picker } from './picker';
+import { offerable } from '$lib/notify';
 import { isWatched, loadJson, saveJson } from './state-store';
 
 /**
@@ -174,10 +175,9 @@ async function notifyBlocked(paneId: string): Promise<void> {
 		// Buttons on the notification itself, so a one-tap answer never has to
 		// open the app. Single-select only: a checkbox picker needs a submit
 		// rather than one index, and answering it from a two-button strip would
-		// silently pick the wrong thing.
-		options: picker?.multi
-			? undefined
-			: picker?.options.slice(0, 2).map((option) => ({ index: option.index, label: option.label }))
+		// silently pick the wrong thing. `offerable` owns both rules, and is
+		// tested — the worker and this both depend on getting them right.
+		options: offerable(picker?.options ?? [], picker?.multi ?? false)
 	});
 }
 

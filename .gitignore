@@ -35,3 +35,4 @@ playwright-report
 .worktrees/
 graphify-out/
 .idea/
+.attic

@@ -3,8 +3,10 @@
 	import RichText from './rich-text.svelte';
 	import CodeBlock from './code-block.svelte';
 	import ToolDetail from './tool-detail.svelte';
+	import TodoCard from './todo-card.svelte';
 	import { langForPath } from '$lib/highlight';
 	import { prefs } from '$lib/prefs.svelte';
+	import { todoPlanForBlock } from '$lib/message-segments';
 	import type { Block } from '$lib/server/transcript/types';
 
 	let {
@@ -15,10 +17,9 @@
 	}: { blocks: Block[]; mono?: number; showWork?: boolean; plain?: boolean } = $props();
 
 	/**
-	 * An Edit is a replacement, so the two sides ARE the diff — no LCS pass
-	 * needed to show what changed.
-	 * ponytail: whole-hunk diff, not line-matched. If replacing one line of a
-	 * 40-line block becomes common, add a real LCS here.
+	 * Adapters hand the view focused changed lines. Claude's Edit arguments are
+	 * already a replacement hunk; OMP's parser strips unchanged whole-file
+	 * context from its recorded diff before this component sees it.
 	 */
 	function lines(text: string): string[] {
 		return text.length === 0 ? [] : text.split('\n');
@@ -40,7 +41,7 @@
 
 	function hasBody(block: Block): boolean {
 		if (block.kind !== 'tool') return false;
-		return block.input !== null || block.result !== null || block.diff !== null;
+		return block.input !== null || block.result !== null || block.diffs.length > 0;
 	}
 </script>
 
@@ -81,61 +82,86 @@
 			>
 			<div class="body"><RichText text={block.text} {mono} /></div>
 		</details>
-	{:else if block.kind === 'tool' && showWork}
-		{#if hasBody(block)}
-			<details class="fold tool">
-				<summary>
-					<span class="marker" aria-hidden="true"></span>
-					<span class="name">{block.name}</span>
-					<span class="arg">{block.summary}</span>
-					{#if block.result?.isError}<span class="bad" title="error">!</span>{/if}
-				</summary>
-				<div class="body" style="--mono: {mono}px">
-					{#if block.diff}
-						<!-- Both sides highlighted as the language of the file being
+	{:else if block.kind === 'tool'}
+		{@const plan = todoPlanForBlock(block)}
+		{#if plan}
+			<TodoCard {plan} truncatedLines={block.result?.truncatedLines ?? 0} {mono} />
+		{:else if showWork}
+			{#if hasBody(block)}
+				<details class="fold tool">
+					<summary>
+						<span class="marker" aria-hidden="true"></span>
+						<span class="name">{block.name}</span>
+						<span class="arg">{block.summary}</span>
+						{#if block.result?.isError}<span class="bad" title="error">!</span>{/if}
+					</summary>
+					<div class="body" style="--mono: {mono}px">
+						{#if block.diffs.length > 0}
+							<!-- Both sides highlighted as the language of the file being
 						     edited, so a diff reads like the editor rather than a
 						     wall of red and green. -->
-						<div class="diff">
-							{#if block.diff.before}
-								<CodeBlock
-									code={lines(block.diff.before)
-										.map((l) => `-${l}`)
-										.join('\n')}
-									lang={langForPath(block.diff.file)}
-									{mono}
-									tone="del"
-								/>
-							{/if}
-							{#if block.diff.after}
-								<CodeBlock
-									code={lines(block.diff.after)
-										.map((l) => `+${l}`)
-										.join('\n')}
-									lang={langForPath(block.diff.file)}
-									{mono}
-									tone="add"
-								/>
-							{/if}
-						</div>
-					{:else if block.input}
-						<ToolDetail name={block.name} input={block.input} {mono} />
-					{/if}
-					{#if block.result}
-						<pre class="pre out" class:bad={block.result.isError}>{block.result.text}</pre>
-						{#if block.result.truncatedLines > 0}
-							<p class="more">+{block.result.truncatedLines} more lines</p>
+							{#each block.diffs as diff (diff.file)}
+								<div class="diff">
+									{#if block.diffs.length > 1}<p class="diff-file">{diff.file}</p>{/if}
+									{#if diff.before}
+										<CodeBlock
+											code={lines(diff.before)
+												.map((l) => `-${l}`)
+												.join('\n')}
+											lang={langForPath(diff.file)}
+											{mono}
+											tone="del"
+										/>
+									{/if}
+									{#if diff.after}
+										<CodeBlock
+											code={lines(diff.after)
+												.map((l) => `+${l}`)
+												.join('\n')}
+											lang={langForPath(diff.file)}
+											{mono}
+											tone="add"
+										/>
+									{/if}
+								</div>
+							{/each}
+						{:else if block.input}
+							<ToolDetail name={block.name} input={block.input} {mono} />
 						{/if}
-					{/if}
-				</div>
-			</details>
-		{:else}
-			<!-- Nothing to expand: a bare row reads better than an accordion
+						{#if block.result}
+							<!-- A result whose only content was an image has no text to show. -->
+							{#if block.result.text}
+								<pre class="pre out" class:bad={block.result.isError}>{block.result.text}</pre>
+							{/if}
+							{#if block.result.truncatedLines > 0}
+								<p class="more">+{block.result.truncatedLines} more lines</p>
+							{/if}
+							<!--
+							What the tool actually saw. A screenshot or a photo read by a
+							tool IS the result; rendering only the text beside it left the
+							expanded call showing nothing at all.
+						-->
+							{#each block.result.images ?? [] as src, i (i)}
+								<img class="shot" {src} alt="Image returned by {block.name}" loading="lazy" />
+							{/each}
+							{#if block.result.imagesDropped}
+								<p class="more">
+									{block.result.imagesDropped}
+									{block.result.imagesDropped === 1 ? 'image' : 'images'} too large to show
+								</p>
+							{/if}
+						{/if}
+					</div>
+				</details>
+			{:else}
+				<!-- Nothing to expand: a bare row reads better than an accordion
 			     that opens onto an empty box. -->
-			<div class="fold flat">
-				<span class="marker empty" aria-hidden="true"></span>
-				<span class="name">{block.name}</span>
-				<span class="arg">{block.summary}</span>
-			</div>
+				<div class="fold flat">
+					<span class="marker empty" aria-hidden="true"></span>
+					<span class="name">{block.name}</span>
+					<span class="arg">{block.summary}</span>
+				</div>
+			{/if}
 		{/if}
 	{/if}
 {/each}
@@ -199,6 +225,26 @@
 		border-radius: 8px;
 		background: color-mix(in srgb, currentColor 6%, transparent);
 	}
+
+	/*
+	 * The outer margins are for separating a fold from PROSE inside the same
+	 * message. Between messages the transcript's own flex gap already does
+	 * that job, and flex containers do not collapse margins — so a tool-only
+	 * turn was paying both, 12px of gap plus 5px each side, and a run of tool
+	 * calls sat further apart than it was tall.
+	 */
+	.fold:first-child {
+		margin-top: 0;
+	}
+
+	.fold:last-child {
+		margin-bottom: 0;
+	}
+
+	/* Consecutive folds are one piece of work; they stack rather than float. */
+	.fold + .fold {
+		margin-top: 0.15em;
+	}
 	.fold summary,
 	.fold.flat {
 		display: flex;
@@ -257,7 +303,8 @@
 		margin: 0 0 0.4em;
 		padding: 0.5em 0.6em;
 		border-radius: 6px;
-		background: color-mix(in srgb, currentColor 8%, transparent);
+		background: var(--code-bg);
+		color: var(--code-ink);
 		font-family: var(--font-mono, ui-monospace, monospace);
 		font-size: var(--mono);
 		/* Scroll the block, never the page. */
@@ -273,8 +320,21 @@
 		overflow-y: auto;
 	}
 	.pre.bad {
-		background: color-mix(in srgb, #d9534f 12%, transparent);
+		/* Mixed INTO the code surface, not over it: a translucent red on a
+		   coloured bubble was the same bug in a different colour. */
+		background: color-mix(in srgb, #d9534f 14%, var(--code-bg));
 	}
+	/* Bounded by the bubble, never by the image's own pixel size: a 2000px
+	   screenshot would otherwise set the width of the whole conversation. */
+	.shot {
+		display: block;
+		max-width: 100%;
+		height: auto;
+		margin-top: 6px;
+		border-radius: 8px;
+		border: 1px solid var(--hairline);
+	}
+
 	.more {
 		margin: 0;
 		font-size: 0.85em;
@@ -288,5 +348,12 @@
 		display: flex;
 		flex-direction: column;
 		gap: 2px;
+	}
+	.diff-file {
+		margin: 0 0 2px;
+		font-family: var(--font-mono);
+		font-size: var(--mono);
+		overflow-wrap: anywhere;
+		opacity: 0.72;
 	}
 </style>

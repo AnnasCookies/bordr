@@ -6,6 +6,8 @@ import { grokAdapter } from './grok';
 import { piAdapter } from './pi';
 import { withLocalFiles } from './local-files';
 import { withPhotoPrompts } from './photo';
+import { withSentFiles } from './sent-files';
+import { withSecretRedaction } from './redact';
 import { backfillBlocks, type Adapter } from './types';
 
 /**
@@ -35,8 +37,12 @@ const ADAPTERS: Record<string, Adapter> = {
 
 export function adapterFor(agentKind: string): Adapter | null {
 	const adapter = ADAPTERS[agentKind];
-	// withBlocks first so withLocalFiles always has blocks to walk.
-	return adapter ? withLocalFiles(withBlocks(withPhotoPrompts(adapter))) : null;
+	// withBlocks first so the decorators above it always have blocks to walk.
+	// withSentFiles reads a tool call's own input, so it has to sit outside
+	// withBlocks too — a flat `{text, tools}` message has no input to read.
+	return adapter
+		? withSecretRedaction(withSentFiles(withLocalFiles(withBlocks(withPhotoPrompts(adapter)))))
+		: null;
 }
 
 export type { Adapter, Block, Message, ToolCall, ToolResult } from './types';

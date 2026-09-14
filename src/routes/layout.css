@@ -94,6 +94,16 @@
 	--working-halo: #dfe6ff;
 
 	--done: #16a34a;
+	/*
+	 * The connection's own colours, deliberately NOT the agent statuses.
+	 * Both sit in the same bar: a green dot meaning "the stream is fine" next
+	 * to a green tick meaning "the agent finished" is two different facts in
+	 * one colour. Teal for a healthy link, violet for a link that is up but
+	 * behind, and the shared danger red for one that is down — red is the one
+	 * colour it would be perverse to reassign.
+	 */
+	--net-live: #0d9488;
+	--net-stale: #7c3aed;
 	--done-bg: #dcfce7; /* derived */
 
 	--idle-rail: #d9dde3;
@@ -102,6 +112,32 @@
 	--danger: #dc2626;
 	--danger-bg: #fee2e2;
 	--danger-ink: #991b1b;
+
+	/*
+	 * The location row — path, branch, and drift from upstream.
+	 *
+	 * Their own tokens rather than the status ones they resemble: --working
+	 * blue and --done green MEAN "this agent is working" and "this agent has
+	 * finished" everywhere else in the app, and a path is not a status. Every
+	 * value below clears WCAG AA (4.5:1) against --page in its own theme,
+	 * which the contrast test asserts.
+	 */
+	/*
+	 * Code has its own surface, not a wash of whatever is behind it.
+	 *
+	 * Every code background was `color-mix(currentColor N%, transparent)`,
+	 * which is translucent — so inside a coloured bubble it took the bubble's
+	 * fill and a snippet came out orange, and its text took the bubble's ink,
+	 * which on a harness fill is black. Opaque surface, own ink, so code reads
+	 * as code wherever it lands.
+	 */
+	--code-bg: #e7eaee;
+	--code-ink: #111418;
+
+	--path: #0e7490;
+	--branch: #7c3aed;
+	--ahead: #15803d;
+	--behind: #b45309;
 
 	--folder-chip: #dbe4ff;
 	--html-chip: #fde68a;
@@ -135,6 +171,8 @@
 	--working-halo: #1e2e52; /* derived */
 
 	--done: #22c55e;
+	--net-live: #2dd4bf;
+	--net-stale: #a78bfa;
 	--done-bg: #10231a; /* derived */
 
 	--idle-rail: #404040;
@@ -143,6 +181,14 @@
 	--danger: #f87171; /* derived */
 	--danger-bg: #2a1414; /* derived */
 	--danger-ink: #fca5a5; /* derived */
+
+	--code-bg: #1b1b1b;
+	--code-ink: #e5e5e5;
+
+	--path: #67e8f9;
+	--branch: #c4b5fd;
+	--ahead: #22c55e;
+	--behind: #f59e0b;
 
 	--folder-chip: #1e293b; /* derived */
 	--html-chip: #3f2d10; /* derived */
@@ -180,6 +226,8 @@
 	--color-working-halo: var(--working-halo);
 
 	--color-done: var(--done);
+	--color-net-live: var(--net-live);
+	--color-net-stale: var(--net-stale);
 	--color-done-bg: var(--done-bg);
 
 	--color-idle-rail: var(--idle-rail);
@@ -188,6 +236,14 @@
 	--color-danger: var(--danger);
 	--color-danger-bg: var(--danger-bg);
 	--color-danger-ink: var(--danger-ink);
+
+	--color-code-bg: var(--code-bg);
+	--color-code-ink: var(--code-ink);
+
+	--color-path: var(--path);
+	--color-branch: var(--branch);
+	--color-ahead: var(--ahead);
+	--color-behind: var(--behind);
 
 	--color-folder-chip: var(--folder-chip);
 	--color-html-chip: var(--html-chip);
@@ -345,4 +401,69 @@ a:not(.no-press):active,
 /* The square where the two bars meet is the default grey otherwise. */
 ::-webkit-scrollbar-corner {
 	background: transparent;
+}
+
+/*
+ * The navigation bar's travel. A slide rather than a percentage: the app
+ * cannot know how far along a load is, and a fake percentage that jumps to
+ * 90% and waits is a worse lie than an honest "still going".
+ */
+/*
+ * The connection dot's beat. `bordr-ping` is the expanding halo a request in
+ * flight throws; `bordr-breathe` is the slow one a healthy link keeps, so the
+ * dot is visibly alive rather than merely green — a dot that only moves when
+ * something is wrong looks the same as a dot nobody is updating.
+ */
+@keyframes bordr-ping {
+	75%,
+	100% {
+		transform: scale(2.4);
+		opacity: 0;
+	}
+}
+
+@keyframes bordr-breathe {
+	0%,
+	100% {
+		opacity: 1;
+		transform: scale(1);
+	}
+	50% {
+		opacity: 0.45;
+		transform: scale(0.82);
+	}
+}
+
+@keyframes bordr-slide {
+	0% {
+		transform: translateX(-100%);
+	}
+	100% {
+		transform: translateX(350%);
+	}
+}
+
+/*
+ * Press feedback, everywhere, in CSS.
+ *
+ * This is the half of "instantly responsive" that no amount of prefetching
+ * buys: the browser paints :active before it has asked the network anything,
+ * so a tap looks answered on a dead link as readily as on a fast one.
+ */
+@media (hover: none) {
+	a:active,
+	button:active,
+	summary:active,
+	[role='button']:active {
+		opacity: 0.6;
+		transition: opacity 60ms ease-out;
+	}
+}
+
+@media (prefers-reduced-motion: reduce) {
+	[role='progressbar'] > * {
+		animation: none;
+		width: 100%;
+		opacity: 0.5;
+	}
 }

@@ -3,6 +3,7 @@ import {
 	agentTitle,
 	collapseHome,
 	flatOrder,
+	isDirty,
 	partitionAgents,
 	rollupCounts,
 	sortAgents
@@ -130,13 +131,16 @@ describe('partitionAgents', () => {
 });
 
 describe('rollupCounts', () => {
-	it('counts the four cells the grid shows, never unknown', () => {
+	// `unknown` is a state bordr could not read, not one you go looking for,
+	// so it gets no cell and is counted into none of the others.
+	it('counts the cells the grid shows, never unknown', () => {
 		const withUnknown = [...FLEET, agent({ paneId: 'w3:p1', status: 'unknown' })];
 		expect(rollupCounts(withUnknown)).toEqual([
-			{ status: 'blocked', n: 1 },
-			{ status: 'working', n: 1 },
-			{ status: 'done', n: 1 },
-			{ status: 'idle', n: 1 }
+			{ status: 'blocked', label: 'blocked', n: 1 },
+			{ status: 'working', label: 'working', n: 1 },
+			{ status: 'done', label: 'done', n: 1 },
+			{ status: 'idle', label: 'idle', n: 1 },
+			{ status: 'dirty', label: 'unpushed', n: 0 }
 		]);
 	});
 });
@@ -169,7 +173,7 @@ describe('agentTitle', () => {
 	it('falls back to the workspace when the shell title is still up', () => {
 		expect(agentTitle('tony@tm-work:~', 'win-vm-omarchy', 'wJ:p1')).toBe('win-vm-omarchy');
 		expect(agentTitle('~', 'bordr', 'w3:p1')).toBe('bordr');
-		expect(agentTitle('~/repos/it-work', 'it-work', 'w6:p1')).toBe('it-work');
+		expect(agentTitle('~/code/platform', 'platform', 'w6:p1')).toBe('platform');
 		expect(agentTitle('/var/log', 'logs', 'w2:p1')).toBe('logs');
 		expect(agentTitle('', 'e2e', 'wM:p1')).toBe('e2e');
 	});
@@ -191,5 +195,56 @@ describe('agentTitle', () => {
 
 	it('has the pane id to fall back on when there is nothing else', () => {
 		expect(agentTitle('~', '', 'w9:p2')).toBe('w9:p2');
+	});
+});
+
+describe('list filters', () => {
+	const REPOS: AgentSummary[] = [
+		agent({ paneId: 'w1:p1', status: 'working', branch: 'main', ahead: 0, behind: 0 }),
+		agent({ paneId: 'w1:p2', status: 'idle', branch: 'feat/x', ahead: 3, behind: 0 }),
+		agent({ paneId: 'w2:p1', status: 'blocked', branch: 'main', ahead: 1, behind: 2 }),
+		// Not a repository at all: no branch, and never dirty.
+		agent({ paneId: 'w2:p2', status: 'idle' })
+	];
+
+	it('counts a cell per status, plus panes with unpushed commits', () => {
+		expect(rollupCounts(REPOS)).toEqual([
+			{ status: 'blocked', label: 'blocked', n: 1 },
+			{ status: 'working', label: 'working', n: 1 },
+			{ status: 'done', label: 'done', n: 0 },
+			{ status: 'idle', label: 'idle', n: 2 },
+			{ status: 'dirty', label: 'unpushed', n: 2 }
+		]);
+	});
+
+	// Behind-only is not unpushed: there is nothing of yours to lose.
+	it('does not call a branch that is only behind its upstream unpushed', () => {
+		expect(isDirty(agent({ paneId: 'w3:p1', branch: 'main', ahead: 0, behind: 4 }))).toBe(false);
+		expect(isDirty(agent({ paneId: 'w3:p2', branch: 'main', ahead: 1, behind: 4 }))).toBe(true);
+	});
+
+	it('narrows the list to one status, pinned section included', () => {
+		const { blocked, groups } = partitionAgents(REPOS, 'none', 'status-title', 'idle');
+		expect(blocked).toEqual([]);
+		expect(groups.flatMap((g) => g.agents).map((a) => a.paneId)).toEqual(['w1:p2', 'w2:p2']);
+	});
+
+	it('keeps a blocked pane pinned when it matches the filter', () => {
+		const { blocked, groups } = partitionAgents(REPOS, 'none', 'status-title', 'dirty');
+		expect(blocked.map((a) => a.paneId)).toEqual(['w2:p1']);
+		expect(groups.flatMap((g) => g.agents).map((a) => a.paneId)).toEqual(['w1:p2']);
+	});
+
+	/**
+	 * The conversation swipes through flatOrder. If it ignored the filter,
+	 * "next" would step onto a row that is not on the list you came from.
+	 */
+	it('walks the filtered list, so swiping matches what is on screen', () => {
+		expect(flatOrder(REPOS, 'none', 'status-title', 'dirty')).toEqual(['w2:p1', 'w1:p2']);
+		expect(flatOrder(REPOS, 'none', 'status-title', null)).toHaveLength(4);
+	});
+
+	it('shows everything when no badge is lit', () => {
+		expect(partitionAgents(REPOS, 'none', 'status-title', null).groups[0].agents).toHaveLength(3);
 	});
 });

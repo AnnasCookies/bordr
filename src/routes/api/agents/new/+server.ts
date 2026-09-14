@@ -2,7 +2,18 @@ import { realpathSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { resolve, sep } from 'node:path';
 import { error, json } from '@sveltejs/kit';
-import { getClient, HerdrRequestError, readVisible, settleScreen } from '$lib/server/herdr';
+import {
+	getClient,
+	HerdrRequestError,
+	sendText,
+	rawAgent,
+	readVisible,
+	sendKeys,
+	settleScreen
+} from '$lib/server/herdr';
+import { encodeOmpStartupPrompt } from '$lib/server/omp-startup-prompt';
+import { piAdapter } from '$lib/server/transcript/pi';
+import { readTranscriptTail } from '$lib/server/transcript/tail';
 import type { RequestHandler } from './$types';
 
 const KINDS = new Set([
@@ -19,6 +30,7 @@ const KINDS = new Set([
 ]);
 
 const HOME = homedir();
+const OMP_STARTUP_EXTENSION = resolve(process.cwd(), 'src/lib/server/omp-startup-prompt.ts');
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
@@ -47,13 +59,18 @@ function confinedCwd(cwd: string | undefined): string | null {
 
 /** Create a fresh workspace and start a harness in it. */
 export const POST: RequestHandler = async ({ request }) => {
-	const { kind, cwd, label } = (await request.json()) as {
+	const { kind, cwd, label, prompt } = (await request.json()) as {
 		kind?: string;
 		cwd?: string;
 		label?: string;
+		prompt?: string;
 	};
 	if (!kind || !KINDS.has(kind)) throw error(400, `kind must be one of: ${[...KINDS].join(', ')}`);
 	const directory = confinedCwd(cwd);
+	const initialPrompt = typeof prompt === 'string' && prompt.trim() ? prompt : undefined;
+	if (kind === 'omp' && !initialPrompt) {
+		throw error(400, 'OMP needs a first message to start its session');
+	}
 
 	const herdr = getClient();
 	let paneId: string | undefined;
@@ -84,17 +101,51 @@ export const POST: RequestHandler = async ({ request }) => {
 			name: label?.trim() || kind,
 			kind,
 			pane_id: paneId,
-			timeout_ms: 60_000
+			timeout_ms: 60_000,
+			...(kind === 'omp'
+				? { args: ['--cwd', directory ?? HOME, '--extension', OMP_STARTUP_EXTENSION] }
+				: {})
 		});
 		await settleScreen(paneId, { before: shell, budgetMs: 30_000, stableMs: 1_500 });
+
+		if (kind === 'omp' && initialPrompt) {
+			// OMP trims text submitted by its terminal input controller. This
+			// single-line marker survives that boundary; the startup extension
+			// decodes it and submits the original text through OMP's message API.
+			await sendText(paneId, encodeOmpStartupPrompt(initialPrompt));
+			await sendKeys(paneId, ['enter']);
+
+			// Herdr reports the session before OMP always flushes its first
+			// message. Do not return during that gap: the first detail request
+			// would otherwise show the false integration-reinstall warning.
+			const deadline = Date.now() + 30_000;
+			let transcriptReady = false;
+			while (Date.now() < deadline) {
+				const raw = await rawAgent(paneId);
+				const sessionId = (raw?.agent_session as { value?: string } | undefined)?.value;
+				const path = sessionId ? await piAdapter.resolve(sessionId) : null;
+				if (path) {
+					const messages = piAdapter.parse((await readTranscriptTail(path)).text);
+					if (messages.some((message) => message.role === 'user')) {
+						transcriptReady = true;
+						break;
+					}
+				}
+				await sleep(250);
+			}
+			if (!transcriptReady) {
+				throw error(504, 'OMP started but did not create its transcript');
+			}
+		}
 
 		return json({ ok: true, paneId });
 	} catch (e) {
 		if (e instanceof HerdrRequestError) {
-			// agent_not_ready = started but sitting on a first-run prompt —
-			// that IS a success for our purposes; the picker card handles it.
-			// It is THIS pane that started, not the first agent of its kind.
-			if (e.code === 'agent_not_ready' && paneId) return json({ ok: true, paneId });
+			// Other harnesses can start on a first-run prompt. OMP must get as
+			// far as its first transcript above before creation is complete.
+			if (e.code === 'agent_not_ready' && paneId && kind !== 'omp') {
+				return json({ ok: true, paneId });
+			}
 			throw error(409, e.message);
 		}
 		// A socket error is a plain Error, which SvelteKit would render as a

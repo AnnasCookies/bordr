@@ -1,6 +1,8 @@
 import { json } from '@sveltejs/kit';
 import { listAgents, rawAgents } from '$lib/server/herdr';
 import { adapterFor } from '$lib/server/transcript';
+import { piSessionEnded } from '$lib/server/transcript/pi';
+import { resolveLocalTranscript } from '$lib/server/transcript/resolve';
 import { MAX_TAIL_BYTES, readTranscriptTail } from '$lib/server/transcript/tail';
 import { isEmptyQuery, matchIndex, matchLength, parseSearchQuery } from '$lib/server/search-query';
 import type { RequestHandler } from './$types';
@@ -59,7 +61,7 @@ export const GET: RequestHandler = async ({ url }) => {
 		const raw = byPane.get(summary.paneId);
 		const sessionId = (raw?.agent_session as { value?: string } | undefined)?.value;
 		if (!sessionId) continue;
-		const path = await adapter.resolve(sessionId);
+		const path = await resolveLocalTranscript(adapter, summary.paneId, summary.agent, sessionId);
 		if (!path) continue;
 
 		let messages;
@@ -67,7 +69,9 @@ export const GET: RequestHandler = async ({ url }) => {
 			// Shares the mtime-keyed cache with the conversation view instead of
 			// re-reading every transcript whole on each query — that was ~100MB
 			// of uncached reads per search across the live panes.
-			messages = adapter.parse((await readTranscriptTail(path, MAX_TAIL_BYTES)).text);
+			const tail = (await readTranscriptTail(path, MAX_TAIL_BYTES)).text;
+			if (summary.agent === 'omp' && piSessionEnded(tail)) continue;
+			messages = adapter.parse(tail);
 		} catch {
 			continue;
 		}

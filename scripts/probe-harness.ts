@@ -36,6 +36,7 @@ const PROMPT =
 	'Reply with the single line PROBE OK. Then list the files in the current directory using a tool. ' +
 	"Then, if you have a tool for asking the user a question with options, ask me 'Which colour?' with " +
 	'options Red, Green, Blue and wait for my answer. If you have no such tool, reply with the single line NO ASK TOOL.';
+const START_PROMPT = '-- Reply with the single line STARTED OK.';
 
 interface Detail {
 	status: string;
@@ -43,6 +44,7 @@ interface Detail {
 	degradedMessage: string | null;
 	messages: Array<{ role: string; text: string; tools: Array<{ name: string; summary: string }> }>;
 	picker: { question: string | null; options: Array<{ index: number; label: string }> } | null;
+	menu: string | null;
 	statusLines: string[];
 	screenTail: string;
 }
@@ -125,11 +127,25 @@ try {
 		const started = Date.now();
 		const created = await api<{ paneId?: string; message?: string }>('/api/agents/new', {
 			method: 'POST',
-			body: JSON.stringify({ kind, cwd, label: `probe-${kind}` })
+			body: JSON.stringify({
+				kind,
+				cwd,
+				label: `probe-${kind}`,
+				prompt: kind === 'omp' ? START_PROMPT : undefined
+			})
 		});
 		report.create = { status: created.status, body: created.body, ms: Date.now() - started };
 		if (!created.body.paneId) throw new Error(`create failed: ${JSON.stringify(created.body)}`);
 		paneId = created.body.paneId;
+		const firstDetail = await detail(paneId);
+		report.firstDetail = {
+			status: firstDetail.status,
+			degraded: firstDetail.degraded,
+			degradedMessage: firstDetail.degradedMessage
+		};
+		if (kind === 'omp' && firstDetail.degraded !== 'none') {
+			throw new Error(`first OMP detail degraded: ${firstDetail.degraded}`);
+		}
 		note(`pane ${paneId}`);
 	}
 
@@ -228,13 +244,14 @@ try {
 		};
 	}
 
-	// 5. A slash-command menu: /model should become a tappable card.
+	// 5. A slash-command menu: a simple /model becomes a picker; OMP's
+	// two-column model browser stays in the key-driven peek.
 	await api(`/api/agents/${paneId}/prompt`, {
 		method: 'POST',
 		body: JSON.stringify({ text: '/model' })
 	});
 	note('/model sent');
-	const menu = await waitFor(paneId, (_r, d) => !!d.picker, 8_000, '/model menu');
+	const menu = await waitFor(paneId, (_r, d) => !!d.picker || !!d.menu, 8_000, '/model menu');
 	report.modelMenu = {
 		picker: menu.detail?.picker
 			? {
@@ -242,6 +259,7 @@ try {
 					options: menu.detail.picker.options.slice(0, 6).map((o) => o.label)
 				}
 			: null,
+		menu: menu.detail?.menu ?? null,
 		screenTail: menu.detail?.screenTail.split('\n').slice(-10).join('\n'),
 		status: menu.row?.status
 	};
@@ -251,7 +269,7 @@ try {
 	});
 	await sleep(1500);
 	const closed = await detail(paneId);
-	report.menuClosedByEsc = !closed.picker;
+	report.menuClosedByEsc = !closed.picker && !closed.menu;
 } catch (e) {
 	report.error = (e as Error).message;
 } finally {

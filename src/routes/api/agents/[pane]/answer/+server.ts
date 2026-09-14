@@ -2,6 +2,7 @@ import { error, json } from '@sveltejs/kit';
 import { promptAgent, rawAgent, readVisible, sendKeys } from '$lib/server/herdr';
 import { keysForOption, parsePicker, pendingAsk, type Picker } from '$lib/server/picker';
 import { adapterFor } from '$lib/server/transcript';
+import { resolveLocalTranscript } from '$lib/server/transcript/resolve';
 import { readTranscriptTail } from '$lib/server/transcript/tail';
 import type { RequestHandler } from './$types';
 
@@ -9,12 +10,18 @@ import type { RequestHandler } from './$types';
 async function transcriptAsk(paneId: string): Promise<Picker | null> {
 	const raw = await rawAgent(paneId);
 	if (!raw) return null;
+	const harness = String(raw.agent ?? '');
+	// OMP asks through a live modal. Transcript options do not include the
+	// current highlight, so relative arrows would be a guess if screen parsing
+	// failed. Refuse rather than confirm the wrong option.
+	if (harness === 'omp') return null;
 	const sessionId = (raw.agent_session as { value?: string } | undefined)?.value;
-	const adapter = adapterFor(String(raw.agent ?? ''));
+	const adapter = adapterFor(harness);
 	if (!sessionId || !adapter) return null;
-	const path = await adapter.resolve(sessionId);
+	const path = await resolveLocalTranscript(adapter, paneId, harness, sessionId);
 	if (!path) return null;
-	return pendingAsk(adapter.parse((await readTranscriptTail(path)).text));
+	const transcript = (await readTranscriptTail(path)).text;
+	return pendingAsk(adapter.parse(transcript));
 }
 
 export const POST: RequestHandler = async ({ params, request }) => {

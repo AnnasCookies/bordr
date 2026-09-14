@@ -1,7 +1,12 @@
 import { adapterFor } from './transcript';
+import { piSessionEnded } from './transcript/pi';
+import { resolveLocalTranscript } from './transcript/resolve';
 import { readTranscriptTail } from './transcript/tail';
 import { menuFooter, parsePicker, pendingAsk } from './picker';
 import { rawAgents, readVisible } from './herdr';
+import { parsePane } from './herdr/address';
+import { branchesFor, type BranchInfo } from './herdr/branches';
+import { connectionFor } from './herdr/connections';
 import { extractStatusLines } from './status';
 import type { AgentSummary } from '$lib/types';
 import type { Message } from './transcript/types';
@@ -127,12 +132,15 @@ async function previewFor(summary: AgentSummary, sessionId: string | undefined):
 	const adapter = sessionId ? adapterFor(summary.agent) : null;
 	if (adapter && sessionId) {
 		try {
-			const path = await adapter.resolve(sessionId);
+			const path = await resolveLocalTranscript(adapter, summary.paneId, summary.agent, sessionId);
 			if (path) {
-				const messages = adapter.parse((await readTranscriptTail(path)).text);
-				preview = previewFrom(messages, summary.status);
-				const pending = pendingAsk(messages);
-				if (pending) ask = { question: pending.question, options: pending.options, multi: false };
+				const tail = (await readTranscriptTail(path)).text;
+				if (summary.agent !== 'omp' || !piSessionEnded(tail)) {
+					const messages = adapter.parse(tail);
+					preview = previewFrom(messages, summary.status);
+					const pending = pendingAsk(messages);
+					if (pending) ask = { question: pending.question, options: pending.options, multi: false };
+				}
 			}
 		} catch {
 			// No transcript is not an error — the row falls back to the cwd.
@@ -146,10 +154,57 @@ async function previewFor(summary: AgentSummary, sessionId: string | undefined):
 }
 
 /**
- * Add the list-only fields: a one-line preview for every pane, and the picker
- * for any pane with a dialog on screen so `/` can answer without opening the
- * conversation. A pane showing a dialog is reported as `blocked` whatever
- * herdr said, which is what keeps "needs you" consistent across harnesses.
+ * Branch and drift for every pane's directory, one call per machine.
+ *
+ * The list used to skip git entirely, on the grounds that a call per row was
+ * too much for a view that repaints every two seconds. It is not a call per
+ * row: `branchesFor` takes the whole set at once — a file read plus one git
+ * per directory locally, a single ssh for a remote machine — and caches each
+ * answer for a minute, so a two-second poll costs nothing between checkouts.
+ * The workspace tree already warms the same cache with the same directories.
+ *
+ * Keyed by machine AND directory: two machines can both have `~/bordr`, and
+ * they are not the same repository.
+ */
+async function gitFor(agents: AgentSummary[]): Promise<Map<string, BranchInfo>> {
+	const byMachine = new Map<string, Set<string>>();
+	for (const agent of agents) {
+		if (!agent.cwd) continue;
+		const { machineId } = parsePane(agent.paneId);
+		const key = machineId ?? '';
+		const dirs = byMachine.get(key) ?? new Set<string>();
+		dirs.add(agent.cwd);
+		byMachine.set(key, dirs);
+	}
+
+	const out = new Map<string, BranchInfo>();
+	await Promise.all(
+		[...byMachine].map(async ([machineId, dirs]) => {
+			// `connectionFor`, NOT `ensureConnection`: this runs on every
+			// projection, about every two seconds, and a machine that is down
+			// would then be re-dialled on that beat for as long as bordr is
+			// open. Listing agents already opens the connection it needs; the
+			// branch rides whatever is there and reports nothing otherwise.
+			//
+			// Nothing is the right answer anyway. A stale branch is worse than
+			// no branch: it would say you are on one you have since left, on a
+			// box you currently cannot see.
+			const machine = machineId ? (connectionFor(machineId)?.machine ?? null) : null;
+			if (machineId && !machine) return;
+			for (const [cwd, info] of await branchesFor(machine, [...dirs])) {
+				out.set(`${machineId}\0${cwd}`, info);
+			}
+		})
+	);
+	return out;
+}
+
+/**
+ * Add the list-only fields: a one-line preview for every pane, the picker for
+ * any pane with a dialog on screen so `/` can answer without opening the
+ * conversation, and the git state of its directory. A pane showing a dialog is
+ * reported as `blocked` whatever herdr said, which is what keeps "needs you"
+ * consistent across harnesses.
  *
  * Never throws: an enrichment failure must not cost the caller the agent list
  * itself, which is the thing the screen cannot do without.
@@ -170,9 +225,10 @@ export async function enrichAgents(agents: AgentSummary[]): Promise<AgentSummary
 	// Which pane the terminal itself is on — herdr says so in the same list.
 	const focused = new Set(raws.filter((a) => a.focused === true).map((a) => a.pane_id as string));
 
-	const transcripts = await Promise.all(
-		agents.map((summary) => previewFor(summary, sessions.get(summary.paneId)))
-	);
+	const [transcripts, git] = await Promise.all([
+		Promise.all(agents.map((summary) => previewFor(summary, sessions.get(summary.paneId)))),
+		gitFor(agents)
+	]);
 
 	const now = Date.now();
 	const due = agents
@@ -216,8 +272,12 @@ export async function enrichAgents(agents: AgentSummary[]): Promise<AgentSummary
 	return agents.map((summary, i) => {
 		const reading = screens.get(summary.paneId);
 		const picker = reading?.picker ?? transcripts[i].ask;
+		const repo = git.get(`${parsePane(summary.paneId).machineId ?? ''}\0${summary.cwd}`);
 		return {
 			...summary,
+			branch: repo?.branch ?? '',
+			ahead: repo?.ahead ?? 0,
+			behind: repo?.behind ?? 0,
 			preview: transcripts[i].preview,
 			statusRows: reading?.status ?? [],
 			focused: focused.has(summary.paneId),

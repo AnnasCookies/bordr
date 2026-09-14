@@ -1,5 +1,8 @@
 import { browser } from '$app/environment';
+import { DEFAULT_FILL, DEFAULT_USER } from './bubble-colour';
 import { parseHex, readableTextOn } from '$lib/contrast';
+import type { ListFilter } from './grouping';
+import { clampSidebar, DEFAULT_SIDEBAR } from './sidebar';
 
 export type GroupBy = 'workspace' | 'status' | 'harness' | 'none';
 export type SortBy = 'status-title' | 'title' | 'recent';
@@ -7,13 +10,48 @@ export type PreviewMode = 'activity' | 'cwd' | 'none';
 export type Theme = 'light' | 'dark' | 'system';
 export type KeyStripMode = 'always' | 'peek';
 export type BackTo = 'home' | 'history';
-export type HarnessAccent = 'edge' | 'tint' | 'off';
+
+/** Whether the app makes a noise when an agent's state changes. */
+export type SoundAlerts = 'off' | 'attention' | 'all';
+
+/** How a status shows in the sidebar — herdr's own `status_indicators`. */
+export type StatusIndicators = 'dot' | 'symbol' | 'text';
+
+/**
+ * Where a harness's own colour lands on its bubble.
+ *
+ *   edge  the border only
+ *   tint  the border, and a faint blend of it in the fill
+ *   fill  the border, and the fill AT FULL STRENGTH — the loudest option,
+ *         and the only one that has to re-pick the text colour to stay
+ *         readable on it
+ *   off   nowhere; the border falls back to the neutral edge
+ */
+export type HarnessAccent = 'edge' | 'tint' | 'fill' | 'off';
+
+/** A fill is laid flat, or fades away from the speaker's own tail corner. */
+export type FillStyle = 'solid' | 'gradient';
+
+/**
+ * What the far end of a fill gradient fades TO.
+ *
+ *   auto     derived from the fill so the text stays readable by construction
+ *   harness  the agent's own colour, so the bubble carries who is speaking
+ *   custom   a colour picked below
+ */
+export type GradientEnd = 'auto' | 'harness' | 'custom';
+
+/*
+ * A bubble's fill and its border are independent: either, both, or neither.
+ * Border alone is the outline look, fill alone is the older solid bubble,
+ * both gives a filled bubble with a rule, and neither leaves the text bare
+ * on the page. Each has its own colour per side.
+ */
 export type ToolDetail = 'formatted' | 'json';
 export type PaneView = 'auto' | 'conversation' | 'terminal';
 export type TerminalFit = 'fit' | 'wrap' | 'native';
 export type TerminalDensity = 'compact' | 'comfortable';
 
-export type TreeScope = 'all' | 'agents';
 export type AgentOrder = 'priority' | 'workspace';
 export type StatusPosition = 'header' | 'bottom';
 export type WorkControl = 'inline' | 'header';
@@ -21,6 +59,16 @@ export type WorkControl = 'inline' | 'header';
 export interface Prefs {
 	v: number;
 	groupBy: GroupBy;
+	/**
+	 * The badge at the top of the list that is lit, narrowing it to one status
+	 * or to panes with unpushed work. Null is the whole list.
+	 *
+	 * Persisted, and not only so it survives a reload: the conversation swipes
+	 * through `flatOrder`, which must walk the list you can actually see. A
+	 * page-local filter would leave "next" stepping onto rows that are not on
+	 * screen.
+	 */
+	listFilter: ListFilter | null;
 	sort: SortBy;
 	/**
 	 * What the phone's back gesture does from inside an agent.
@@ -54,13 +102,24 @@ export interface Prefs {
 	 * colour it touches; 'off' leaves the bubble alone.
 	 */
 	harnessAccent: HarnessAccent;
+	statusIndicators: StatusIndicators;
+	soundAlerts: SoundAlerts;
+	/** Collapse a run of tool-only turns into one expandable group. */
+	groupTools: boolean;
+	bubbleFill: boolean;
+	fillStyle: FillStyle;
+	gradientEnd: GradientEnd;
+	userGradientEnd: string;
+	agentGradientEnd: string;
+	/** A bubble's pointer. Off leaves the squared corner and nothing else. */
+	bubbleTails: boolean;
+	bubbleBorder: boolean;
+	/** Rule thickness in px. */
+	bubbleBorderWidth: number;
+	userBorder: string;
+	agentBorder: string;
 	/** Render a tool call the way a terminal shows it, or as raw JSON. */
 	toolDetail: ToolDetail;
-	/**
-	 * Whether the desktop tree lists every pane or only those with an agent.
-	 * Some people work agent-first and do not want their shells in the way.
-	 */
-	treeScope: TreeScope;
 	/** How the sidebar's agent section is ordered: by urgency, or by workspace. */
 	agentOrder: AgentOrder;
 	/**
@@ -68,6 +127,12 @@ export interface Prefs {
 	 * Dragged by the divider between the two sections.
 	 */
 	sidebarSplit: number;
+	/**
+	 * How wide the desktop sidebar is, in pixels. Dragged by its right edge,
+	 * clamped by the resizer so a stored value from anywhere cannot make it
+	 * unusable.
+	 */
+	sidebarWidth: number;
 	/** The desktop session tree, open or collapsed out of the way. */
 	sidebarOpen: boolean;
 	/** Draw a tab's panes as herdr's real split, rather than one pane at a time. */
@@ -84,6 +149,19 @@ export interface Prefs {
 	/** The harness's status row, and where the terminal is looking, on each list row. */
 	listDetail: boolean;
 	/** The git branch under each workspace in the tree. */
+	/**
+	 * Delivery marks on your own messages: a spinner while the request is in
+	 * flight, one tick once herdr has it, two once the agent has picked it up.
+	 */
+	/**
+	 * Put the number of agents waiting on the app's own icon.
+	 *
+	 * A notification cannot still be there tomorrow; a badge can — which is
+	 * the argument for it and, for anyone who keeps a clean home screen, the
+	 * argument against.
+	 */
+	appBadge: boolean;
+	messageTicks: boolean;
 	showBranches: boolean;
 	/** Name an unnamed tab after what is in it, rather than "tab 2". */
 	smartTabLabels: boolean;
@@ -131,6 +209,7 @@ export interface Prefs {
 export const DEFAULTS: Prefs = {
 	v: 2,
 	groupBy: 'workspace',
+	listFilter: null,
 	sort: 'status-title',
 	backTo: 'home',
 	showGrouping: true,
@@ -141,16 +220,31 @@ export const DEFAULTS: Prefs = {
 	keyStrip: 'peek',
 	showWork: true,
 	harnessAccent: 'edge',
+	statusIndicators: 'dot',
+	soundAlerts: 'attention',
+	groupTools: true,
+	bubbleFill: false,
+	fillStyle: 'gradient',
+	gradientEnd: 'auto',
+	userGradientEnd: '',
+	agentGradientEnd: '',
+	bubbleTails: true,
+	bubbleBorder: true,
+	bubbleBorderWidth: 2,
+	userBorder: '',
+	agentBorder: '',
 	toolDetail: 'formatted',
-	treeScope: 'all',
 	agentOrder: 'priority',
 	sidebarSplit: 0.4,
+	sidebarWidth: DEFAULT_SIDEBAR,
 	sidebarOpen: true,
 	splitPanes: true,
 	paneView: 'auto',
 	terminalFit: 'fit',
 	terminalDensity: 'comfortable',
 	listDetail: true,
+	appBadge: true,
+	messageTicks: true,
 	showBranches: true,
 	smartTabLabels: true,
 	showActivity: true,
@@ -186,14 +280,18 @@ const KEY = 'bordr-prefs';
  */
 const VERSION = 2;
 const GROUPS: GroupBy[] = ['workspace', 'status', 'harness', 'none'];
+const FILTERS: ListFilter[] = ['blocked', 'working', 'done', 'idle', 'unknown', 'dirty'];
 const SORTS: SortBy[] = ['status-title', 'title', 'recent'];
 const PREVIEWS: PreviewMode[] = ['activity', 'cwd', 'none'];
 const THEMES: Theme[] = ['light', 'dark', 'system'];
 const STRIPS: KeyStripMode[] = ['always', 'peek'];
 const BACKS: BackTo[] = ['home', 'history'];
-const ACCENTS: HarnessAccent[] = ['edge', 'tint', 'off'];
+const ACCENTS: HarnessAccent[] = ['edge', 'tint', 'fill', 'off'];
+const INDICATORS: StatusIndicators[] = ['dot', 'symbol', 'text'];
+const SOUNDS: SoundAlerts[] = ['off', 'attention', 'all'];
+const FILL_STYLES: FillStyle[] = ['solid', 'gradient'];
+const GRADIENT_ENDS: GradientEnd[] = ['auto', 'harness', 'custom'];
 const TOOL_DETAILS: ToolDetail[] = ['formatted', 'json'];
-const TREE_SCOPES: TreeScope[] = ['all', 'agents'];
 const AGENT_ORDERS: AgentOrder[] = ['priority', 'workspace'];
 const STATUS_POSITIONS: StatusPosition[] = ['header', 'bottom'];
 const WORK_CONTROLS: WorkControl[] = ['inline', 'header'];
@@ -201,7 +299,7 @@ const PANE_VIEWS: PaneView[] = ['auto', 'conversation', 'terminal'];
 const TERMINAL_FITS: TerminalFit[] = ['fit', 'wrap', 'native'];
 const TERMINAL_DENSITIES: TerminalDensity[] = ['compact', 'comfortable'];
 
-function pick<T extends string>(value: unknown, allowed: T[], fallback: T): T {
+function pick<T extends string | number>(value: unknown, allowed: T[], fallback: T): T {
 	return allowed.includes(value as T) ? (value as T) : fallback;
 }
 
@@ -233,6 +331,11 @@ export function normalisePrefs(raw: unknown): Prefs {
 	return {
 		v: VERSION,
 		groupBy: pick(stored.groupBy, GROUPS, DEFAULTS.groupBy),
+		// Null, not a fallback filter: an unrecognised value must open the whole
+		// list, never silently hide rows the reader did not ask to hide.
+		listFilter: FILTERS.includes(stored.listFilter as ListFilter)
+			? (stored.listFilter as ListFilter)
+			: null,
 		sort: pick(stored.sort, SORTS, DEFAULTS.sort),
 		backTo: pick(stored.backTo, BACKS, DEFAULTS.backTo),
 		showGrouping: bool(stored.showGrouping, DEFAULTS.showGrouping),
@@ -250,21 +353,42 @@ export function normalisePrefs(raw: unknown): Prefs {
 			stored.v === VERSION ? pick(stored.keyStrip, STRIPS, DEFAULTS.keyStrip) : DEFAULTS.keyStrip,
 		showWork: bool(stored.showWork, DEFAULTS.showWork),
 		harnessAccent: pick(stored.harnessAccent, ACCENTS, DEFAULTS.harnessAccent),
+		statusIndicators: pick(stored.statusIndicators, INDICATORS, DEFAULTS.statusIndicators),
+		soundAlerts: pick(stored.soundAlerts, SOUNDS, DEFAULTS.soundAlerts),
+		groupTools: bool(stored.groupTools, DEFAULTS.groupTools),
+		bubbleFill: bool(stored.bubbleFill, DEFAULTS.bubbleFill),
+		fillStyle: pick(stored.fillStyle, FILL_STYLES, DEFAULTS.fillStyle),
+		gradientEnd: pick(stored.gradientEnd, GRADIENT_ENDS, DEFAULTS.gradientEnd),
+		userGradientEnd: colour(stored.userGradientEnd, DEFAULTS.userGradientEnd),
+		agentGradientEnd: colour(stored.agentGradientEnd, DEFAULTS.agentGradientEnd),
+		bubbleTails: bool(stored.bubbleTails, DEFAULTS.bubbleTails),
+		bubbleBorder: bool(stored.bubbleBorder, DEFAULTS.bubbleBorder),
+		bubbleBorderWidth: pick(
+			Number(stored.bubbleBorderWidth),
+			[1, 2, 3],
+			DEFAULTS.bubbleBorderWidth
+		),
+		userBorder: colour(stored.userBorder, DEFAULTS.userBorder),
+		agentBorder: colour(stored.agentBorder, DEFAULTS.agentBorder),
 		toolDetail: pick(stored.toolDetail, TOOL_DETAILS, DEFAULTS.toolDetail),
-		treeScope: pick(stored.treeScope, TREE_SCOPES, DEFAULTS.treeScope),
-		agentOrder: pick(stored.agentOrder, AGENT_ORDERS, DEFAULTS.agentOrder),
 		// Clamped on read: it comes from storage a person can hand-edit, and a
 		// value outside this range collapses one section to nothing.
+		agentOrder: pick(stored.agentOrder, AGENT_ORDERS, DEFAULTS.agentOrder),
 		sidebarSplit:
 			typeof stored.sidebarSplit === 'number' && Number.isFinite(stored.sidebarSplit)
 				? Math.min(Math.max(stored.sidebarSplit, 0.15), 0.75)
 				: DEFAULTS.sidebarSplit,
+		sidebarWidth: clampSidebar(
+			typeof stored.sidebarWidth === 'number' ? stored.sidebarWidth : DEFAULTS.sidebarWidth
+		),
 		sidebarOpen: bool(stored.sidebarOpen, DEFAULTS.sidebarOpen),
 		splitPanes: bool(stored.splitPanes, DEFAULTS.splitPanes),
 		paneView: pick(stored.paneView, PANE_VIEWS, DEFAULTS.paneView),
 		terminalFit: pick(stored.terminalFit, TERMINAL_FITS, DEFAULTS.terminalFit),
 		terminalDensity: pick(stored.terminalDensity, TERMINAL_DENSITIES, DEFAULTS.terminalDensity),
 		listDetail: bool(stored.listDetail, DEFAULTS.listDetail),
+		appBadge: bool(stored.appBadge, DEFAULTS.appBadge),
+		messageTicks: bool(stored.messageTicks, DEFAULTS.messageTicks),
 		showBranches: bool(stored.showBranches, DEFAULTS.showBranches),
 		smartTabLabels: bool(stored.smartTabLabels, DEFAULTS.smartTabLabels),
 		showActivity: bool(stored.showActivity, DEFAULTS.showActivity),
@@ -343,9 +467,9 @@ function createPrefs() {
 		} {
 			const dark = resolveTheme(current.theme, prefersDark) === 'dark';
 			return {
-				userBubble: current.userBubble || (dark ? '#2f4fd0' : '#3558e6'),
+				userBubble: current.userBubble || (dark ? DEFAULT_USER.dark : DEFAULT_USER.light),
 				userText: current.userText || '#ffffff',
-				agentBubble: current.agentBubble || (dark ? '#262626' : '#eceef1'),
+				agentBubble: current.agentBubble || (dark ? DEFAULT_FILL.dark : DEFAULT_FILL.light),
 				agentText: current.agentText || (dark ? '#e5e5e5' : '#111418')
 			};
 		},

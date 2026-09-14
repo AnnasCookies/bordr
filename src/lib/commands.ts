@@ -8,7 +8,7 @@ export interface SlashCommand {
 	name: string;
 	description: string;
 	/** Where it came from, for a small label on the phone. */
-	source: 'builtin' | 'skill' | 'command' | 'prompt' | 'plugin';
+	source: 'builtin' | 'skill' | 'command' | 'prompt' | 'plugin' | 'extension';
 }
 
 /**

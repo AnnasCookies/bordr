@@ -148,6 +148,35 @@ describe('commandsFor: pi and agy', () => {
 	});
 });
 
+describe('parseOmpCommandProbe', () => {
+	it('keeps live extension, prompt and skill commands from noisy OMP output', async () => {
+		const { parseOmpCommandProbe } = await load();
+		expect(
+			parseOmpCommandProbe(
+				'startup noise\nBORDR_OMP_COMMANDS=' +
+					JSON.stringify([
+						{ name: 'model', description: 'Switch model', source: 'builtin' },
+						{ name: 'ctxc:lint', description: 'Lint memories', source: 'extension' },
+						{ name: 'review', description: 'Review code', source: 'prompt' },
+						{ name: 'skill:doc-lookup', description: 'Read docs', source: 'skill' },
+						{ description: 'missing name', source: 'extension' }
+					]) +
+					'\nshutdown noise'
+			)
+		).toEqual([
+			{ name: 'model', description: 'Switch model', source: 'builtin' },
+			{ name: 'ctxc:lint', description: 'Lint memories', source: 'extension' },
+			{ name: 'review', description: 'Review code', source: 'prompt' },
+			{ name: 'skill:doc-lookup', description: 'Read docs', source: 'skill' }
+		]);
+	});
+	it('fails closed on missing or malformed probe output', async () => {
+		const { parseOmpCommandProbe } = await load();
+		expect(parseOmpCommandProbe('OMP started')).toEqual([]);
+		expect(parseOmpCommandProbe('BORDR_OMP_COMMANDS=not-json')).toEqual([]);
+	});
+});
+
 describe('parseDescription', () => {
 	it('reads bare, quoted and block descriptions, and nothing without front matter', async () => {
 		const { parseDescription } = await load();
