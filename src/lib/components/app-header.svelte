@@ -10,10 +10,12 @@
 	 * The one bar across the top of the app.
 	 *
 	 * Ordered the way a site nav is ordered — shadcn-svelte's own is the model:
-	 * the menu button first, then the brand, then whatever this page has to
-	 * say, then the actions pushed to the far end. The brand IS the way home,
-	 * which is why there is no back arrow; a ← next to a menu that opens the
-	 * very list it goes back to was two controls for one job.
+	 * the controls first, then whatever this page has to say, then the actions
+	 * pushed to the far end. The controls, in order: a back arrow to the agents
+	 * list (or one level up, where `backTo` says so), the menu that opens the
+	 * session list, and the mark, which is also a link to the agents list.
+	 * Each can be switched off in Settings, and the arrow is never drawn on the
+	 * page it points at.
 	 */
 	let {
 		onmenu,
@@ -111,10 +113,11 @@
 		already, and next to a pane's own title it was the least useful word on
 		the screen — so it only speaks when spoken to.
 
-		Dropped entirely when there is a back arrow, because the two go to the
-		same place and the arrow is the one that reads as a control. Keeping
-		both spent 56px of a 320px header on saying "home" twice, which is what
-		pushed the actions off the end of it.
+		Hidden below 360px wide when the back arrow is drawn beside it: the two
+		usually go to the same place, and the arrow is the one that reads as a
+		control. At that width keeping both spent 56px of a 320px header on
+		saying "home" twice, which is what pushed the actions off the end of it.
+		From 360px up there is room for both, and both stay.
 	-->
 		{#if showLogo}
 			<a
