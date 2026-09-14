@@ -15,6 +15,26 @@ export function showChrome(when: ChromeWhen, touchPoints: number): boolean {
 	return touchPoints > 0;
 }
 
+/**
+ * Whether the back arrow is drawn, given where it would go.
+ *
+ * Never on the page it points at: on the agents list a ← to `/` is a control
+ * that reloads the screen you are already looking at.
+ *
+ * The drawer asks this too. It is drawn over the header and has to leave the
+ * arrow's width free in front of its own ☰, or that ☰ is no longer where the
+ * header's was — so the two must never answer differently.
+ */
+export function showBackArrow(
+	when: ChromeWhen,
+	touchPoints: number,
+	here: string,
+	target: string
+): boolean {
+	if (here === target) return false;
+	return showChrome(when, touchPoints);
+}
+
 /** What the browser reports, with a sane answer before hydration. */
 export function touchPoints(): number {
 	// 1, not 0, on the server: a mobile-only control that flashes in and out on

@@ -2,8 +2,9 @@
 	import type { Snippet } from 'svelte';
 	import NetDot from './net-dot.svelte';
 	import { resolve } from '$app/paths';
+	import { page } from '$app/state';
 	import { prefs } from '$lib/prefs.svelte';
-	import { showChrome, touchPoints } from '$lib/header-chrome';
+	import { showBackArrow, showChrome, touchPoints } from '$lib/header-chrome';
 
 	/**
 	 * The one bar across the top of the app.
@@ -53,7 +54,10 @@
 	 * answer; asking each to work it out was five chances to disagree.
 	 */
 	const touch = $derived(touchPoints());
-	const showBack = $derived(showChrome(prefs.value.backButton, touch));
+	const backHref = $derived(backTo ? resolve(backTo) : resolve('/'));
+	const showBack = $derived(
+		showBackArrow(prefs.value.backButton, touch, page.url.pathname, backHref)
+	);
 	const showMenu = $derived(showChrome(prefs.value.menuButton, touch));
 	const showLogo = $derived(showChrome(prefs.value.logoButton, touch));
 </script>
@@ -89,7 +93,7 @@
 				the actions have taken theirs, and the title needs what is left.
 			-->
 			<a
-				href={backTo ? resolve(backTo) : resolve('/')}
+				href={backHref}
 				class="flex w-8 shrink-0 grow-0 items-center justify-center self-stretch rounded-lg text-[20px] leading-none text-muted"
 				aria-label={backLabel ?? 'Back to agents'}>&#x2190;</a
 			>
