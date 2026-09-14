@@ -168,15 +168,14 @@ export interface Prefs {
 	/**
 	 * What the phone's back gesture does from inside an agent.
 	 *
-	 * 'history' is the default: every move pushes, and back retraces them one
-	 * at a time. It is what back does everywhere else, and a gesture that
-	 * quietly means something different here is a gesture you stop trusting.
-	 * The header's own arrow is the one-step way to the list.
+	 * 'home' is the default: moving between panes, tabs and screens from an
+	 * agent REPLACES the history entry, so back is always one step to the
+	 * agents list. That is what the gesture is for on a phone, and it was asked
+	 * for explicitly; a swipe or the tab strip is how you move sideways.
 	 *
-	 * 'home': moving between panes, tabs and screens from an agent REPLACES
-	 * the history entry, so back is always one step to the agents list. Fewer
-	 * gestures to get out after a few minutes of switching, at the cost of
-	 * back not meaning what it means anywhere else.
+	 * 'history': every move pushes, and back retraces them one at a time. Ten
+	 * gestures to get home after a few minutes of switching is the behaviour
+	 * this option exists to restore, for anyone who wants it.
 	 */
 	backTo: BackTo;
 	/**
@@ -345,7 +344,7 @@ export const DEFAULTS: Prefs = {
 	groupBy: 'workspace',
 	listFilter: null,
 	sort: 'status-title',
-	backTo: 'history',
+	backTo: 'home',
 	showGrouping: true,
 	rollup: true,
 	preview: 'activity',
