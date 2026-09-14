@@ -45,6 +45,19 @@ function shorten(id: string): string {
  */
 export const HEAD_BYTES = 64 * 1024;
 
+/**
+ * A model id that is a harness's placeholder, not a model.
+ *
+ * Claude Code writes `"model": "<synthetic>"` on assistant entries it makes up
+ * itself — an interrupted turn, an API error, a notice — and no model answered
+ * those. Taken at face value the header read `<synthetic>` until the next real
+ * turn. No real model id is wrapped in angle brackets, so the whole shape is
+ * refused rather than that one spelling.
+ */
+function isPlaceholder(model: string): boolean {
+	return model.startsWith('<') && model.endsWith('>');
+}
+
 export function parseModel(jsonl: string): string {
 	let latest = '';
 	for (const line of jsonl.split('\n')) {
@@ -67,7 +80,7 @@ export function parseModel(jsonl: string): string {
 		}
 		// Claude Code: on the assistant turn itself.
 		if (entry.type === 'assistant' && typeof entry.message?.model === 'string') {
-			if (entry.message.model) latest = entry.message.model;
+			if (entry.message.model && !isPlaceholder(entry.message.model)) latest = entry.message.model;
 		}
 	}
 	return latest ? shorten(latest) : '';

@@ -40,6 +40,18 @@ describe('parseModel', () => {
 		expect(parseModel(text)).toBe('');
 	});
 
+	/**
+	 * Claude Code stamps turns it invents itself — an interruption, an API
+	 * error — with `<synthetic>`. No model answered those, so the header keeps
+	 * the last model that did.
+	 */
+	it("skips Claude Code's <synthetic> placeholder", () => {
+		expect(parseModel([claude('claude-opus-5'), claude('<synthetic>')].join('\n'))).toBe(
+			'claude-opus-5'
+		);
+		expect(parseModel(claude('<synthetic>'))).toBe('');
+	});
+
 	it('has nothing to say about an empty transcript', () => {
 		expect(parseModel('')).toBe('');
 	});
