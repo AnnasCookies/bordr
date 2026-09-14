@@ -449,12 +449,17 @@ a:not(.no-press):active,
  * This is the half of "instantly responsive" that no amount of prefetching
  * buys: the browser paints :active before it has asked the network anything,
  * so a tap looks answered on a dead link as readily as on a fast one.
+ *
+ * The same exclusions as the rules above. `.no-press` marks the full-bleed
+ * scrims behind the drawers, and dimming the whole overlay on a touch screen
+ * is exactly what that class exists to prevent; a disabled control did
+ * nothing, so it must not look as if it did.
  */
 @media (hover: none) {
-	a:active,
-	button:active,
-	summary:active,
-	[role='button']:active {
+	a:not(.no-press):active,
+	button:not(:disabled):not(.no-press):active,
+	summary:not(.no-press):active,
+	[role='button']:not([aria-disabled='true']):not(.no-press):active {
 		opacity: 0.6;
 		transition: opacity 60ms ease-out;
 	}
