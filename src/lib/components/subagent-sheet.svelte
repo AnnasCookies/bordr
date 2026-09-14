@@ -64,7 +64,14 @@
 </script>
 
 <div class="fixed inset-0 z-40 flex flex-col">
-	<button class="flex-1 bg-black/40" aria-label="Close the sub-agent" onclick={onclose}></button>
+	<!--
+		Presentational, the same as the drawer scrims. The sheet's own "close" is
+		the labelled way out, so naming this one as well put two buttons for one
+		job in the accessibility tree; and a full-screen overlay that shrinks on
+		press, as every real control does, is absurd.
+	-->
+	<button class="no-press flex-1 bg-black/40" aria-hidden="true" tabindex="-1" onclick={onclose}
+	></button>
 
 	<section
 		class="flex max-h-[86%] min-h-0 flex-col rounded-t-2xl border-t border-hairline bg-page shadow-2xl"
