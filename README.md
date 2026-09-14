@@ -31,64 +31,38 @@ All you need is Tailscale, Herdr and a PC to run it on.
 
 ## What it does
 
-### Answer without opening anything
+**Answer without opening anything**
 
-- **A blocked agent, one tap.** Agents waiting on you are pinned to the top of
-  the list with their first options inline, so you never have to open the
-  conversation to unblock one.
-- **Push the moment it blocks.** Tap the notification and it opens that
-  conversation — or answer straight from the notification's own buttons.
-- **Every harness in one list.** Claude Code, codex, pi, omp, grok, copilot and
-  agy, each with its own mark, grouped by workspace, status or harness, and a
-  line saying what it is actually doing.
+- A blocked agent is pinned to the top of the list with its options inline — tap one.
+- Push the moment it blocks, and the notification carries those options too.
+- Claude Code, codex, pi, omp, grok, copilot and agy in one list, each with its own mark.
 
-### Read what happened
+**Read what happened**
 
-- **Sessions as chat, not terminal soup.** Each harness's own transcript,
-  rendered prose first, with tool calls folded away behind a toggle.
-- **Code that looks like code.** Syntax highlighting with VS Code's own
-  grammars, and tool calls you can open to see the arguments, the diff and the
-  result.
-- **Search every session at once.** Quoted phrases, `-exclusions`, and filters
-  for who said it and which harness.
+- Sessions render as chat, not terminal soup, with tool calls folded away.
+- Syntax highlighting from VS Code's own grammars; open a tool call for its arguments, diff and result.
+- Search every session at once: `"quoted phrases"`, `-exclusions`, filters by speaker and harness.
 
-### Drive it properly
+**Drive it properly**
 
-- **Terminal mode.** The pane exactly as the machine draws it, with bordr's
-  input box where the harness draws its own.
-- **A tab's real split.** herdr splits a tab into panes; bordr shows that split
-  rather than a row of chips, and you can drag the divider from the phone.
-- **Drive a stubborn TUI.** A live screen peek plus an on-screen key strip
-  (`esc tab ⇧⇥ ↑ ↓ ← → ␣ ⏎`) for anything the terminal insists on handling
-  itself.
-- **Slash command previews.** Type `/` and the harness's commands and your own
-  skills, commands and plugins are listed with their descriptions. Print-style
-  ones show their output inline; selector menus become tappable cards.
-- **Type, dictate, or send a photo.** Attach photos or record long-form
-  messages, or share a picture straight into bordr from another app.
+- Terminal mode shows the pane exactly as the machine draws it.
+- A tab's real split, dividers and all, not a row of chips.
+- An on-screen key strip for anything the TUI insists on handling itself.
+- Type `/` for the harness's commands and your own skills, with descriptions.
+- Type, dictate, or share a photo straight in from another app.
 
-### Your whole estate
+**Your whole estate**
 
-- **herdr's own shape.** Machines, workspaces, tabs and panes, in a side panel
-  that matches what herdr shows on the desktop.
-- **Other machines, over SSH.** Name them in `BORDR_MACHINES` and bordr drives
-  herdr on each of them too. Empty by default, because every machine you add is
-  another one anyone reaching bordr can drive.
-- **Browse and preview files.** Markdown, images, PDFs and text, with
-  agent-built HTML reports rendering in the phone browser, sandboxed.
+- Machines, workspaces, tabs and panes, in herdr's own shape.
+- Other machines over SSH — only the ones `BORDR_MACHINES` names, none by default.
+- Browse and preview files: Markdown, images, PDFs, and agent-built HTML, sandboxed.
 
-### Make it yours
+**Make it yours**
 
-- **Swipe between agents.** Left and right cycle through the list in whatever
-  order you sorted it.
-- **Back goes home.** One gesture from anywhere inside an agent returns to the
-  list, rather than retracing every pane you looked at. Switchable.
-- **Light and dark, and your own colours.** Chat bubbles instead of the default
-  prefixed transcript, if you want them.
-- **Loads more settings** to tweak the behaviour, check your connection, send a
-  test notification and more — each with a live preview of what it does.
+- Swipe between agents; back always returns to the list.
+- Light, dark, chat bubbles, and a live preview under every setting.
 
-It installs to the home screen as a PWA and works on any modern phone browser.
+Installs to the home screen as a PWA and works in any modern phone browser.
 
 ## What it looks like
 
@@ -153,19 +127,23 @@ herdr (named machines) ──ssh -L──┘
 
 ## Before you start
 
-**bordr has no login.** It drives coding agents that can run any command on the
-machine it is installed on, and on any machine you name in `BORDR_MACHINES`,
-and it can read files under the directories you point it at. Whoever can reach its port can do both of those things. That is
-deliberate, a tailnet is the boundary, but it means bordr must never be
-exposed to a network you do not control. It refuses to serve on a public
-address unless you explicitly override it. Read [SECURITY.md](SECURITY.md)
-before installing; it is short. If I had to say one thing: Serve it with `tailscale serve`, never `tailscale funnel`. Serve keeps the
-address inside your tailnet; funnel publishes it to the whole internet, and
-because funnel proxies to loopback it walks straight past bordr's own bind
-guard. If you share your tailnet with anyone, restrict who can reach bordr's
-host and port with [Tailscale grants](https://tailscale.com/docs/features/access-control/grants),
-and set `BORDR_ALLOWED_USERS` so bordr checks the caller's tailnet identity
-itself.
+**bordr has no login.** Anyone who can reach its port can run any command on
+this machine, and on every machine you name in `BORDR_MACHINES`, and can read
+the files you point it at. That is deliberate: the tailnet is the boundary.
+
+Three things follow.
+
+- **Serve, never funnel.** `tailscale serve` keeps the address inside your
+  tailnet. `tailscale funnel` publishes it to the whole internet, and because
+  it proxies to loopback it walks straight past bordr's own bind guard.
+- **Sharing a tailnet?** Restrict who can reach the host and port with
+  [Tailscale grants](https://tailscale.com/docs/features/access-control/grants),
+  and set `BORDR_ALLOWED_USERS` so bordr checks the caller's identity itself.
+- **Never put it on a network you do not control.** It refuses to serve on a
+  public address unless you explicitly override it.
+
+[SECURITY.md](SECURITY.md) is the whole argument, and it is short. Read it
+before you install.
 
 ## Prerequisites
 
@@ -312,44 +290,22 @@ comes back to the foreground) and offers a "tap to reload" pill.
 
 ## Using it
 
-- **Agents.** Every pane as a status-rail row with a one-line preview of what
-  it is doing, a rollup grid, and grouping by workspace, status or harness
-  (Settings). Agents waiting on you are pinned in a "needs you" section with
-  their first options inline, answer without opening the conversation. ＋
-  starts a new session in a bottom sheet.
-- **Conversation.** Prefixed transcript (`›` you, `·` the agent); swipe right
-  for the next agent down the list, left for the previous. The harness's own status line
-  (model / context / quota) pinned in the header, tap to expand. Amber card =
-  the agent is waiting: tap an option to answer. 📷 attaches a photo or
-  screenshot (the agent reads the file). ⌨ opens a live screen peek with
-  Esc/arrows/Tab/Enter for anything the TUI insists on doing itself.
-- **Slash commands.** Type `/` and a list appears: the harness's own commands
-  plus your skills, commands and plugins, read off disk the way the harness
-  reads them, with their descriptions. Print-style ones show their output
-  inline; panel-style ones (`/usage`, `/config`) render in the ⌨ peek and the
-  page says a menu is open; selector menus (`/model`, `/effort`) become
-  tappable cards.
-- **Terminal mode.** The pane as the machine draws it, with bordr's input box
-  where the harness draws its own and the key strip beside it. Chosen per pane
-  in Settings, or automatically for a plain shell.
-- **The panel.** ☰ opens machines, workspaces, tabs and panes — herdr's own
-  shape. Drag the divider to give the machines or the agents more room. The
-  same ☰ closes it, and 🏠 goes back to the list.
-- **Split panes.** Where herdr has split a tab, bordr shows that split rather
-  than a row of chips. The pane you are in holds the transcript and composer;
-  the others show their own screens, and a tap moves you there.
-- **Search.** 🔍 searches every live session's transcript. Multiple words must
-  all appear, `"quoted"` matches a phrase, `-word` excludes. Chips narrow to
-  your own messages or the agent's, and to one harness. Results are capped per
-  session so one chatty pane cannot crowd out the rest, and say so when capped.
-- **Files.** `/f` browses your configured roots with Download and Share on
-  every row and a long-press actions sheet; tap a file to view it (Markdown
-  rendered, images with paging, PDF, text with line numbers). Agent-built HTML
-  renders in the phone browser, sandboxed. Bytes are served from `/raw/…`.
+Mostly it is what it looks like. The parts that are not:
 
-- **Settings.** Grouping, sort, rollup, preview line, theme (light/dark/system),
-  mono size, key strip, Enter behaviour, dictation language, push, and a
-  Connection screen showing what bordr is talking to.
+- **Swipe** left and right across a conversation for the next and previous
+  agent in the list. Swiping from a screen edge still goes back.
+- **Long-press** a file row for Download, Share, Send and Copy path.
+- **Search** needs every word to match; `"quote a phrase"`, `-exclude` a word,
+  and the chips narrow to you, the agent, or one harness. Results are capped
+  per session so one chatty pane cannot crowd out the rest, and say when they
+  are.
+- **Slash commands** come in three kinds: print-style ones show their output
+  inline, panel-style ones (`/usage`, `/config`) render in the screen peek, and
+  selector menus (`/model`, `/effort`) become tappable cards.
+- **A `!` draft is a shell command**, not a message to the agent. The box says
+  so before you send it.
+- **Settings** has a Connection screen showing exactly what bordr is talking
+  to, and a button to send yourself a test notification.
 
 ## Security model
 
