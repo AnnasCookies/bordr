@@ -2016,7 +2016,7 @@
 	});
 
 	/**
-	 * The panes of the current workspace's tabs, reported by the tab bar.
+	 * Every pane of the current tab, reported by the tab bar.
 	 *
 	 * A swipe walks the current tab's panes and then carries on into the rest
 	 * of the fleet. Tabs used to REPLACE the list rather than sit inside it,

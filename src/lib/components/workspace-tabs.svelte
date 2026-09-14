@@ -7,6 +7,7 @@
 	import { prefs } from '$lib/prefs.svelte';
 	import { STATUS_RAIL, harnessText } from '$lib/theme';
 	import HarnessMark from './harness-mark.svelte';
+	import { currentTabPanes } from '$lib/swipe-order';
 	import type { WorkspaceNode } from '$lib/types';
 
 	let {
@@ -17,7 +18,8 @@
 		current: string;
 		panes?: boolean;
 		/**
-		 * The panes a swipe should move between, in tab order.
+		 * Every pane of the tab holding `current`, in tab order: what a swipe
+		 * walks through and what closing the pane falls back to.
 		 *
 		 * Reported upward rather than fetched again by the page: this component
 		 * already polls `/api/panes` for the bar it draws, and the sidebar polls
@@ -54,9 +56,11 @@
 		tabs.find((t) => t.panes.some((p) => p.paneId === current))?.tabId ?? ''
 	);
 
-	// One entry per tab, in the order the bar shows them.
+	// The panes of the open tab, not one link target per tab: both consumers
+	// take this as "the panes in the current tab", and a list of other tabs'
+	// panes sent closing a split tab to the half that had just been closed.
 	$effect(() => {
-		onsiblings?.(tabs.map(tabTarget).filter(Boolean));
+		onsiblings?.(currentTabPanes(workspaces, current));
 	});
 
 	/**

@@ -17,6 +17,35 @@
  * are looking at is a gesture that has lied.
  */
 
+/** Only the shape this reads, so a test can build a tree without the rest. */
+interface TabShape {
+	panes: readonly { paneId: string }[];
+}
+
+/**
+ * Every pane in the tab that holds `current`, in tab order — the `siblings`
+ * both `swipeSequence` and `afterClose` expect.
+ *
+ * Not one pane per tab. The tab bar used to report its own link targets
+ * (one pane for each tab in the workspace) under this name, so closing a
+ * split tab from its first pane "fell back" to the second pane of the tab
+ * that had just been closed, and the swipe wove other tabs' panes in as if
+ * they shared this one.
+ *
+ * Ids are compared whole: they may carry a machine prefix, and nothing
+ * here has any business taking one apart.
+ */
+export function currentTabPanes(
+	workspaces: readonly { tabs: readonly TabShape[] }[],
+	current: string
+): string[] {
+	for (const workspace of workspaces) {
+		const tab = workspace.tabs.find((t) => t.panes.some((p) => p.paneId === current));
+		if (tab) return tab.panes.map((p) => p.paneId);
+	}
+	return [];
+}
+
 export function swipeSequence(
 	/** Every agent, in list order. */
 	order: readonly string[],
