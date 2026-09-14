@@ -17,8 +17,12 @@ export interface PendingSend {
 	id: number;
 	text: string;
 	at: number;
-	/** `sending` while the POST is in flight, `queued` once herdr has it. */
-	state?: 'sending' | 'queued';
+	/** Request lifecycle; accepted commands carry a browser-visible receipt. */
+	state?: 'sending' | 'queued' | 'accepted';
+	/** Slash-command word, without `/`, when this is terminal UI control. */
+	command?: string;
+	/** Honest server result: confirmed where Pi exposes one, accepted otherwise. */
+	receipt?: string;
 	/**
 	 * The question this was an answer to, when it was one.
 	 *

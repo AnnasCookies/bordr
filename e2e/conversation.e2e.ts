@@ -57,6 +57,50 @@ test('Tab completes the highlighted slash command', async ({ page }) => {
 	await expect(page.getByRole('listbox', { name: 'Slash commands' })).toBeHidden();
 });
 
+test('a successful slash command leaves a visible receipt', async ({ page }) => {
+	const href = await firstPane(page);
+	if (!href) test.skip(true, 'no agents running');
+	await page.goto(href as string);
+
+	const pane = decodeURIComponent((href as string).replace('/a/', ''));
+	await page.route(`**/api/agents/${encodeURIComponent(pane)}/prompt`, (route) =>
+		route.fulfill({
+			contentType: 'application/json',
+			body: JSON.stringify({
+				ok: true,
+				command: { name: 'reload', outcome: 'confirmed', message: '✓ Pi reloaded' }
+			})
+		})
+	);
+
+	await page.getByRole('textbox', { name: 'Message' }).fill('/reload');
+	await page.getByRole('button', { name: 'Send' }).click();
+	await expect(page.getByText('✓ Pi reloaded', { exact: true })).toBeVisible();
+});
+
+test('route refresh waits for a pause in typing', async ({ page }) => {
+	const href = await firstPane(page);
+	if (!href) test.skip(true, 'no agents running');
+	await page.goto(href as string);
+
+	const pane = decodeURIComponent((href as string).replace('/a/', ''));
+	const detailPath = `/api/agents/${encodeURIComponent(pane)}`;
+	let detailRequests = 0;
+	page.on('request', (request) => {
+		if (new URL(request.url()).pathname === detailPath) detailRequests += 1;
+	});
+
+	const box = page.getByRole('textbox', { name: 'Message' });
+	await box.fill('c');
+	detailRequests = 0;
+	await page.keyboard.type('ontinuous typing keeps expensive transcript refreshes off this path', {
+		delay: 45
+	});
+	expect(detailRequests).toBe(0);
+
+	await expect.poll(() => detailRequests, { timeout: 3_000 }).toBeGreaterThan(0);
+});
+
 test('the conversation never scrolls horizontally', async ({ page }) => {
 	const href = await firstPane(page);
 	if (!href) test.skip(true, 'no agents running');

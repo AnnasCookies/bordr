@@ -11,6 +11,11 @@ export interface SlashCommand {
 	source: 'builtin' | 'skill' | 'command' | 'prompt' | 'plugin' | 'extension';
 }
 
+/** The exact slash-command word at the start of a submitted line. */
+export function slashCommandName(text: string): string | null {
+	return /^\/([^/\s]+)(?:\s|$)/.exec(text.trim())?.[1] ?? null;
+}
+
 /**
  * Rank for a typed prefix: names that start with it, then names that
  * contain it, then descriptions that do. Within a tier, the harness's own

@@ -23,7 +23,7 @@
 	import { termGrid } from '$lib/term-grid';
 	import { throttleTrailing } from '$lib/throttle';
 	import { createSessionDraftStore, type SessionDraftStore } from '$lib/session-draft';
-	import { rankCommands, type SlashCommand } from '$lib/commands';
+	import { rankCommands, slashCommandName, type SlashCommand } from '$lib/commands';
 	import { bubbleInk, DEFAULT_FILL, DEFAULT_USER } from '$lib/bubble-colour';
 	import {
 		messageSegments,
@@ -902,7 +902,9 @@
 		// counting it would put the tail on the wrong message — and it is the
 		// same agent still talking, so it must not break the run either.
 		const drawn = out.filter(
-			(row) => row.kind === 'pending' || (row.kind === 'message' && prose(row.message).length > 0)
+			(row) =>
+				(row.kind === 'pending' && row.sent.state !== 'accepted') ||
+				(row.kind === 'message' && prose(row.message).length > 0)
 		);
 		for (let i = 0; i < drawn.length; i++) {
 			const me = speakerOf(drawn[i]);
@@ -966,8 +968,11 @@
 						(p) => p && typeof p.text === 'string' && now - Number(p.at ?? 0) < PENDING_TTL_MS
 					)
 					// Nothing restored is still in flight — that request died with the
-					// page. Anything stored was accepted, or it would not have persisted.
-					.map((p) => ({ ...p, state: 'queued' as const }));
+					// page. Keep a command receipt distinct; normal prompts are queued.
+					.map((p) => ({
+						...p,
+						state: p.state === 'accepted' ? ('accepted' as const) : ('queued' as const)
+					}));
 			}
 		} catch {
 			// Unreadable storage is not a reason to lose the conversation.
@@ -1388,6 +1393,35 @@
 	 */
 	let live = true;
 
+	/**
+	 * Keep heavyweight route invalidation off the input path while keys are
+	 * arriving. A quiet pause catches up once; focus starts the guard before
+	 * the first character, so a two-second poll cannot land between tap and key.
+	 */
+	const COMPOSER_QUIET_MS = 600;
+	let composerQuietUntil = 0;
+	let composerQuietTimer: ReturnType<typeof setTimeout> | undefined;
+	let refreshDeferred = false;
+
+	function holdComposerRefresh() {
+		composerQuietUntil = Date.now() + COMPOSER_QUIET_MS;
+		clearTimeout(composerQuietTimer);
+		composerQuietTimer = setTimeout(() => {
+			composerQuietUntil = 0;
+			if (!refreshDeferred) return;
+			refreshDeferred = false;
+			refreshGate.call();
+		}, COMPOSER_QUIET_MS);
+	}
+
+	function onComposerBlur() {
+		clearTimeout(composerQuietTimer);
+		composerQuietUntil = 0;
+		if (!refreshDeferred) return;
+		refreshDeferred = false;
+		refreshGate.call();
+	}
+
 	function scrollHost(): HTMLElement | null {
 		if (!swipeRoot || !swipeRoot.isConnected) return null;
 		return getComputedStyle(swipeRoot).overflowY === 'auto' ? swipeRoot : null;
@@ -1594,6 +1628,11 @@
 	/** Refresh from the server; keep the view pinned to the bottom unless the
 	 *  reader has deliberately scrolled up. */
 	async function refresh() {
+		if (Date.now() < composerQuietUntil) {
+			refreshDeferred = true;
+			return;
+		}
+		refreshDeferred = false;
 		// This page mounts before its route navigation settles. Starting an
 		// invalidateAll here keeps that navigation open forever, so the global
 		// loading bar never finishes. The event/poll path will refresh again.
@@ -1629,6 +1668,7 @@
 			store.stop();
 			refreshGate.cancel();
 			clearTimeout(poll);
+			clearTimeout(composerQuietTimer);
 			for (const timer of burst) clearTimeout(timer);
 			draftStore?.flush();
 			removeEventListener('pagehide', flushDraft);
@@ -1639,14 +1679,23 @@
 		};
 	});
 
-	// Any agent event may mean new transcript content or a status change.
-	// Server-side coalescing already bounds the rate; this only stops a burst
-	// of store updates turning into a burst of loads, without ever dropping
-	// the last one.
+	// Only this pane's projected state can change this transcript. An estate
+	// event for another pane used to reload the full current transcript too.
+	const currentAgentRevision = $derived.by(() => {
+		const agent = store.agents.find((candidate) => candidate.paneId === detail.paneId);
+		if (!agent) return '';
+		return [
+			agent.seq,
+			agent.status,
+			agent.preview ?? '',
+			agent.picker?.question ?? '',
+			agent.menu ?? '',
+			...(agent.statusRows ?? [])
+		].join('\u0000');
+	});
 	const refreshGate = throttleTrailing(() => void refresh(), 300);
 	$effect(() => {
-		void store.agents;
-		refreshGate.call();
+		if (currentAgentRevision) refreshGate.call();
 	});
 
 	/**
@@ -1767,9 +1816,9 @@
 	/** Something was just sent: a menu, a follow-up dialogue (Claude's
 	 *  cache-invalidation confirm) or a reply is about to paint, and no
 	 *  event will announce it — look now and a few more times shortly after. */
-	function refreshSoon() {
+	function refreshSoon(immediate = true) {
 		for (const timer of burst) clearTimeout(timer);
-		refreshGate.call();
+		if (immediate) refreshGate.call();
 		burst = BURST_MS.map((ms) => setTimeout(() => refreshGate.call(), ms));
 	}
 
@@ -1974,9 +2023,20 @@
 		// bubble appears on the tap; if the send is refused, both are put back
 		// exactly as they were.
 		const text = draft;
+		const hadAttachments = attachments.length > 0;
+		const command = hadAttachments ? null : slashCommandName(text);
 		const optimistic = text.trim() ? ++pendingSeq : 0;
 		if (optimistic) {
-			pendingSends = [...pendingSends, { id: optimistic, text, at: Date.now(), state: 'sending' }];
+			pendingSends = [
+				...pendingSends,
+				{
+					id: optimistic,
+					text,
+					at: Date.now(),
+					state: 'sending',
+					...(command && { command })
+				}
+			];
 			draftStore?.clear(paneId);
 			draft = '';
 			following = true;
@@ -1984,7 +2044,7 @@
 		}
 
 		try {
-			if (attachments.length > 0) {
+			if (hadAttachments) {
 				const form = new FormData();
 				for (const file of attachments) form.append('file', file);
 				form.append('text', text);
@@ -2015,10 +2075,24 @@
 					body: JSON.stringify({ text })
 				});
 				if (!sent.ok) throw await failure(sent, 'send');
+				const body = (await sent.json().catch(() => null)) as {
+					command?: { name?: string; message?: string } | null;
+				} | null;
+				if (optimistic && detail.paneId === paneId) {
+					pendingSends = pendingSends.map((p) =>
+						p.id === optimistic
+							? {
+									...p,
+									state: body?.command ? ('accepted' as const) : ('queued' as const),
+									deliveredAt: Date.now(),
+									...(body?.command?.message && { receipt: body.command.message })
+								}
+							: p
+					);
+				}
 			}
-			// Delivered: the bubble stops pulsing and becomes a queued prompt,
-			// which is what survives a reload.
-			if (optimistic && detail.paneId === paneId) {
+			// Image prompts have no command response but are still queued normally.
+			if (hadAttachments && optimistic && detail.paneId === paneId) {
 				pendingSends = pendingSends.map((p) =>
 					p.id === optimistic ? { ...p, state: 'queued' as const, deliveredAt: Date.now() } : p
 				);
@@ -2039,7 +2113,8 @@
 		busy = false;
 		await invalidateAll();
 		if (following) requestAnimationFrame(scrollBottom);
-		refreshSoon();
+		// The invalidate above is the immediate read; keep only the later burst.
+		refreshSoon(false);
 	}
 
 	/**
@@ -2833,7 +2908,21 @@
 										(verdict !== null
 											? verdict === 'taken'
 											: onScreen(sent.text, detail.screenTail ?? ''))}
-									{#if prefs.value.bubbles}
+									{#if sent.command}
+										<div class="flex justify-center">
+											<span
+												role="status"
+												class="rounded-full border border-hairline bg-card px-3 py-1 font-mono text-[11px] {sent.state ===
+												'sending'
+													? 'text-working'
+													: 'text-muted'}"
+											>
+												{sent.state === 'sending'
+													? `Running /${sent.command}…`
+													: (sent.receipt ?? `✓ /${sent.command} accepted`)}
+											</span>
+										</div>
+									{:else if prefs.value.bubbles}
 										<div class="flex justify-end {tight(row.run)}">
 											<Bubble
 												mine
@@ -3354,6 +3443,9 @@
 						<textarea
 							bind:this={textarea}
 							bind:value={draft}
+							onfocus={holdComposerRefresh}
+							oninput={holdComposerRefresh}
+							onblur={onComposerBlur}
 							onkeydown={onKeydown}
 							onpaste={onPaste}
 							rows="1"
