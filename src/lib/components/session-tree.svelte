@@ -1,5 +1,7 @@
 <script lang="ts">
 	import { resolve } from '$app/paths';
+	import { page } from '$app/state';
+	import { showBackArrow, touchPoints } from '$lib/header-chrome';
 	import Icon from './icon.svelte';
 	import { SvelteSet } from 'svelte/reactivity';
 	import { agentTitle } from '$lib/grouping';
@@ -17,14 +19,35 @@
 		current = '',
 		onnew = () => {},
 		onclose,
-		home = false
+		home = false,
+		backTo
 	}: {
 		current?: string;
 		onnew?: () => void;
 		onclose?: () => void;
 		/** Offer a way back to the agents list. Pointless on the agents list. */
 		home?: boolean;
+		/** The header's own `backTo` on this screen, so both agree on the arrow. */
+		backTo?: '/settings';
 	} = $props();
+
+	/**
+	 * Whether the header under this drawer draws its back arrow.
+	 *
+	 * The drawer covers the header, and its ☰ has to sit exactly where the
+	 * header's did, or a thumb going back to that corner closes nothing. #30
+	 * put the arrow in front of the header's ☰ on touch screens, which moved
+	 * it 34px right and onto the drawer's Home link. Asked of the same function
+	 * the header asks, so the two cannot disagree.
+	 */
+	const arrowRoom = $derived(
+		showBackArrow(
+			prefs.value.backButton,
+			touchPoints(),
+			page.url.pathname,
+			backTo ? resolve(backTo) : resolve('/')
+		)
+	);
 
 	let workspaces = $state<WorkspaceNode[]>([]);
 	let machines = $state<MachineStatus[]>([]);
@@ -272,19 +295,36 @@
 		any obvious order. An explicit button is the accessible way out.
 	-->
 	{#if onclose}
-		<div class="flex shrink-0 items-center gap-2 border-b border-hairline px-2 py-1.5">
+		<!--
+			The header's top padding, safe-area inset included. The drawer is pinned
+			to the top of the screen, so in an installed app it started under the
+			status bar while the header's ☰ sat below it: the same corner in x, a
+			status bar apart in y.
+		-->
+		<div
+			class="flex shrink-0 items-center gap-2 border-b border-hairline px-2 pt-[max(0.625rem,env(safe-area-inset-top))] pb-1.5"
+		>
 			<!--
 				The same ☰, in the same corner, on every screen. The drawer covers
 				the header, so the glyph that opened it has to be the glyph that
 				closes it — a ✕ there reads as a different control, and anything
 				that navigates there takes you somewhere you did not ask to go.
+
+				Where the header draws its back arrow, a blank of the same width
+				goes first. Header: 8px padding, 32px arrow, 2px gap, then a 40px ☰
+				centred at 62px. Here: 8px padding, 32px blank, then a 44px ☰, also
+				centred at 62px. The blank is inert: under a thumb aimed at the
+				arrow, nothing happens rather than a navigation.
 			-->
-			<button
-				class="flex h-11 w-11 shrink-0 items-center justify-center rounded-lg text-muted"
-				aria-label="Close the session list"
-				aria-expanded="true"
-				onclick={onclose}>☰</button
-			>
+			<span class="flex shrink-0">
+				{#if arrowRoom}<span class="w-8 shrink-0" aria-hidden="true"></span>{/if}
+				<button
+					class="flex h-11 w-11 shrink-0 items-center justify-center rounded-lg text-muted"
+					aria-label="Close the session list"
+					aria-expanded="true"
+					onclick={onclose}>☰</button
+				>
+			</span>
 			{#if home && prefs.value.drawerHome !== 'off'}
 				<!--
 					The drawer covers the header, so the mark up there — which is already

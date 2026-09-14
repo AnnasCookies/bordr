@@ -84,65 +84,131 @@ test('the agents list drawer has the same toggle, and no Home of its own', async
 	await expect(close).toBeHidden();
 });
 
-/**
- * The divider used to leave its move handler bound to the window when the
- * browser cancelled the gesture, so every later scroll resized the sidebar.
- * Both halves are guarded: the gesture must be ours to begin with, and a
- * cancelled drag must not keep listening.
- */
-test('the sidebar divider claims the gesture and lets go when cancelled', async ({ page }) => {
-	await page.goto('/');
-	await page.getByRole('button', { name: 'Workspaces', exact: true }).click();
+test.describe('on a touch screen', () => {
+	/**
+	 * Touch is what draws the back arrow. Without it the arrow is hidden, the
+	 * header's ☰ sits where the drawer's does by default, and the corner test
+	 * above passes whatever the drawer draws — which is how #30 moved the
+	 * header's ☰ onto the drawer's Home link and nothing failed.
+	 */
+	test.use({ hasTouch: true, isMobile: true, viewport: { width: 390, height: 844 } });
 
-	const handle = page.getByRole('button', { name: /Resize the machines section/ });
-	await expect(handle).toBeVisible();
+	test('tapping where the menu button is closes the drawer, with the back arrow drawn', async ({
+		page
+	}) => {
+		const href = await firstPane(page);
+		test.skip(!href, 'no agents running');
+		await page.goto(href as string);
+		await expect(page.getByRole('link', { name: 'Back to agents' })).toBeVisible();
 
-	// Without this the browser scrolls instead of letting us drag.
-	expect(await handle.evaluate((el) => getComputedStyle(el).touchAction)).toBe('none');
+		const menu = page.getByRole('button', { name: 'Session list', exact: true });
+		const box = (await menu.boundingBox())!;
+		await menu.tap();
+		const close = page.getByRole('button', { name: 'Close the session list' });
+		await expect(close).toBeVisible();
 
-	const section = page.locator('nav[aria-label="Session"] > div').first();
-	const before = (await section.boundingBox())!.height;
-
-	// A drag the browser takes over for a scroll: down, then cancel.
-	await handle.evaluate((el) => {
-		const opts = { bubbles: true, pointerId: 1, pointerType: 'touch', clientY: 300 };
-		el.dispatchEvent(new PointerEvent('pointerdown', opts));
-		el.dispatchEvent(new PointerEvent('pointercancel', opts));
+		const url = page.url();
+		await page.touchscreen.tap(box.x + box.width / 2, box.y + box.height / 2);
+		await expect(close).toBeHidden();
+		expect(page.url(), 'that corner must not navigate').toBe(url);
 	});
-	// Anything moving afterwards must not resize it.
-	await handle.evaluate((el) => {
-		el.dispatchEvent(
-			new PointerEvent('pointermove', {
-				bubbles: true,
-				pointerId: 1,
-				pointerType: 'touch',
-				clientY: 700
-			})
-		);
-	});
-	await page.waitForTimeout(150);
 
-	const after = (await section.boundingBox())!.height;
-	expect(Math.abs(after - before), 'a cancelled drag must stop listening').toBeLessThan(2);
+	/**
+	 * The divider used to leave its move handler bound to the window when the
+	 * browser cancelled the gesture, so every later scroll resized the section.
+	 *
+	 * Real touches through the DevTools protocol, not synthetic PointerEvents:
+	 * `setPointerCapture` throws for a pointer that is not really down, so a
+	 * dispatched pointerdown never started a drag and the old version of this
+	 * test could not fail. So the drag has to be seen to follow first.
+	 */
+	test('the sidebar divider follows a drag and lets go when the browser cancels it', async ({
+		page
+	}) => {
+		await page.goto('/');
+		await page.getByRole('button', { name: 'Workspaces', exact: true }).tap();
+
+		const handle = page.getByRole('button', { name: /Resize the machines section/ });
+		await expect(handle).toBeVisible();
+		// Without this the browser scrolls instead of letting us drag.
+		expect(await handle.evaluate((el) => getComputedStyle(el).touchAction)).toBe('none');
+
+		// The resizable machines section itself, not the drawer's button row.
+		const section = page
+			.locator('nav[aria-label="Session"]:visible > div[style*="height"]')
+			.first();
+		const height = async () => (await section.boundingBox())!.height;
+		const start = await height();
+		const grip = (await handle.boundingBox())!;
+		const x = grip.x + grip.width / 2;
+		const y = grip.y + grip.height / 2;
+
+		const cdp = await page.context().newCDPSession(page);
+		const touch = (
+			type: 'touchStart' | 'touchMove' | 'touchEnd' | 'touchCancel',
+			points: Array<{ x: number; y: number }> = []
+		) => cdp.send('Input.dispatchTouchEvent', { type, touchPoints: points });
+
+		await touch('touchStart', [{ x, y }]);
+		await touch('touchMove', [{ x, y: y + 80 }]);
+		await expect
+			.poll(height, { message: 'the drag has to follow first' })
+			.toBeGreaterThan(start + 40);
+		await touch('touchCancel');
+		const dragged = await height();
+
+		// A later gesture somewhere else must leave it alone.
+		await touch('touchStart', [{ x, y: y + 200 }]);
+		await touch('touchMove', [{ x, y: y + 320 }]);
+		await touch('touchEnd');
+		await page.waitForTimeout(150);
+		expect(
+			Math.abs((await height()) - dragged),
+			'a cancelled drag must stop listening'
+		).toBeLessThan(2);
+	});
 });
 
+/**
+ * Pane links on the conversation page replace the history entry, so back goes
+ * to the list however many panes you went through. The old version clicked
+ * the first four `/a/` links, which were mostly the pane already open — a
+ * link that pushed history still passed.
+ */
 test('back returns to the agents list however much you moved around', async ({ page }) => {
-	const href = await firstPane(page);
-	test.skip(!href, 'no agents running');
-
 	await page.goto('/');
-	await page.locator('main a[href^="/a/"]').first().click();
-	await expect(page).toHaveURL(/\/a\//);
+	await page.locator('main a[href^="/a/"]').first().waitFor({ state: 'attached' });
+	const hrefs = await page.evaluate(() => [
+		...new Set(
+			[...document.querySelectorAll('main a[href^="/a/"]')].map((a) => a.getAttribute('href') ?? '')
+		)
+	]);
+	test.skip(hrefs.length < 3, 'needs three agents to move between');
 
-	// Move between panes the way the drawer does, several times over.
-	const panes = await page.evaluate(() =>
-		[...document.querySelectorAll('a[href^="/a/"]')].map((a) => a.getAttribute('href'))
-	);
-	for (const p of panes.slice(0, 4)) {
-		if (!p) continue;
-		await page.locator(`a[href="${p}"]`).first().click();
-		await page.waitForTimeout(250);
+	await page.locator(`main a[href="${hrefs[0]}"]`).first().click();
+	await expect.poll(() => new URL(page.url()).pathname).toBe(hrefs[0]);
+	const replace = await page
+		.locator('[data-sveltekit-replacestate]')
+		.first()
+		.getAttribute('data-sveltekit-replacestate');
+	expect(replace, 'pane links must replace history by default').not.toBe('false');
+
+	let moved = 0;
+	for (const next of hrefs.slice(1, 4)) {
+		const close = page.getByRole('button', { name: 'Close the session list' });
+		if (!(await close.isVisible())) {
+			await page.getByRole('button', { name: 'Session list', exact: true }).click();
+		}
+		const link = page
+			.locator('nav[aria-label="Session"]:visible')
+			.locator(`a[href="${next}"]`)
+			.first();
+		if ((await link.count()) === 0) continue;
+		await link.click();
+		await expect.poll(() => new URL(page.url()).pathname).toBe(next);
+		moved += 1;
 	}
+	test.skip(moved < 2, 'the drawer listed too few of those panes to move between');
 
 	await page.goBack();
 	await expect(page).toHaveURL(/\/$|\/\?/);
