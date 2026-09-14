@@ -1,4 +1,7 @@
 <script lang="ts">
+	import { track } from '$lib/pending.svelte';
+	import Icon from './icon.svelte';
+	import Spinner from './spinner.svelte';
 	import { goto } from '$app/navigation';
 	import { resolve } from '$app/paths';
 	import { prefs } from '$lib/prefs.svelte';
@@ -6,7 +9,23 @@
 	import HarnessMark from './harness-mark.svelte';
 	import type { WorkspaceNode } from '$lib/types';
 
-	let { current, panes = true }: { current: string; panes?: boolean } = $props();
+	let {
+		current,
+		panes = true,
+		onsiblings
+	}: {
+		current: string;
+		panes?: boolean;
+		/**
+		 * The panes a swipe should move between, in tab order.
+		 *
+		 * Reported upward rather than fetched again by the page: this component
+		 * already polls `/api/panes` for the bar it draws, and the sidebar polls
+		 * it too. A third caller for the same tree would be three requests every
+		 * five seconds to answer one question.
+		 */
+		onsiblings?: (panes: string[]) => void;
+	} = $props();
 
 	let workspaces = $state<WorkspaceNode[]>([]);
 
@@ -34,6 +53,11 @@
 	const currentTab = $derived(
 		tabs.find((t) => t.panes.some((p) => p.paneId === current))?.tabId ?? ''
 	);
+
+	// One entry per tab, in the order the bar shows them.
+	$effect(() => {
+		onsiblings?.(tabs.map(tabTarget).filter(Boolean));
+	});
 
 	/**
 	 * Where a tab goes: the pane you were last on if it is in that tab,
@@ -94,11 +118,13 @@
 		if (!target || creating) return;
 		creating = true;
 		try {
-			const res = await fetch('/api/tabs', {
-				method: 'POST',
-				headers: { 'content-type': 'application/json' },
-				body: JSON.stringify({ workspaceId: target.workspaceId })
-			});
+			const res = await track(() =>
+				fetch('/api/tabs', {
+					method: 'POST',
+					headers: { 'content-type': 'application/json' },
+					body: JSON.stringify({ workspaceId: target.workspaceId })
+				})
+			);
 			if (!res.ok) return;
 			const { paneId } = await res.json();
 			await load();
@@ -135,7 +161,16 @@
 	area rather than buried in the sidebar tree.
 -->
 {#if workspace}
-	<div class="flex items-stretch gap-1 border-b border-hairline px-2">
+	<!--
+		`pt-1.5` because the strip had none: each tab's own `py-1.5` was the only
+		thing between its label and the header above, so the row read as stuck to
+		the bottom of the header rather than as its own strip. Six plus six is
+		the same twelve the agents list leaves under the header.
+
+		Top only — the active tab's underline is the bottom edge and belongs
+		against the pane strip it labels.
+	-->
+	<div class="flex items-stretch gap-1 border-b border-hairline px-2 pt-1.5">
 		<div
 			class="flex min-w-0 flex-1 gap-1 overflow-x-auto"
 			role="tablist"
@@ -172,11 +207,15 @@
 
 		<button
 			type="button"
-			class="shrink-0 self-center rounded-lg px-2 py-1 text-[13px] text-working disabled:opacity-40"
+			class="flex shrink-0 items-center justify-center self-center rounded-lg p-1.5 text-working transition-colors hover:bg-chip disabled:opacity-40"
 			aria-label="New tab in {workspace?.label || 'this workspace'}"
 			title="New tab"
 			disabled={creating}
-			onclick={newTab}>＋</button
+			onclick={newTab}
+			>{#if creating}<Spinner size={15} label="Making a tab" />{:else}<Icon
+					name="plus"
+					size={15}
+				/>{/if}</button
 		>
 		<!-- herdr parks the host at the right end of the tab bar; blank means this one. -->
 		<span class="shrink-0 self-center font-mono text-[10.5px] text-faint"

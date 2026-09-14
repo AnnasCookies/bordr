@@ -48,6 +48,10 @@
 		border-radius: 6px;
 		font-family: var(--font-mono, ui-monospace, monospace);
 		font-size: var(--mono);
+		/* Its own ink as well as its own surface: inside a filled bubble the
+		   inherited colour is whatever reads on THAT fill, which on a harness
+		   fill is black — unreadable on the neutral code surface in dark. */
+		color: var(--code-ink);
 		/* Scroll the block, never the page. */
 		overflow-x: auto;
 		-webkit-overflow-scrolling: touch;
@@ -55,12 +59,14 @@
 		tab-size: 2;
 	}
 	.plain {
-		background: color-mix(in srgb, currentColor 8%, transparent);
+		background: var(--code-bg);
 	}
+	/* The diff tones mix INTO the code surface rather than washing over
+	   whatever is behind, so a diff inside a coloured bubble still reads. */
 	.add {
-		background: color-mix(in srgb, #3fa45b 16%, transparent);
+		background: color-mix(in srgb, #3fa45b 18%, var(--code-bg));
 	}
 	.del {
-		background: color-mix(in srgb, #d9534f 16%, transparent);
+		background: color-mix(in srgb, #d9534f 18%, var(--code-bg));
 	}
 </style>

@@ -1,4 +1,6 @@
 <script lang="ts">
+	import Spinner from './spinner.svelte';
+	import { track } from '$lib/pending.svelte';
 	import { goto } from '$app/navigation';
 	import { resolve } from '$app/paths';
 	import { harnessText } from '$lib/theme';
@@ -22,6 +24,7 @@
 	let kind = $state('');
 	let cwd = $state('');
 	let label = $state('');
+	let prompt = $state('');
 	let spawning = $state(false);
 	/** Inline, not alert(): a system modal over a home-screen PWA is jarring. */
 	let error = $state('');
@@ -71,15 +74,23 @@
 	});
 
 	async function start() {
-		if (!kind) return;
+		const hasPrompt = prompt.trim().length > 0;
+		if (!kind || (kind === 'omp' && !hasPrompt)) return;
 		spawning = true;
 		error = '';
 		try {
-			const response = await fetch('/api/agents/new', {
-				method: 'POST',
-				headers: { 'content-type': 'application/json' },
-				body: JSON.stringify({ kind, cwd, label: label.trim() || undefined })
-			});
+			const response = await track(() =>
+				fetch('/api/agents/new', {
+					method: 'POST',
+					headers: { 'content-type': 'application/json' },
+					body: JSON.stringify({
+						kind,
+						cwd,
+						label: label.trim() || undefined,
+						prompt: kind === 'omp' ? prompt : undefined
+					})
+				})
+			);
 			const result = (await response.json()) as { paneId?: string; message?: string };
 			if (!response.ok || !result.paneId) throw new Error(result.message ?? 'spawn failed');
 			await goto(resolve('/a/[pane]', { pane: result.paneId }));
@@ -112,10 +123,13 @@
 			<button class="min-h-11 text-[15px] text-working" onclick={onclose}>Cancel</button>
 			<h2 class="flex-1 text-center text-[17px] font-semibold">New agent</h2>
 			<button
-				class="min-h-11 text-[15px] {kind ? 'text-working' : 'text-faint'}"
-				disabled={!kind || spawning}
+				class="flex min-h-11 items-center gap-1.5 text-[15px] {kind
+					? 'text-working'
+					: 'text-faint'}"
+				disabled={!kind || spawning || (kind === 'omp' && !prompt.trim())}
 				onclick={start}
 			>
+				{#if spawning}<Spinner size={13} label="Starting" />{/if}
 				Start
 			</button>
 		</div>
@@ -136,6 +150,20 @@
 					{/each}
 				</div>
 			</section>
+
+			{#if kind === 'omp'}
+				<section>
+					<h3 class="mb-1.5 font-mono text-[10.5px] text-muted">
+						first message · required for OMP
+					</h3>
+					<textarea
+						bind:value={prompt}
+						rows="3"
+						placeholder="What do you want OMP to do?"
+						class="w-full resize-y rounded-xl border border-edge bg-card px-3 py-2.5 text-[16px] placeholder:text-faint"
+					></textarea>
+				</section>
+			{/if}
 
 			<section>
 				<h3 class="mb-1.5 font-mono text-[10.5px] text-muted">cwd · confined to ~</h3>
@@ -177,11 +205,16 @@
 			</section>
 
 			<button
-				class="w-full rounded-[14px] bg-ink px-4 py-[15px] text-[16px] font-semibold text-card disabled:opacity-50"
-				disabled={!kind || spawning}
+				class="flex w-full items-center justify-center gap-2 rounded-[14px] bg-ink px-4 py-[15px] text-[16px] font-semibold text-card disabled:opacity-50"
+				disabled={!kind || spawning || (kind === 'omp' && !prompt.trim())}
 				onclick={start}
 			>
-				{spawning ? 'Starting…' : `Start ${kind || 'agent'} in ${cwd || '~'}`}
+				{#if spawning}<Spinner size={15} label="Starting" />{/if}
+				{spawning
+					? 'Starting…'
+					: kind === 'omp'
+						? `Start OMP and send in ${cwd || '~'}`
+						: `Start ${kind || 'agent'} in ${cwd || '~'}`}
 			</button>
 
 			{#if error}

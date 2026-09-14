@@ -3,9 +3,12 @@
 	import Icon from './icon.svelte';
 	import { SvelteSet } from 'svelte/reactivity';
 	import { agentTitle } from '$lib/grouping';
+	import { agentStore } from '$lib/agents.svelte';
 	import { prefs, type AgentOrder } from '$lib/prefs.svelte';
-	import { STATUS_RAIL, harnessText } from '$lib/theme';
+	import { harnessText } from '$lib/theme';
 	import HarnessMark from './harness-mark.svelte';
+	import PreviewText from './preview-text.svelte';
+	import StatusMark from './status-mark.svelte';
 	import type { MachineStatus, PaneNode, WorkspaceNode } from '$lib/types';
 
 	let {
@@ -43,6 +46,25 @@
 		const timer = setInterval(() => void load(), 5000);
 		return () => clearInterval(timer);
 	});
+
+	/**
+	 * What each pane is actually doing, from the live agent list.
+	 *
+	 * `/api/panes` is the SHAPE of the session — machines, workspaces, tabs —
+	 * and says nothing about the work. The preview, the branch and the drift
+	 * all arrive over SSE on the agents list, which is already running, so
+	 * joining the two here costs no request and no poll of its own.
+	 *
+	 * The store is reference-counted, so holding it from the tree is safe
+	 * wherever the tree is mounted — including settings, where nothing else
+	 * would have started it.
+	 */
+	$effect(() => {
+		agentStore.start();
+		return () => agentStore.stop();
+	});
+
+	const live = $derived(new Map(agentStore.agents.map((a) => [a.paneId, a])));
 
 	/** Every pane, flattened, with the workspace and tab it came from. */
 	interface Row extends PaneNode {
@@ -207,6 +229,20 @@
 	}
 </script>
 
+<!--
+	The status indicator, in whichever form the setting asks for — the same
+	choice herdr offers as `status_indicators`.
+
+	A dot is the quietest and reads as a colour; a symbol adds a shape, so the
+	list still sorts itself for anyone who does not separate red from green;
+	the word is the most explicit and the widest. All three carry the same
+	colour, and all three are one fixed-width cell so the titles beside them
+	stay in a column whichever is on.
+-->
+{#snippet indicator(status: string, live: boolean)}
+	<StatusMark {status} {live} />
+{/snippet}
+
 <nav
 	bind:this={shell}
 	class="flex h-full flex-col border-r border-hairline bg-card"
@@ -256,13 +292,15 @@
 	-->
 	<div class="flex min-h-0 flex-col" style="height: {split * 100}%; flex: none">
 		<div class="min-h-0 flex-1 overflow-y-auto overscroll-contain py-1">
-			<p class="px-2 py-0.5 font-mono text-[10.5px] text-muted">machines</p>
+			<p class="px-2 py-0.5 font-mono text-[10px] tracking-[0.08em] text-faint uppercase">
+				machines
+			</p>
 
 			{#each groups as group (group.key)}
 				{@const folded = collapsed.has(group.key)}
 				<button
 					type="button"
-					class="flex w-full items-center gap-1.5 px-2 py-1 text-left"
+					class="flex w-full items-center gap-1.5 px-2 py-1 text-left transition-colors hover:bg-chip/60"
 					aria-expanded={!folded}
 					onclick={() => toggle(group.key)}
 				>
@@ -288,26 +326,25 @@
 						{@const c = counts(workspace)}
 						<a
 							href={paneHref(workspaceTarget(workspace))}
-							class="flex w-full items-center gap-2 py-1 pr-2 pl-4 text-left {workspace.workspaceId ===
+							class="flex w-full items-center gap-2 border-l-2 py-1 pr-2 pl-3.5 transition-colors hover:bg-chip/60 {workspace.workspaceId ===
 							currentWorkspace
-								? 'bg-chip'
-								: ''}"
+								? 'border-l-working bg-chip'
+								: 'border-l-transparent'}"
 							aria-current={workspace.workspaceId === currentWorkspace ? 'true' : undefined}
 						>
-							<span
-								class="h-1.5 w-1.5 shrink-0 rounded-full {c.blocked > 0
-									? 'bg-blocked'
-									: 'bg-idle-rail'}"
-								aria-hidden="true"
-							></span>
+							{@render indicator(c.blocked > 0 ? 'blocked' : 'idle', true)}
 							<span class="min-w-0 flex-1">
 								<span class="block truncate text-[12.5px]"
 									>{workspace.label || workspace.workspaceId}</span
 								>
 								{#if workspace.branch && prefs.value.showBranches}
-									<span class="block truncate font-mono text-[10px] text-faint"
-										>&#xe0a0; {workspace.branch}</span
-									>
+									<span class="block truncate font-mono text-[10px] text-branch">
+										&#xe0a0; {workspace.branch}{#if workspace.ahead}<span class="text-ahead"
+												>&nbsp;&uarr;{workspace.ahead}</span
+											>{/if}{#if workspace.behind}<span class="text-behind"
+												>&nbsp;&darr;{workspace.behind}</span
+											>{/if}
+									</span>
 								{/if}
 							</span>
 							<span class="shrink-0 font-mono text-[10px] text-faint">{c.agents}</span>
@@ -320,12 +357,17 @@
 		<!-- herdr keeps new and menu at the foot of its machines pane, not in a title bar. -->
 		<div class="flex shrink-0 items-center gap-1 border-t border-hairline px-2 py-1">
 			<button
-				class="flex-1 rounded px-1.5 py-0.5 text-left font-mono text-[10.5px] text-working"
-				onclick={onnew}>new · Local</button
+				class="flex flex-1 items-center justify-center gap-1.5 rounded-lg border border-edge px-2 py-1.5 font-mono text-[10.5px] text-working transition-colors hover:bg-chip"
+				onclick={onnew}><Icon name="plus" size={13} /> new</button
 			>
+			<!--
+				flex-1 on both, so the pair splits the row evenly rather than one
+				sizing to its own text and leaving the other to take the rest.
+			-->
 			<a
 				href={resolve('/settings')}
-				class="rounded px-1.5 py-0.5 font-mono text-[10.5px] text-muted">menu</a
+				class="flex flex-1 items-center justify-center gap-1.5 rounded-lg border border-edge px-2 py-1.5 font-mono text-[10.5px] text-muted transition-colors hover:bg-chip"
+				><Icon name="settings" size={14} /> settings</a
 			>
 		</div>
 	</div>
@@ -361,16 +403,27 @@
 
 	<div class="min-h-0 flex-1 overflow-y-auto overscroll-contain py-1">
 		<div class="flex items-center gap-1 px-2 py-0.5">
-			<span class="flex-1 font-mono text-[10.5px] text-muted">agents</span>
-			{#each [{ v: 'priority', l: 'priority' }, { v: 'workspace', l: 'group' }] as option (option.v)}
-				<button
-					class="rounded px-1.5 py-0.5 font-mono text-[10px] {prefs.value.agentOrder === option.v
-						? 'bg-chip text-ink'
-						: 'text-faint'}"
-					aria-pressed={prefs.value.agentOrder === option.v}
-					onclick={() => prefs.set('agentOrder', option.v as AgentOrder)}>{option.l}</button
-				>
-			{/each}
+			<span class="flex-1 font-mono text-[10px] tracking-[0.08em] text-faint uppercase">agents</span
+			>
+			<!-- One control with two positions, rather than two chips that happen
+			     to be adjacent — it is a single choice and should look like it. -->
+			<span class="flex gap-px rounded-md bg-chip p-px" role="group" aria-label="Order agents by">
+				{#each [{ v: 'priority', l: 'priority' }, { v: 'workspace', l: 'group' }] as option (option.v)}
+					<!--
+						Equal width, not text width: "priority" is twice the length of
+						"group", so sizing to content made the selected half jump about
+						as you switched. A fixed cell each keeps the control still.
+					-->
+					<button
+						class="w-[52px] rounded-[5px] py-0.5 font-mono text-[10px] transition-colors {prefs
+							.value.agentOrder === option.v
+							? 'bg-card text-ink shadow-sm'
+							: 'text-faint hover:text-muted'}"
+						aria-pressed={prefs.value.agentOrder === option.v}
+						onclick={() => prefs.set('agentOrder', option.v as AgentOrder)}>{option.l}</button
+					>
+				{/each}
+			</span>
 		</div>
 
 		{#if agentRows.length === 0}
@@ -378,22 +431,18 @@
 		{/if}
 
 		{#each agentRows as pane (pane.paneId)}
+			{@const info = live.get(pane.paneId)}
 			<a
 				href={paneHref(pane.paneId)}
-				class="flex items-center gap-2 px-2 py-1 {pane.paneId === current ? 'bg-chip' : ''}"
+				class="flex items-start gap-2 border-l-2 py-1 pr-2 pl-1.5 transition-colors hover:bg-chip/60 {pane.paneId ===
+				current
+					? 'border-l-working bg-chip'
+					: 'border-l-transparent'}"
 				aria-current={pane.paneId === current ? 'page' : undefined}
 			>
-				<!--
-					STATUS_RAIL, not STATUS_INK: the ink map is text colours, so a
-					dot carrying `text-working` painted nothing at all and every
-					agent in this list looked idle.
-				-->
-				<span
-					class="h-1.5 w-1.5 shrink-0 rounded-full {pane.hasAgent
-						? (STATUS_RAIL[pane.status] ?? 'bg-idle-rail')
-						: 'bg-edge'}"
-					aria-hidden="true"
-				></span>
+				<span class="mt-[6px] flex shrink-0 items-center"
+					>{@render indicator(pane.status, pane.hasAgent)}</span
+				>
 				<span class="min-w-0 flex-1">
 					<span class="block truncate text-[12.5px]"
 						>{agentTitle(pane.title, pane.workspaceLabel, pane.paneId, pane.agent)}</span
@@ -403,13 +452,35 @@
 						workspace on every row. Showing it only under one sort order
 						meant the priority list, the one you look at when something
 						needs you, was the one that would not say where to go.
+
+						The branch shares this line and holds its width while the
+						workspace gives way, the same bargain the agents list and the
+						conversation header both make: a workspace name cut short is
+						still recognisable, a branch cut short is not.
 					-->
-					<span class="block truncate font-mono text-[10px] text-faint"
-						>{pane.machine ? `${pane.machine} · ` : ''}{pane.workspaceLabel}</span
-					>
+					<span class="flex items-baseline gap-x-1 font-mono text-[10px] text-faint">
+						<span class="min-w-0 truncate"
+							>{pane.machine ? `${pane.machine} · ` : ''}{pane.workspaceLabel}</span
+						>
+						{#if info?.branch}
+							<span class="max-w-[55%] shrink-0 truncate text-branch">&#xe0a0; {info.branch}</span>
+							{#if info.ahead}<span class="shrink-0 text-ahead">&uarr;{info.ahead}</span>{/if}
+							{#if info.behind}<span class="shrink-0 text-behind">&darr;{info.behind}</span>{/if}
+						{/if}
+					</span>
+					{#if info?.preview}
+						<!--
+							What it is doing, which is the one thing the tree could not
+							say. A pane that is `working` looked exactly like every
+							other working pane; now the row says what the work is.
+						-->
+						<span class="mt-px block truncate text-[10.5px] text-muted"
+							><PreviewText text={info.preview} /></span
+						>
+					{/if}
 				</span>
 				<span
-					class="shrink-0 font-mono text-[12px] {harnessText(pane.agent)}"
+					class="mt-[2px] shrink-0 font-mono text-[12px] {harnessText(pane.agent)}"
 					title={pane.hasAgent ? pane.agent : 'shell'}
 					aria-label={pane.hasAgent ? pane.agent : 'shell'}><HarnessMark agent={pane.agent} /></span
 				>

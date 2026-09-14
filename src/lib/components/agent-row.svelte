@@ -4,6 +4,7 @@
 	import { harnessText, STATUS_INK, STATUS_RAIL, UNKNOWN_RAIL } from '$lib/theme';
 	import { prefs } from '$lib/prefs.svelte';
 	import HarnessMark from './harness-mark.svelte';
+	import PreviewText from './preview-text.svelte';
 	import type { ResolvedPathname } from '$app/types';
 	import type { AgentSummary } from '$lib/types';
 
@@ -66,12 +67,33 @@
 				{agent.status}
 			</span>
 		</span>
-		<span class="mt-[3px] block truncate font-mono text-[11px] text-muted">
-			<span class={harnessText(agent.agent)}
-				><HarnessMark agent={agent.agent} />
-				{agent.agent}</span
-			>
-			· {preview || collapseHome(agent.cwd)}
+		<!--
+			The branch shares the preview's line rather than taking one of its
+			own. A line per row is sixteen lines of scrolling on this fleet, to
+			say something that is usually four characters long.
+
+			Same arrangement as the conversation header: the preview truncates
+			and the branch holds its width, because the preview is already
+			clipped to 80 characters and reads fine cut short, while a branch cut
+			short tells you nothing. The 40% cap stops a long branch name from
+			doing to the preview what it is being protected from.
+		-->
+		<span class="mt-[3px] flex items-baseline gap-x-1.5 font-mono text-[11px] text-muted">
+			<span class="min-w-0 flex-1 truncate">
+				<span class={harnessText(agent.agent)}
+					><HarnessMark agent={agent.agent} />
+					{agent.agent}</span
+				>
+				· {#if preview}<PreviewText text={preview} />{:else}{collapseHome(agent.cwd)}{/if}
+			</span>
+			{#if prefs.value.showBranches && agent.branch}
+				<span class="flex max-w-[40%] shrink-0 items-baseline gap-x-1">
+					<span class="min-w-0 truncate text-branch">&#xe0a0; {agent.branch}</span>
+					<!-- Never truncated: a half-shown ↑1 would read as ↑ nothing. -->
+					{#if agent.ahead}<span class="shrink-0 text-ahead">&uarr;{agent.ahead}</span>{/if}
+					{#if agent.behind}<span class="shrink-0 text-behind">&darr;{agent.behind}</span>{/if}
+				</span>
+			{/if}
 		</span>
 		{#if prefs.value.listDetail && statusRow}
 			<!--

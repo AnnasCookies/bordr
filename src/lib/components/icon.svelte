@@ -55,10 +55,27 @@
 	{:else if name === 'folder'}
 		<path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z" />
 	{:else if name === 'settings'}
-		<circle cx="12" cy="12" r="3" />
+		<!--
+			A cog, not a sun. The glyph before this was a circle with eight
+			free-standing spokes, and with no outer ring joining their tips that
+			is what it read as.
+
+			Generated on a circle rather than typed out by hand: the hand-written
+			version put the teeth's centre 1.55 units above the hole, which is
+			most of a pixel at this size and exactly the wobble you notice
+			without being able to name.
+
+			Four points per tooth, not two. Alternating between an outer and an
+			inner radius gives SPIKES, and six of those read as a star — it is
+			the flat top and the flat valley that make a tooth a tooth. So each
+			of the six is 20° of flat at r=10, a sloped flank, then 22° of flat
+			at r=7.2. Six and not eight: at 14px the gaps between eight close up
+			into a solid band and the shape goes back to being a disc.
+		-->
 		<path
-			d="M12 2v3M12 19v3M2 12h3M19 12h3M4.9 4.9l2.1 2.1M17 17l2.1 2.1M4.9 19.1L7 17M17 7l2.1-2.1"
+			d="M10.26 2.15 L13.74 2.15 L14.46 5.23 L16.63 6.48 L19.66 5.57 L21.40 8.58 L19.09 10.75 L19.09 13.25 L21.40 15.42 L19.66 18.43 L16.63 17.52 L14.46 18.77 L13.74 21.85 L10.26 21.85 L9.54 18.77 L7.37 17.52 L4.34 18.43 L2.60 15.42 L4.91 13.25 L4.91 10.75 L2.60 8.58 L4.34 5.57 L7.37 6.48 L9.54 5.23 Z"
 		/>
+		<circle cx="12" cy="12" r="3.2" />
 	{:else if name === 'plus'}
 		<path d="M12 5v14M5 12h14" />
 	{:else if name === 'bell'}

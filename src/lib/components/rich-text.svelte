@@ -186,7 +186,9 @@
 		font-size: var(--mono);
 		padding: 0.1em 0.32em;
 		border-radius: 4px;
-		background: color-mix(in srgb, currentColor 10%, transparent);
+		/* Its own surface and ink — see --code-bg in layout.css. */
+		background: var(--code-bg);
+		color: var(--code-ink);
 		/* A long identifier must not widen the whole message. */
 		overflow-wrap: anywhere;
 	}
@@ -196,7 +198,8 @@
 		margin: 0 0 0.6em;
 		padding: 0.6em 0.7em;
 		border-radius: 8px;
-		background: color-mix(in srgb, currentColor 8%, transparent);
+		background: var(--code-bg);
+		color: var(--code-ink);
 		overflow-x: auto;
 		-webkit-overflow-scrolling: touch;
 	}
@@ -204,6 +207,7 @@
 		display: block;
 		padding: 0;
 		background: none;
+		color: inherit;
 		white-space: pre;
 		overflow-wrap: normal;
 	}
