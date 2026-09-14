@@ -28,6 +28,31 @@ async function failureMessage(response: Response): Promise<string> {
 	return `bordr returned ${response.status} for this agent`;
 }
 
+/**
+ * The last payload that actually arrived, per pane.
+ *
+ * A `fetch` that fails at the network layer THROWS rather than returning a
+ * status, so a moment without signal rejected this load and SvelteKit put a
+ * 500 page over the whole app — the transcript, the composer and any draft in
+ * it, gone, because a phone went through a tunnel. The poll that drives this
+ * runs every few seconds, so it happened constantly on a weak connection.
+ *
+ * Holding the last good payload turns that into nothing at all: the screen
+ * stays exactly as it was and the connection dot goes red. Per pane and never
+ * evicted — it is one transcript each for the panes visited this session, and
+ * a reload clears it.
+ */
+const lastGood = new Map<string, { detail: AgentDetail; watched: boolean; megabytes: number }>();
+
+/** A fetch that distinguishes "the server said no" from "there is no server". */
+async function reach(run: typeof fetch, url: string): Promise<Response | null> {
+	try {
+		return await run(url);
+	} catch {
+		return null;
+	}
+}
+
 export const load: PageLoad = async ({ params, url, fetch }) => {
 	// How far back to read, in MiB. It lives in the URL so that the SSE-driven
 	// invalidateAll re-runs this load with the reader's widened window intact —
@@ -40,12 +65,25 @@ export const load: PageLoad = async ({ params, url, fetch }) => {
 	// without it the bell renders 🔕 for a pane the server is really watching,
 	// and the first tap then re-arms an existing watch instead of clearing it.
 	const [detail, watch] = await Promise.all([
-		fetch(`/api/agents/${encodeURIComponent(params.pane)}?bytes=${megabytes * 1024 * 1024}`),
-		fetch(`/api/agents/${encodeURIComponent(params.pane)}/watch`)
+		reach(fetch, `/api/agents/${encodeURIComponent(params.pane)}?bytes=${megabytes * 1024 * 1024}`),
+		reach(fetch, `/api/agents/${encodeURIComponent(params.pane)}/watch`)
 	]);
+
+	// Unreachable, rather than refused. Keep what is on screen; the connection
+	// indicator is what says the app has lost touch, not a blank error page.
+	if (!detail) {
+		const held = lastGood.get(params.pane);
+		if (held) return { ...held, megabytes, offline: true };
+		// Nothing to hold — this pane has never loaded — so there is genuinely
+		// nothing to show and the error page is the honest answer.
+		throw error(503, 'bordr is unreachable. The transcript will return when it is back.');
+	}
+
 	if (!detail.ok) throw error(detail.status, await failureMessage(detail));
 	// A failed watch lookup must not block the transcript; default to off and let
 	// the next SSE-driven invalidation correct it.
-	const watched = watch.ok ? await readWatched(watch) : false;
-	return { detail: (await detail.json()) as AgentDetail, watched, megabytes };
+	const watched = watch?.ok ? await readWatched(watch) : false;
+	const data = { detail: (await detail.json()) as AgentDetail, watched, megabytes };
+	lastGood.set(params.pane, data);
+	return { ...data, offline: false };
 };

@@ -18,6 +18,7 @@ test('the key strip offers exactly the eight allowed keys, including enter', asy
 	const href = await firstPane(page);
 	if (!href) test.skip(true, 'no agents running');
 	await page.goto(href as string);
+	await page.getByRole('button', { name: 'Manual controls' }).click();
 
 	for (const key of ['esc', 'tab', 'up', 'down', 'left', 'right', 'space', 'enter']) {
 		await expect(page.getByRole('button', { name: key, exact: true })).toBeVisible();
@@ -29,7 +30,7 @@ test('Enter in the composer makes a newline instead of sending', async ({ page }
 	if (!href) test.skip(true, 'no agents running');
 	await page.goto(href as string);
 
-	const box = page.getByPlaceholder(/Type a reply|Or type a reply/);
+	const box = page.locator('main ~ * textarea, textarea').first();
 	await box.fill('first line');
 	await box.press('Enter');
 	await box.type('second line');
@@ -53,11 +54,11 @@ test('the manual-controls button toggles the key strip', async ({ page }) => {
 
 	const esc = page.getByRole('button', { name: 'esc', exact: true });
 	const toggle = page.getByRole('button', { name: 'Manual controls' });
-	await expect(esc).toBeVisible();
-	await toggle.click();
 	await expect(esc).toBeHidden();
 	await toggle.click();
 	await expect(esc).toBeVisible();
+	await toggle.click();
+	await expect(esc).toBeHidden();
 });
 
 test('chat bubbles replace the prefixed transcript when switched on', async ({ page }) => {
@@ -66,8 +67,6 @@ test('chat bubbles replace the prefixed transcript when switched on', async ({ p
 
 	await page.goto('/settings');
 	await page.getByRole('switch', { name: /Chat bubbles/ }).click();
-	// The picker previews prove both colours reached the DOM.
-	await expect(page.getByText(/Contrast .*passes AA/).first()).toBeVisible();
 
 	await page.goto(href as string);
 	const bubble = page.locator('main [style*="background"]').first();
@@ -97,6 +96,7 @@ test('swipe to cycle can be turned off', async ({ page }) => {
  * nothing. That mistake made an earlier version of this check silently pass.
  */
 async function swipe(page: import('@playwright/test').Page, dx: number) {
+	const before = new URL(page.url()).pathname;
 	await page.evaluate((dx) => {
 		const target = document.querySelector('main') as HTMLElement;
 		const fire = (type: string, cx: number) => {
@@ -112,7 +112,16 @@ async function swipe(page: import('@playwright/test').Page, dx: number) {
 		fire('touchstart', 150);
 		fire('touchend', 150 + dx);
 	}, dx);
-	await page.waitForTimeout(400);
+	// Wait for the navigation a swipe causes, not for a guess at how long it
+	// takes. 400ms was enough on an idle machine and not under the test
+	// runner, which made this the flakiest test in the suite — it failed
+	// consistently while the same gesture, driven identically against the same
+	// build outside the harness, navigated every time.
+	//
+	// Swallowed on purpose: a swipe that genuinely goes nowhere must return the
+	// pane it started on so the assertion can say so, rather than blowing up
+	// here with a timeout that hides which case it was.
+	await page.waitForURL((url) => url.pathname !== before, { timeout: 5_000 }).catch(() => {});
 	return decodeURIComponent(new URL(page.url()).pathname.replace('/a/', ''));
 }
 

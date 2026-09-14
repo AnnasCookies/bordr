@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { track } from '$lib/pending.svelte';
 	import { resolve } from '$app/paths';
 	import type { ResolvedPathname } from '$app/types';
 	import { marked } from 'marked';
@@ -105,11 +106,13 @@
 	async function sendPath(paneId: string, path: string) {
 		sendResult = null;
 		try {
-			const response = await fetch(`/api/agents/${encodeURIComponent(paneId)}/prompt`, {
-				method: 'POST',
-				headers: { 'content-type': 'application/json' },
-				body: JSON.stringify({ text: path })
-			});
+			const response = await track(() =>
+				fetch(`/api/agents/${encodeURIComponent(paneId)}/prompt`, {
+					method: 'POST',
+					headers: { 'content-type': 'application/json' },
+					body: JSON.stringify({ text: path })
+				})
+			);
 			sendResult = response.ok ? 'Sent.' : 'Could not send it.';
 		} catch {
 			sendResult = 'Could not send it.';

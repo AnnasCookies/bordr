@@ -1,20 +1,32 @@
 <script lang="ts">
 	import { onMount, tick } from 'svelte';
 	import { goto, invalidateAll } from '$app/navigation';
-	import { page } from '$app/state';
+	import { navigating, page } from '$app/state';
 	import { resolve } from '$app/paths';
 	import { agentStore } from '$lib/agents.svelte';
 	import { mergeResults } from '$lib/dictation';
 	import { shrinkImage } from '$lib/shrink-image';
 	import { prefs } from '$lib/prefs.svelte';
-	import { flatOrder } from '$lib/grouping';
+	import { collapseHome, flatOrder } from '$lib/grouping';
 	import { decideSwipe, inHorizontalScroller, neighbourPane } from '$lib/swipe';
 	import { harnessBorder, harnessBubble, harnessHex, harnessText, STATUS_INK } from '$lib/theme';
 	import { ansiToHtml } from '$lib/ansi';
 	import { termGrid } from '$lib/term-grid';
 	import { throttleTrailing } from '$lib/throttle';
+	import { createSessionDraftStore, type SessionDraftStore } from '$lib/session-draft';
 	import { rankCommands, type SlashCommand } from '$lib/commands';
+	import { bubbleInk, DEFAULT_FILL, DEFAULT_USER } from '$lib/bubble-colour';
+	import {
+		messageSegments,
+		hasTodoPlan,
+		onlyToolWork,
+		proseBlocks,
+		workBlocks,
+		type MessageSegment
+	} from '$lib/message-segments';
 	import HarnessMark from '$lib/components/harness-mark.svelte';
+	import StatusMark from '$lib/components/status-mark.svelte';
+	import Bubble from '$lib/components/bubble.svelte';
 	import AppHeader from '$lib/components/app-header.svelte';
 	import PaneTerminal from '$lib/components/pane-terminal.svelte';
 	import PaneScreen from '$lib/components/pane-screen.svelte';
@@ -22,12 +34,21 @@
 	import Icon from '$lib/components/icon.svelte';
 	import MessageBlocks from '$lib/components/message-blocks.svelte';
 	import SessionTree from '$lib/components/session-tree.svelte';
+	import SidebarResizer from '$lib/components/sidebar-resizer.svelte';
+	import { DEFAULT_SIDEBAR } from '$lib/sidebar';
 	import WorkspaceTabs from '$lib/components/workspace-tabs.svelte';
 	import StatusBlock from '$lib/components/status-block.svelte';
 	import NewAgentSheet from '$lib/components/new-agent-sheet.svelte';
+	import SubagentSheet from '$lib/components/subagent-sheet.svelte';
+	import Spinner from '$lib/components/spinner.svelte';
+	import Ticks from '$lib/components/ticks.svelte';
+	import { track } from '$lib/pending.svelte';
+	import { nextFollowing } from '$lib/follow';
+	import { keepPending, onScreen, say, type PendingSend } from '$lib/pending-sends';
 	import type { Block } from '$lib/server/transcript/types';
 	import type { SplitNode, WorkspaceNode } from '$lib/types';
 	let { data } = $props();
+	const detail = $derived(data.detail);
 
 	const TAIL = 80;
 
@@ -39,6 +60,8 @@
 	let showWork = $state(prefs.value.showWork);
 	/** The ＋ in the desktop tree opens the same sheet the agents list uses. */
 	let showNewAgent = $state(false);
+	/** The sub-agent being read, if any. */
+	let openSub = $state<string | null>(null);
 	/** The session tree as a drawer, on a phone. */
 	let treeOpen = $state(false);
 
@@ -164,20 +187,12 @@
 		return () => query.removeEventListener('change', sync);
 	});
 
-	/**
-	 * A bubble holds what was SAID; tool calls and thinking sit outside it.
-	 *
-	 * codex and pi routinely emit a turn with no prose at all — just a tool
-	 * call — and wrapping that in a coloured bubble drew an empty bubble with
-	 * a row inside it. The prefixed transcript has no such problem, so this
-	 * split only applies to bubbles.
-	 */
 	function prose(message: { blocks?: Block[] }): Block[] {
-		return (message.blocks ?? []).filter((b) => b.kind === 'text' || b.kind === 'image');
+		return proseBlocks(message.blocks);
 	}
 
 	function work(message: { blocks?: Block[] }): Block[] {
-		return (message.blocks ?? []).filter((b) => b.kind === 'tool' || b.kind === 'thinking');
+		return workBlocks(message.blocks);
 	}
 
 	/**
@@ -188,6 +203,8 @@
 	 */
 	let showControls = $state(prefs.value.keyStrip === 'always');
 	let draft = $state('');
+	let draftPaneId = '';
+	let draftStore: SessionDraftStore | undefined;
 
 	/** A draft that starts with `!` is a shell command Claude Code will run. */
 	// The bare `!` counts: the box must say what it is the moment the key is
@@ -236,8 +253,74 @@
 		textarea?.focus();
 	}
 	let busy = $state(false);
-	/** Which option is in flight, so the card can show the one you chose. */
+	/**
+	 * Which picker option is in flight, and whether a stop is.
+	 *
+	 * `busy` alone only said "something is happening somewhere on this page",
+	 * so every option dimmed together and the one you actually tapped was not
+	 * marked. On a slow link that reads as nothing having happened, and the
+	 * next tap sends a second keystroke to a terminal.
+	 */
 	let sendingIndex = $state(-1);
+	let stopping = $state(false);
+
+	/**
+	 * A question this pane has already answered, kept until the picker for it
+	 * actually goes away.
+	 *
+	 * `detail.picker` is read off the terminal screen, so it survives the
+	 * answer by however long the next read takes. Without this the card went
+	 * spinner, then back to looking like a brand new unanswered question, then
+	 * vanished a second or two later — and the obvious thing to do with a
+	 * question that has apparently come back is to answer it again.
+	 *
+	 * Only set when the SERVER confirmed the screen moved (`outcome: 'ok'`).
+	 * An unconfirmed send leaves the card up on purpose: that is the case
+	 * where you do need to look.
+	 *
+	 * Keyed on the question and its options, not on a flag, so the next
+	 * question — even one asked a moment later — is not swallowed with it.
+	 */
+	let answeredKey = $state('');
+	let answeredAt = $state(0);
+
+	const pickerKey = $derived(
+		detail.picker
+			? [detail.picker.question, ...detail.picker.options.map((o) => `${o.index}:${o.label}`)].join(
+					'\u0000'
+				)
+			: ''
+	);
+
+	/**
+	 * Held for at most this long. If the picker is still on screen after it,
+	 * something did not go the way the server said it did, and a card you
+	 * cannot see is worse than one that came back.
+	 */
+	const ANSWERED_HOLD_MS = 8_000;
+
+	let now = $state(Date.now());
+	$effect(() => {
+		if (!answeredKey) return;
+		const timer = setInterval(() => {
+			now = Date.now();
+			// Once the hold is up the key has done its job, whether or not the
+			// picker went away — dropping it stops this tick rather than leaving
+			// a half-second timer running for as long as the pane stays open.
+			if (now - answeredAt >= ANSWERED_HOLD_MS) answeredKey = '';
+		}, 500);
+		return () => clearInterval(timer);
+	});
+
+	const askHidden = $derived(
+		answeredKey !== '' && answeredKey === pickerKey && now - answeredAt < ANSWERED_HOLD_MS
+	);
+
+	// The picker went away, which is the answer landing: forget it, so an
+	// identical question later is not matched against a stale key.
+	$effect(() => {
+		if (!detail.picker && answeredKey) answeredKey = '';
+	});
 	let shown = $state(TAIL);
 	let loadingEarlier = $state(false);
 	let attachments = $state<File[]>([]);
@@ -301,7 +384,25 @@
 	let scrollbackError = $state<string | null>(null);
 	let flashKey = $state('');
 
-	const detail = $derived(data.detail);
+	/** Sub-agents this session has spawned, and the one being read. */
+	const subs = $derived(detail.subagents ?? []);
+	const openSubAgent = $derived(subs.find((a) => a.id === openSub) ?? null);
+
+	/**
+	 * Restore and save the composer by pane. The store collapses a typing burst
+	 * into one localStorage write, while pane changes flush the old pane first.
+	 */
+	$effect(() => {
+		const paneId = detail.paneId;
+		const draftValue = draft;
+		if (!draftStore) return;
+		if (draftPaneId !== paneId) {
+			draftPaneId = paneId;
+			draft = draftStore.load(paneId);
+			return;
+		}
+		draftStore.schedule(paneId, draftValue);
+	});
 
 	/**
 	 * A pane with no agent in it.
@@ -340,14 +441,125 @@
 	 * full strength and leaves the bubble the colour it was.
 	 */
 	const accentMode = $derived(prefs.value.agentBubble ? 'off' : prefs.value.harnessAccent);
-	const agentBubbleColour = $derived(
-		accentMode === 'tint'
-			? harnessBubble(detail.agent, prefs.resolvedTheme === 'dark', prefs.bubbleColours.agentBubble)
-			: prefs.bubbleColours.agentBubble
+
+	/**
+	 * A bubble drawn as an outline whose rule fades out from its own tail.
+	 *
+	 * `border-color` cannot take a gradient, so the rule is PAINTED rather
+	 * than stroked: the fill is clipped to `padding-box`, the gradient to
+	 * `border-box`, and the 1px border stays transparent — it exists only to
+	 * reserve the strip the gradient shows through.
+	 *
+	 * The direction anchors on the speaker's own tail corner — `to top right`
+	 * away from an agent's bottom-left, `to top left` away from a user's
+	 * bottom-right — so both sides lean towards whoever is talking. A radial
+	 * would not stretch with the message, but a diagonal keeps the two sides
+	 * mirror images of each other, which is the point here.
+	 *
+	 * `fill` is the page colour by default, which is what makes it read as an
+	 * outline; a bubble colour set in settings still wins, and then the same
+	 * rule reads as a filled bubble with a fading edge.
+	 */
+
+	/**
+	 * Fill and border are independent — either, both or neither — and each
+	 * side has its own colour for each. Border alone is the outline look,
+	 * fill alone is the older solid bubble, both is a filled bubble with a
+	 * rule, neither leaves the text bare on the page.
+	 *
+	 * The three harness-accent modes still mean what they meant:
+	 *
+	 *   edge  the agent's border carries the harness colour (the default)
+	 *   tint  it does too, and the fill takes the faint blend
+	 *   off   the border falls back to the neutral edge — no harness anywhere
+	 */
+	const dark = $derived(prefs.resolvedTheme === 'dark');
+
+	const agentBorder = $derived(
+		prefs.value.bubbleBorder
+			? prefs.value.agentBorder ||
+					(accentMode === 'off' ? 'var(--edge)' : harnessHex(detail.agent, dark))
+			: null
 	);
-	const agentEdge = $derived(
-		accentMode === 'edge' ? harnessHex(detail.agent, prefs.resolvedTheme === 'dark') : ''
+	const userBorder = $derived(
+		prefs.value.bubbleBorder
+			? prefs.value.userBorder || (dark ? DEFAULT_USER.dark : DEFAULT_USER.light)
+			: null
 	);
+
+	/**
+	 * `fill` implies a fill even when the Fill toggle is off — picking it is
+	 * asking for a harness-coloured bubble, and doing nothing until a second
+	 * switch is also found would just read as broken.
+	 */
+	const agentFill = $derived(
+		prefs.value.bubbleFill || accentMode === 'fill'
+			? prefs.value.agentBubble ||
+					(accentMode === 'fill'
+						? harnessHex(detail.agent, dark)
+						: accentMode === 'tint'
+							? harnessBubble(detail.agent, dark, dark ? DEFAULT_FILL.dark : DEFAULT_FILL.light)
+							: dark
+								? DEFAULT_FILL.dark
+								: DEFAULT_FILL.light)
+			: null
+	);
+	const userFill = $derived(
+		prefs.value.bubbleFill
+			? prefs.value.userBubble || (dark ? DEFAULT_USER.dark : DEFAULT_USER.light)
+			: null
+	);
+
+	/**
+	 * Where a fill's fade ends.
+	 *
+	 * `auto` derives it from the fill so the text is readable by construction.
+	 * `harness` hands the far end to the agent's own colour, which puts who is
+	 * speaking into the bubble itself. `custom` is whatever was picked. Null
+	 * means auto, which is what the component falls back to.
+	 */
+	function gradientEndFor(side: 'user' | 'agent'): string | null {
+		if (prefs.value.fillStyle !== 'gradient') return null;
+		const mode = prefs.value.gradientEnd;
+		if (mode === 'custom') {
+			return (side === 'user' ? prefs.value.userGradientEnd : prefs.value.agentGradientEnd) || null;
+		}
+		// The user has no harness of their own, so theirs stays derived.
+		if (mode === 'harness' && side === 'agent') return harnessHex(detail.agent, dark);
+		return null;
+	}
+
+	const agentEnd = $derived(gradientEndFor('agent'));
+	const userEnd = $derived(gradientEndFor('user'));
+
+	/** Text with no fill behind it sits on the page, so it takes the page's ink. */
+	/**
+	 * Text is picked against the fill it actually sits on, across the whole of
+	 * it. A fill is a colour nobody chose for legibility — grok's rose and
+	 * agy's lime want opposite text — and a faded one is two colours, so the
+	 * choice has to hold at both ends.
+	 */
+	const gradient = $derived(prefs.value.fillStyle === 'gradient');
+	const agentInk = $derived(
+		!agentFill ? 'var(--ink)' : prefs.value.agentText || bubbleInk(agentFill, dark, gradient)
+	);
+	const userInk = $derived(
+		!userFill ? 'var(--ink)' : prefs.value.userText || bubbleInk(userFill, dark, gradient, userEnd)
+	);
+
+	/**
+	 * Whether the radio is on at all.
+	 *
+	 * `navigator.onLine` is a weak signal — it says the interface is up, not
+	 * that anything is reachable — but it is the only one that is instant, and
+	 * it is the one case where no amount of retrying helps.
+	 */
+	/**
+	 * `data.offline` is the strongest signal there is: the load actually tried
+	 * to reach bordr and could not, and what is on screen is the held copy.
+	 * navigator.onLine only knows about the interface.
+	 */
+
 	const watched = $derived(data.watched);
 	const visibleMessages = $derived(detail.messages.slice(-shown));
 	const hidden = $derived(Math.max(0, detail.messages.length - shown));
@@ -368,21 +580,164 @@
 	 * yet; the bottom of the transcript is where it belongs, and it moves into
 	 * place on its own when the turn claims it.
 	 */
+	/**
+	 * Where a bubble sits in a run of turns from the same speaker.
+	 *
+	 * Four consecutive replies from an agent are one piece of speech, not
+	 * four separate shouts, so only the ends of a run get the full corner and
+	 * only the last one gets a tail — the same rule every chat app uses.
+	 */
+	type RunPos = 'only' | 'first' | 'mid' | 'last';
+
+	/** Preserve bubble joins when one turn has work between two bits of prose. */
+	function bubbleRun(run: RunPos, segments: MessageSegment[], index: number): RunPos {
+		const above =
+			run === 'mid' ||
+			run === 'last' ||
+			segments.some((segment, i) => i < index && segment.kind === 'prose');
+		const below =
+			run === 'mid' ||
+			run === 'first' ||
+			segments.some((segment, i) => i > index && segment.kind === 'prose');
+		return above && below ? 'mid' : above ? 'last' : below ? 'first' : 'only';
+	}
+
+	/**
+	 * Pull a bubble up towards the one above it when they are the same run.
+	 *
+	 * The transcript lays every row out on one `gap-3`, which is right between
+	 * turns and far too much inside one: four replies from the same agent are
+	 * one piece of speech and were sitting as far apart as a question and its
+	 * answer. Applied to the LOWER row of each pair, so only the joins tighten
+	 * and the gap between speakers is untouched.
+	 */
+	function tight(run: RunPos): string {
+		return run === 'mid' || run === 'last' ? '-mt-2' : '';
+	}
+
 	type Row =
-		| { kind: 'message'; message: (typeof visibleMessages)[number]; key: string }
-		| { kind: 'pending'; sent: { id: number; text: string; at: number }; key: string };
+		| { kind: 'message'; message: (typeof visibleMessages)[number]; key: string; run: RunPos }
+		| { kind: 'pending'; sent: Pending; key: string; run: RunPos }
+		| {
+				kind: 'tools';
+				blocks: Block[];
+				turns: number;
+				/** How many of each tool, commonest first — the folded row's whole point. */
+				tally: { name: string; n: number }[];
+				key: string;
+				run: RunPos;
+		  };
+
+	/** Who is talking, for run detection. A queued prompt is always yours. */
+	function speakerOf(row: Row): string {
+		if (row.kind === 'pending') return 'user';
+		if (row.kind === 'tools') return 'assistant';
+		return row.message.role;
+	}
+
+	/** A turn that said nothing and only ran tools. Thinking stays visible. */
+	function toolsOnly(row: Row): boolean {
+		return (
+			row.kind === 'message' &&
+			row.message.role === 'assistant' &&
+			prose(row.message).length === 0 &&
+			onlyToolWork(row.message.blocks)
+		);
+	}
+
+	/**
+	 * Fold runs of tool-only turns into one row.
+	 *
+	 * Five greps in a row are one piece of work, not five things the agent
+	 * said, and on a phone they push the actual reply off the screen. Off by
+	 * default: watching the work happen is the point for some people, and this
+	 * hides it behind a count.
+	 *
+	 * Only runs of two or more — collapsing a single call would add a row to
+	 * open for no less scrolling.
+	 */
+	function groupTools(rows: Row[]): Row[] {
+		if (!prefs.value.groupTools) return rows;
+		const out: Row[] = [];
+		for (let i = 0; i < rows.length; i++) {
+			if (!toolsOnly(rows[i])) {
+				out.push(rows[i]);
+				continue;
+			}
+			let j = i;
+			while (j + 1 < rows.length && toolsOnly(rows[j + 1])) j++;
+			if (j === i) {
+				out.push(rows[i]);
+				continue;
+			}
+			const run = rows.slice(i, j + 1) as Extract<Row, { kind: 'message' }>[];
+			const blocks = run.flatMap((r) => work(r.message));
+			// Count by tool, commonest first. "12 tool calls" says how much was
+			// hidden; "8 Bash · 3 Read · 1 Edit" says what it was, which is the
+			// difference between deciding to open it and having to.
+			// A plain record, not a Map: this is a local tally inside a pure
+			// function, and the lint rule that pushes Map towards SvelteMap is
+			// about reactive state, which this is not.
+			const counts: Record<string, number> = {};
+			for (const block of blocks) {
+				if (block.kind !== 'tool') continue;
+				counts[block.name] = (counts[block.name] ?? 0) + 1;
+			}
+			out.push({
+				kind: 'tools',
+				blocks,
+				turns: run.length,
+				tally: Object.entries(counts)
+					.map(([name, n]) => ({ name, n }))
+					.sort((a, b) => b.n - a.n || a.name.localeCompare(b.name)),
+				key: `g${run[0].key}`,
+				run: 'only'
+			});
+			i = j;
+		}
+		return out;
+	}
 
 	const rows = $derived.by((): Row[] => {
 		const base = detail.messages.length - visibleMessages.length;
 		const out: Row[] = visibleMessages.map((message, i) => ({
 			kind: 'message' as const,
 			message,
-			key: `m${base + i}`
+			key: `m${base + i}`,
+			run: 'only' as RunPos
 		}));
+		// Slot each queued prompt where it was actually sent, not at the end.
+		// Appending piled every unclaimed prompt below whatever the agent said
+		// afterwards, so a question asked mid-turn ended up underneath the
+		// answer to the one before it. `Message.at` exists for this.
+		//
+		// A transcript with no timestamps at all (an adapter that does not say)
+		// leaves every comparison false and they append, exactly as before.
 		for (const sent of [...pendingSends].sort((a, b) => a.at - b.at)) {
-			out.push({ kind: 'pending', sent, key: `p${sent.id}` });
+			const at = (row: Row) =>
+				row.kind === 'message' ? (row.message.at ?? 0) : row.kind === 'pending' ? row.sent.at : 0;
+			let i = out.findIndex((row) => at(row) > sent.at);
+			if (i < 0) i = out.length;
+			out.splice(i, 0, { kind: 'pending', sent, key: `p${sent.id}`, run: 'only' as RunPos });
 		}
-		return out;
+
+		// Second pass, once the list is whole: a row's place in its run depends
+		// on both neighbours, which the map above cannot see.
+		//
+		// Only rows that actually DRAW a bubble take part. A turn that was
+		// nothing but tool calls renders its work and no bubble at all, so
+		// counting it would put the tail on the wrong message — and it is the
+		// same agent still talking, so it must not break the run either.
+		const drawn = out.filter(
+			(row) => row.kind === 'pending' || (row.kind === 'message' && prose(row.message).length > 0)
+		);
+		for (let i = 0; i < drawn.length; i++) {
+			const me = speakerOf(drawn[i]);
+			const above = i > 0 && speakerOf(drawn[i - 1]) === me;
+			const below = i < drawn.length - 1 && speakerOf(drawn[i + 1]) === me;
+			drawn[i].run = above && below ? 'mid' : above ? 'last' : below ? 'first' : 'only';
+		}
+		return groupTools(out);
 	});
 
 	/**
@@ -395,7 +750,17 @@
 	 * as your own message straight away, and retired the moment the real one
 	 * appears.
 	 */
-	let pendingSends = $state<{ id: number; text: string; at: number }[]>([]);
+	/**
+	 * `sending` means the POST is still in flight, `queued` means herdr has it.
+	 *
+	 * The bubble appears on the first of those, not the second: on a phone the
+	 * round trip is long enough that a tapped send looked like it had gone
+	 * nowhere, and people tap again. Showing it immediately is only honest if
+	 * a refusal takes it back, which `send()` does — the text returns to the
+	 * composer and the error says why.
+	 */
+	type Pending = PendingSend;
+	let pendingSends = $state<Pending[]>([]);
 	let pendingSeq = 0;
 
 	/**
@@ -406,7 +771,11 @@
 	 * come back to check on. Stored per pane, because they belong to that
 	 * agent's queue and nothing else.
 	 */
-	const PENDING_KEY = $derived(`bordr-pending:${detail.paneId}`);
+	function pendingStorageKey(paneId: string): string {
+		return `bordr-pending:${paneId}`;
+	}
+
+	const PENDING_KEY = $derived(pendingStorageKey(detail.paneId));
 	/** A prompt still unclaimed after this long is not coming back. */
 	const PENDING_TTL_MS = 6 * 60 * 60 * 1000;
 
@@ -414,14 +783,18 @@
 		// Re-runs when the pane changes, which is what makes switching agents
 		// load that agent's queue rather than keeping the last one's.
 		const key = PENDING_KEY;
-		let restored: typeof pendingSends = [];
+		let restored: Pending[] = [];
 		try {
 			const raw = JSON.parse(localStorage.getItem(key) ?? '[]');
 			const now = Date.now();
 			if (Array.isArray(raw)) {
-				restored = raw.filter(
-					(p) => p && typeof p.text === 'string' && now - Number(p.at ?? 0) < PENDING_TTL_MS
-				);
+				restored = raw
+					.filter(
+						(p) => p && typeof p.text === 'string' && now - Number(p.at ?? 0) < PENDING_TTL_MS
+					)
+					// Nothing restored is still in flight — that request died with the
+					// page. Anything stored was accepted, or it would not have persisted.
+					.map((p) => ({ ...p, state: 'queued' as const }));
 			}
 		} catch {
 			// Unreadable storage is not a reason to lose the conversation.
@@ -441,6 +814,20 @@
 		}
 	});
 
+	/** Remove an optimistic send after its request failed on a pane now off-screen. */
+	function removeStoredPending(paneId: string, id: number) {
+		const key = pendingStorageKey(paneId);
+		try {
+			const stored: unknown = JSON.parse(localStorage.getItem(key) ?? '[]');
+			if (!Array.isArray(stored)) return;
+			const kept = stored.filter((pending) => Number(pending?.id) !== id);
+			if (kept.length > 0) localStorage.setItem(key, JSON.stringify(kept));
+			else localStorage.removeItem(key);
+		} catch {
+			// Best effort, like the pending queue itself.
+		}
+	}
+
 	$effect(() => {
 		if (pendingSends.length === 0) return;
 
@@ -454,29 +841,35 @@
 		 * it has to be recovered from the block's own command, or every shell
 		 * command sent from the phone stayed "queued" forever.
 		 */
+		/**
+		 * Compared on words, not on bytes.
+		 *
+		 * A prompt is typed into a terminal on its way to the harness, and what
+		 * comes back out is not always character-for-character what went in —
+		 * a multi-line prompt in particular can land with its newlines turned
+		 * into spaces. Exact matching meant those never retired: the bubble sat
+		 * there saying "queued" for the rest of the session, long after the
+		 * agent had read it and answered.
+		 */
+
 		// An array rather than a Set: this is a local scratch value, and the
 		// lint rule that steers reactive state to SvelteSet cannot tell the
 		// difference. There are only ever a handful of unsent prompts.
 		const landed: string[] = [];
 		for (const message of detail.messages) {
 			if (message.role !== 'user') continue;
-			if (message.text.trim()) landed.push(message.text.trim());
+			if (say(message.text)) landed.push(say(message.text));
 			for (const block of message.blocks ?? []) {
 				if (block.kind !== 'tool' || block.name !== '!') continue;
-				const command = String(block.input?.command ?? '').trim();
+				const command = say(String(block.input?.command ?? ''));
 				if (command) landed.push(`!${command}`);
 			}
 		}
 
-		// A prompt cannot still be queued once the agent has stopped: if it had
-		// been taken it would be in the transcript, and if it has not it is
-		// never going to be. The grace period covers the transcript lagging the
-		// state change by a beat.
+		// The rule itself is in $lib/pending-sends.ts, with its tests — it is the
+		// one that lost messages, and it is easier to get wrong than it looks.
 		const settled = detail.status === 'idle' || detail.status === 'done';
-		const now = Date.now();
-		const still = pendingSends.filter(
-			(p) => !landed.includes(p.text.trim()) && !(settled && now - p.at > 20_000)
-		);
+		const still = keepPending(pendingSends, landed, settled, Date.now());
 		if (still.length !== pendingSends.length) pendingSends = still;
 	});
 
@@ -486,7 +879,17 @@
 	 * "next agent" always means the next one the list would show.
 	 */
 	const store = agentStore;
-	const order = $derived(flatOrder(store.agents, prefs.value.groupBy, prefs.value.sort));
+	/**
+	 * Swiping walks the list as it is filtered, not as it would be unfiltered:
+	 * "next" has to land on a row you could have tapped.
+	 *
+	 * A pane you opened before setting the filter can fall outside it. That is
+	 * handled by `position`, which reports -1 and simply hides the counter,
+	 * rather than by dropping the filter behind your back.
+	 */
+	const order = $derived(
+		flatOrder(store.agents, prefs.value.groupBy, prefs.value.sort, prefs.value.listFilter)
+	);
 	const position = $derived(order.indexOf(detail.paneId));
 
 	const speechSupported =
@@ -780,33 +1183,86 @@
 	 * scrolls inside itself so the session tree can stay put — which silently
 	 * broke stick-to-bottom, because `window.scrollY` never moves there.
 	 */
+	/**
+	 * True while this conversation is the page on screen.
+	 *
+	 * A scroll queued here can land after you have left. `refresh()` awaits
+	 * `invalidateAll()` and then asks for a frame; the burst schedules four
+	 * more over two seconds. Navigate away in that window and the callback
+	 * still runs — and by then `swipeRoot` is detached, so `scrollHost()`
+	 * returns null and the fallback scrolls THE WINDOW, which now belongs to
+	 * the agents list. The list ends up at the bottom, having never been
+	 * touched by anyone.
+	 */
+	let live = true;
+
 	function scrollHost(): HTMLElement | null {
-		if (!swipeRoot) return null;
+		if (!swipeRoot || !swipeRoot.isConnected) return null;
 		return getComputedStyle(swipeRoot).overflowY === 'auto' ? swipeRoot : null;
 	}
 
+	/**
+	 * A scroll WE caused, which must not be read as the reader moving.
+	 *
+	 * Cleared a frame later: the scroll event lands after the assignment, and
+	 * without the flag every automatic scroll looked like a deliberate one.
+	 */
+	let programmatic = false;
+
 	function scrollBottom() {
+		// Nothing to scroll, and the window is somebody else's now.
+		if (!live) return;
+		// Never under a finger. This is the choke point every automatic scroll
+		// goes through, and guarding only the callers left one through:
+		// `refresh()` decides whether to pin BEFORE it awaits the network, so a
+		// refresh already in flight when the drag started still yanked once.
+		// One yank is all it takes — you pull, it snaps back, you pull again.
+		if (touching) return;
 		const host = scrollHost();
+		programmatic = true;
 		if (host) host.scrollTop = host.scrollHeight;
 		else window.scrollTo({ top: document.body.scrollHeight });
+		requestAnimationFrame(() => (programmatic = false));
 	}
 
-	/** Within a screenful-ish of the end, which is what "following" means. */
-	function nearBottom(): boolean {
+	function scrollTop(): number {
+		return scrollHost()?.scrollTop ?? window.scrollY;
+	}
+
+	/** Within `slack` pixels of the end. */
+	function nearBottom(slack = 32): boolean {
 		const host = scrollHost();
-		if (host) return host.scrollTop + host.clientHeight >= host.scrollHeight - 160;
-		return window.innerHeight + window.scrollY >= document.body.scrollHeight - 160;
+		if (host) return host.scrollTop + host.clientHeight >= host.scrollHeight - slack;
+		return window.innerHeight + window.scrollY >= document.body.scrollHeight - slack;
 	}
 
 	/**
-	 * Whether the reader is following the end. Drives the jump button: showing
-	 * it while already at the bottom is noise, and hiding it while scrolled up
-	 * is the thing that makes a long transcript feel like a trap.
+	 * Whether the reader is following the end.
+	 *
+	 * INTENT, not geometry. It used to be recomputed from the scroll position
+	 * on every event, which made it wrong in both directions: the transcript
+	 * growing moves the bottom away without the reader moving at all, so
+	 * following flipped off by itself and the jump button appeared while you
+	 * were sitting at the end — and the automatic scroll then put you back,
+	 * which is the jitter.
+	 *
+	 * It now changes on two things only: scrolling UP turns it off, and
+	 * arriving at the end turns it back on. Everything else — a poll, a new
+	 * turn, the keyboard opening, the column being resized — leaves the
+	 * reader's decision alone.
 	 */
 	let following = $state(true);
+	let lastTop = 0;
 
 	function onScroll() {
-		following = nearBottom();
+		const top = scrollTop();
+		following = nextFollowing(following, {
+			top,
+			lastTop,
+			atBottom: nearBottom(),
+			programmatic
+		});
+		lastTop = top;
 	}
 
 	$effect(() => {
@@ -824,7 +1280,18 @@
 		// visual viewport and, on iOS, fires nothing on window at all.
 		window.addEventListener('resize', onScroll);
 		window.visualViewport?.addEventListener('resize', onScroll);
-		const observer = new ResizeObserver(onScroll);
+		// The transcript growing is what a new turn looks like to the DOM. While
+		// following, that is the moment to stay at the end; while not, it must
+		// change nothing at all.
+		const observer = new ResizeObserver(() => {
+			// Never while a finger is down. On a phone the address bar collapses
+			// and expands as you drag, and each of those is a resize — so at the
+			// end of a transcript, pulling the chat fired a scroll-to-bottom into
+			// the middle of the gesture, over and over. The content fought the
+			// thumb, which is the "bugs out" of it.
+			if (following && !touching) scrollBottom();
+			else if (!touching) onScroll();
+		});
 		if (swipeRoot) observer.observe(swipeRoot);
 
 		onScroll();
@@ -839,26 +1306,44 @@
 	/** Refresh from the server; keep the view pinned to the bottom unless the
 	 *  reader has deliberately scrolled up. */
 	async function refresh() {
+		// This page mounts before its route navigation settles. Starting an
+		// invalidateAll here keeps that navigation open forever, so the global
+		// loading bar never finishes. The event/poll path will refresh again.
+		if (navigating.to) return;
 		// Never yank the page out from under a copy: re-rendering destroys
 		// an active selection, and lifting an error out of a transcript is
 		// a core phone use.
 		if ((window.getSelection()?.toString().length ?? 0) > 0) return;
-		const pinned = nearBottom();
+		// `following`, not the geometry at this instant: a reader parked a
+		// couple of hundred pixels up was inside the old 160px slack and got
+		// dragged back down by the next poll.
+		const pinned = following;
 		await invalidateAll();
 		if (pinned) requestAnimationFrame(scrollBottom);
 	}
 
 	onMount(() => {
+		draftStore = createSessionDraftStore(localStorage);
+		draftPaneId = detail.paneId;
+		draft = draftStore.load(draftPaneId);
+		const flushDraft = () => draftStore?.flush();
+		addEventListener('pagehide', flushDraft);
+		live = true;
 		void claimShared();
 		scrollBottom();
 		store.start();
 		document.addEventListener('visibilitychange', onVisibility);
 		schedulePoll();
 		return () => {
+			// Before anything else: a frame already requested cannot be
+			// cancelled from here, but it can be made harmless.
+			live = false;
 			store.stop();
 			refreshGate.cancel();
 			clearTimeout(poll);
 			for (const timer of burst) clearTimeout(timer);
+			draftStore?.flush();
+			removeEventListener('pagehide', flushDraft);
 			document.removeEventListener('visibilitychange', onVisibility);
 			// Leaving mid-sentence must not keep the microphone open for a page
 			// that no longer exists.
@@ -926,6 +1411,7 @@
 		currentPane = detail.paneId;
 		shown = TAIL;
 		scrollback = null;
+		following = true;
 		requestAnimationFrame(scrollBottom);
 	});
 
@@ -1000,15 +1486,47 @@
 	}
 
 	async function answer(index: number) {
+		if (busy) return;
 		busy = true;
 		sendingIndex = index;
 		uncertain = null;
+
+		/**
+		 * An answer is a turn you took, so it becomes a bubble like anything
+		 * else you send.
+		 *
+		 * Without it, answering was the one action in the app that left no
+		 * trace: the card vanished the moment the server confirmed it, and
+		 * until the harness wrote the selection into its transcript — which can
+		 * be a while — there was nothing on screen saying what you had chosen,
+		 * or that you had chosen at all.
+		 *
+		 * The same row the composer uses, so it carries the same ticks and
+		 * retires the same way: on the transcript showing it, or on the grace
+		 * period once the agent settles.
+		 */
+		const chose = detail.picker?.options.find((o) => o.index === index);
+		const echo = ++pendingSeq;
+		pendingSends = [
+			...pendingSends,
+			{
+				id: echo,
+				text: chose?.label ?? String(index),
+				question: detail.picker?.question ?? '',
+				at: Date.now(),
+				state: 'sending'
+			}
+		];
+		requestAnimationFrame(scrollBottom);
+
 		try {
-			const r = await fetch(`/api/agents/${encodeURIComponent(detail.paneId)}/answer`, {
-				method: 'POST',
-				headers: { 'content-type': 'application/json' },
-				body: JSON.stringify({ index })
-			});
+			const r = await track(() =>
+				fetch(`/api/agents/${encodeURIComponent(detail.paneId)}/answer`, {
+					method: 'POST',
+					headers: { 'content-type': 'application/json' },
+					body: JSON.stringify({ index })
+				})
+			);
 			const body = (await r.json().catch(() => null)) as {
 				outcome?: string;
 				chose?: string;
@@ -1019,11 +1537,30 @@
 			// which could answer twice. A refusal ("option 4 is not on
 			// screen") is different again and carries the server's reason.
 			if (!r.ok) {
+				// Refused: take the echo back, or the screen would claim an answer
+				// that never left.
+				pendingSends = pendingSends.filter((p) => p.id !== echo);
 				uncertain = body?.message ?? `Could not answer (${r.status}).`;
 			} else if (body?.outcome === 'unknown') {
+				// Sent, but unconfirmed. The echo stays — something did leave —
+				// and the warning says it could not be verified.
+				pendingSends = pendingSends.map((p) =>
+					p.id === echo ? { ...p, state: 'queued' as const, deliveredAt: Date.now() } : p
+				);
 				uncertain = `Sent "${body.chose}" but could not confirm it landed — check before sending again.`;
+			} else {
+				pendingSends = pendingSends.map((p) =>
+					p.id === echo ? { ...p, state: 'queued' as const, deliveredAt: Date.now() } : p
+				);
+				// The server checked the screen and the menu moved. Retire the card
+				// now rather than letting it sit there looking unanswered until the
+				// next read catches up.
+				answeredKey = pickerKey;
+				answeredAt = Date.now();
+				now = answeredAt;
 			}
 		} catch (e) {
+			pendingSends = pendingSends.filter((p) => p.id !== echo);
 			uncertain = `Nothing was sent: ${(e as Error).message}. Check the connection and try again.`;
 		} finally {
 			busy = false;
@@ -1036,11 +1573,13 @@
 	async function sendKeys(keys: string[]): Promise<boolean> {
 		sendError = null;
 		try {
-			const r = await fetch(`/api/agents/${encodeURIComponent(detail.paneId)}/keys`, {
-				method: 'POST',
-				headers: { 'content-type': 'application/json' },
-				body: JSON.stringify({ keys })
-			});
+			const r = await track(() =>
+				fetch(`/api/agents/${encodeURIComponent(detail.paneId)}/keys`, {
+					method: 'POST',
+					headers: { 'content-type': 'application/json' },
+					body: JSON.stringify({ keys })
+				})
+			);
 			if (!r.ok) throw await failure(r, 'keys');
 			return true;
 		} catch (e) {
@@ -1078,22 +1617,92 @@
 	const TOO_LARGE =
 		"Too large for the server's request limit. Raise BODY_SIZE_LIMIT in .env (README) or send fewer photos.";
 
+	/**
+	 * What the composer just typed into a question, so the hint can say so.
+	 * Cleared on the next send or when the question goes.
+	 */
+	let typedInto = $state(false);
+
+	/**
+	 * Your own words, into a question that is on screen.
+	 *
+	 * herdr refuses `agent.prompt` while a pane is blocked — rightly: a prompt
+	 * is a whole new turn, and the harness is sitting on a keystroke. So the
+	 * composer already offered "Or type a reply…" and then failed with
+	 * "agent w3:p1 is blocked and requires interactive input", which is a
+	 * promise the code did not keep.
+	 *
+	 * It now types the characters into the pane, exactly as a keyboard would,
+	 * and stops there. Enter is deliberately NOT sent: inside somebody else's
+	 * picker, Enter means "take the highlighted option", so pressing it after
+	 * typing would answer something other than what was typed. The key strip
+	 * has ⏎ for when it looks right — and the harness's own footer says what
+	 * else is available, Claude Code's `n to add notes` among them.
+	 */
+	async function typeIntoQuestion(paneId: string, text: string): Promise<boolean> {
+		try {
+			const sent = await track(() =>
+				fetch(`/api/agents/${encodeURIComponent(paneId)}/type`, {
+					method: 'POST',
+					headers: { 'content-type': 'application/json' },
+					body: JSON.stringify({ text })
+				})
+			);
+			if (!sent.ok) throw await failure(sent, 'type');
+			return true;
+		} catch (e) {
+			sendError = (e as Error).message;
+			return false;
+		}
+	}
+
 	async function send() {
 		if (!draft.trim() && attachments.length === 0) return;
+		const paneId = detail.paneId;
 		// Sending ends dictation: a still-listening engine would otherwise keep
 		// writing the next sentence into the emptied composer. The mic is one
 		// tap away if there is more to say.
 		if (dictating) stopDictation();
 		busy = true;
 		sendError = null;
+		typedInto = false;
+
+		// A question is on screen: these are keystrokes, not a turn. No
+		// optimistic bubble either — nothing has been said yet.
+		if (detail.picker && attachments.length === 0) {
+			const text = draft;
+			const typed = await typeIntoQuestion(paneId, text);
+			if (typed && detail.paneId === paneId) {
+				draftStore?.clear(paneId);
+				draft = '';
+				typedInto = true;
+			}
+			busy = false;
+			refreshSoon();
+			return;
+		}
+
+		// Echo before the request, not after it. The composer empties and the
+		// bubble appears on the tap; if the send is refused, both are put back
+		// exactly as they were.
+		const text = draft;
+		const optimistic = text.trim() ? ++pendingSeq : 0;
+		if (optimistic) {
+			pendingSends = [...pendingSends, { id: optimistic, text, at: Date.now(), state: 'sending' }];
+			draftStore?.clear(paneId);
+			draft = '';
+			following = true;
+			requestAnimationFrame(scrollBottom);
+		}
+
 		try {
 			if (attachments.length > 0) {
 				const form = new FormData();
 				for (const file of attachments) form.append('file', file);
-				form.append('text', draft);
+				form.append('text', text);
 				let sent: Response;
 				try {
-					sent = await fetch(`/api/agents/${encodeURIComponent(detail.paneId)}/image`, {
+					sent = await fetch(`/api/agents/${encodeURIComponent(paneId)}/image`, {
 						method: 'POST',
 						body: form
 					});
@@ -1112,25 +1721,36 @@
 				if (!sent.ok) throw await failure(sent, 'upload');
 				clearAttachments();
 			} else {
-				const sent = await fetch(`/api/agents/${encodeURIComponent(detail.paneId)}/prompt`, {
+				const sent = await fetch(`/api/agents/${encodeURIComponent(paneId)}/prompt`, {
 					method: 'POST',
 					headers: { 'content-type': 'application/json' },
-					body: JSON.stringify({ text: draft })
+					body: JSON.stringify({ text })
 				});
 				if (!sent.ok) throw await failure(sent, 'send');
 			}
-			// Only a delivered prompt clears the box; a refused one stays put
-			// to be fixed or resent. Echo it first: herdr has accepted it, so
-			// showing it is a statement of fact, not optimism.
-			if (draft.trim())
-				pendingSends = [...pendingSends, { id: ++pendingSeq, text: draft, at: Date.now() }];
-			draft = '';
+			// Delivered: the bubble stops pulsing and becomes a queued prompt,
+			// which is what survives a reload.
+			if (optimistic && detail.paneId === paneId) {
+				pendingSends = pendingSends.map((p) =>
+					p.id === optimistic ? { ...p, state: 'queued' as const, deliveredAt: Date.now() } : p
+				);
+			}
 		} catch (e) {
-			sendError = (e as Error).message;
+			if (optimistic) {
+				removeStoredPending(paneId, optimistic);
+				const restored = draftStore?.restore(paneId, text) ?? text;
+				if (detail.paneId === paneId) {
+					sendError = (e as Error).message;
+					pendingSends = pendingSends.filter((p) => p.id !== optimistic);
+					draft = restored;
+				}
+			} else if (detail.paneId === paneId) {
+				sendError = (e as Error).message;
+			}
 		}
 		busy = false;
 		await invalidateAll();
-		requestAnimationFrame(scrollBottom);
+		if (following) requestAnimationFrame(scrollBottom);
 		refreshSoon();
 	}
 
@@ -1148,8 +1768,14 @@
 		void send();
 	}
 
-	function stop() {
-		void sendKeys(['esc']);
+	async function stop() {
+		if (stopping) return;
+		stopping = true;
+		try {
+			await sendKeys(['esc']);
+		} finally {
+			stopping = false;
+		}
 	}
 
 	// --- swipe between agents -------------------------------------------------
@@ -1167,14 +1793,57 @@
 		const root = swipeRoot;
 		if (!root) return;
 		root.addEventListener('touchstart', onTouchStart, { passive: true });
+		root.addEventListener('touchmove', onTouchMove, { passive: true });
 		root.addEventListener('touchend', onTouchEnd, { passive: true });
+		// The system can take a gesture away — the back swipe, a notification
+		// pulled down — and that never reaches touchend. Without this the flag
+		// stayed set and the transcript stopped following for good.
+		root.addEventListener('touchcancel', onTouchCancel, { passive: true });
 		return () => {
 			root.removeEventListener('touchstart', onTouchStart);
+			root.removeEventListener('touchmove', onTouchMove);
 			root.removeEventListener('touchend', onTouchEnd);
+			root.removeEventListener('touchcancel', onTouchCancel);
 		};
 	});
 
+	/**
+	 * The panes of the current workspace's tabs, reported by the tab bar.
+	 *
+	 * A swipe moves between TABS when the workspace has more than one, and
+	 * falls back to the flat agent order when it does not. Tabs are the
+	 * nearer relationship — they are what the bar above the transcript is
+	 * already showing — so moving along them is what the gesture should mean
+	 * wherever they exist.
+	 */
+	let tabSiblings = $state<string[]>([]);
+	const swipeOrder = $derived(
+		tabSiblings.length > 1 && tabSiblings.includes(detail.paneId) ? tabSiblings : order
+	);
+
+	/**
+	 * How far the transcript is dragged, in px, while a finger is down.
+	 *
+	 * The content follows at a third of the distance: enough that the gesture
+	 * is clearly doing something, damped enough that it reads as resistance
+	 * rather than as the page coming loose. Null means no gesture is running
+	 * and the transition can take over.
+	 */
+	let dragX = $state(0);
+	let dragging = $state(false);
+	let leaving = $state(false);
+
+	/**
+	 * A finger is on the transcript.
+	 *
+	 * Set for ANY touch, not only a tracked swipe: the point is to keep the
+	 * automatic scroll off the screen while somebody is moving it by hand,
+	 * whatever they turn out to be doing.
+	 */
+	let touching = $state(false);
+
 	function onTouchStart(event: TouchEvent) {
+		touching = true;
 		const touch = event.touches[0];
 		if (!touch || event.touches.length > 1 || !prefs.value.swipeAgents) {
 			tracking = false;
@@ -1184,29 +1853,78 @@
 		tracking = !(swipeRoot && inHorizontalScroller(event.target, swipeRoot));
 		startX = touch.clientX;
 		startY = touch.clientY;
+		dragX = 0;
+		leaving = false;
+	}
+
+	function onTouchMove(event: TouchEvent) {
+		if (!tracking) return;
+		const touch = event.touches[0];
+		if (!touch) return;
+		const dx = touch.clientX - startX;
+		const dy = touch.clientY - startY;
+		// Only follow once the gesture has committed to being horizontal, or
+		// every scroll down a long transcript would wobble the page sideways.
+		if (!dragging && (Math.abs(dx) < 12 || Math.abs(dx) < Math.abs(dy) * 1.5)) return;
+		dragging = true;
+		dragX = dx / 3;
+	}
+
+	function onTouchCancel() {
+		touching = false;
+		dragging = false;
+		dragX = 0;
 	}
 
 	async function onTouchEnd(event: TouchEvent) {
-		if (!tracking) return;
+		// Cleared here rather than after the swipe work below, which awaits: a
+		// gesture that navigates must not leave the next page thinking a finger
+		// is still down.
+		touching = false;
+		const wasDragging = dragging;
+		dragging = false;
+		if (!tracking) {
+			dragX = 0;
+			return;
+		}
 		tracking = false;
 		const touch = event.changedTouches[0];
-		if (!touch) return;
+		if (!touch) {
+			dragX = 0;
+			return;
+		}
 		const direction = decideSwipe(
 			touch.clientX - startX,
 			touch.clientY - startY,
 			startX,
 			window.innerWidth
 		);
-		if (!direction) return;
-		const pane = neighbourPane(order, detail.paneId, direction);
-		if (!pane) return;
+		const pane = direction ? neighbourPane(swipeOrder, detail.paneId, direction) : null;
+		if (!pane) {
+			// Nowhere to go: spring back, which is the answer to "what did that
+			// do?" — better than the content simply snapping straight.
+			dragX = 0;
+			return;
+		}
 		navigator.vibrate?.(20);
+		if (wasDragging) {
+			// Carry the drag off the edge it was heading for, then land the new
+			// pane from the other side. Without this the content jumped from
+			// wherever the finger left it back to centre, which read as a glitch.
+			leaving = true;
+			dragX = direction === 'next' ? window.innerWidth : -window.innerWidth;
+			await new Promise((r) => setTimeout(r, 140));
+		}
 		// REPLACE, never push: swiping is moving along one list, not walking
 		// deeper into it. Pushing meant that after five swipes the phone's back
 		// gesture had to retrace all five before the agent list reappeared.
 		// Back now always returns to where you came from; left swipe is how you
 		// go to the previous agent.
 		await goto(resolve('/a/[pane]', { pane }), { replaceState: true });
+		// Land from the opposite edge, then release to centre on the next frame.
+		dragX = direction === 'next' ? -window.innerWidth / 3 : window.innerWidth / 3;
+		leaving = false;
+		requestAnimationFrame(() => requestAnimationFrame(() => (dragX = 0)));
 	}
 </script>
 
@@ -1238,16 +1956,96 @@
 
 {#snippet headerTitle()}
 	<span class="block truncate text-[15px] font-semibold">{detail.title || detail.paneId}</span>
-	<span class="block truncate font-mono text-[10.5px] text-muted">
-		<span class={STATUS_INK[detail.status] ?? 'text-faint'}>● {detail.status}</span>
-		·
-		<span class={harnessText(detail.agent)}
-			>{#if prefs.value.harnessIcons}<HarnessMark agent={detail.agent} />{/if}
-			{detail.agent}</span
+	<!--
+		Two rows, not one wrapping one: WHAT this pane is, then WHERE it is.
+
+		One line could not hold both. Truncating it dropped whatever came last —
+		the workspace and the 3/14 position simply vanished. Letting it wrap
+		instead put the position on a third line whenever the branch was long,
+		so the height moved about as you walked between panes. Splitting it by
+		meaning is stable at two rows and each row has the full width to itself.
+	-->
+	<span class="flex items-center gap-x-1 font-mono text-[10.5px] text-muted">
+		<StatusMark status={detail.status} size={10} />
+		{#if prefs.value.statusIndicators !== 'text'}
+			<span class="shrink-0 {STATUS_INK[detail.status] ?? 'text-faint'}">{detail.status}</span>
+		{/if}
+		<span class="shrink-0 text-faint">·</span>
+		<!--
+			The mark alone when marks are on. Spelling "claude" out cost 60px of a
+			178px row on a phone — a third of it — to repeat what the mark beside
+			it and the title above it both already say.
+		-->
+		<span class="shrink-0 {harnessText(detail.agent)}"
+			>{#if prefs.value.harnessIcons}<HarnessMark
+					agent={detail.agent}
+				/>{:else}{detail.agent}{/if}</span
 		>
-		{#if detail.workspaceLabel}· {detail.workspaceLabel}{/if}
+		{#if detail.workspaceLabel}
+			<span class="shrink-0 text-faint">·</span>
+			<span class="truncate">{detail.workspaceLabel}</span>
+		{/if}
 		{#if position >= 0 && order.length > 1}
-			· {position + 1}/{order.length}
+			<span class="shrink-0 text-faint">·</span>
+			<span class="shrink-0">{position + 1}/{order.length}</span>
+		{/if}
+	</span>
+{/snippet}
+
+<!--
+	Where the work is, on its own full-width row.
+
+	It cannot live in `middle`: that column is squeezed between the brand and
+	the actions and measures about 178px on a phone, which truncated the branch
+	to `feat/rich-tra…`. The caller passes this only when there is something to
+	say, so a shell pane outside a repository keeps a single-line header rather
+	than growing an empty row.
+-->
+{#snippet headerLocation()}
+	<span class="flex items-center gap-x-1 font-mono text-[10.5px]">
+		{#if detail.cwd}
+			<!--
+				The path is short after collapseHome and is the half you orient
+				by, so it keeps its width and the branch gives way first. max-w
+				still catches a pathological one rather than letting it push the
+				branch off the row entirely.
+			-->
+			<span class="max-w-[60%] shrink-0 truncate text-path" title={detail.cwd}
+				>{collapseHome(detail.cwd)}</span
+			>
+		{/if}
+		{#if detail.branch}
+			{#if detail.cwd}<span class="shrink-0 text-faint">·</span>{/if}
+			<!--
+				The name and the arrows are one thing, so they are one target: at
+				10.5px the branch alone is a thin thing to hit with a thumb, and
+				the counts are what you are usually chasing when you tap it.
+			-->
+			{#snippet gitState()}
+				<!-- min-w-0 is what lets a flex item shrink below its own text at all. -->
+				<span class="min-w-0 truncate text-branch">&#xe0a0; {detail.branch}</span>
+				<!-- The counts never truncate: a half-shown ↑1 would read as ↑ nothing. -->
+				{#if detail.ahead}<span class="shrink-0 text-muted">&uarr;{detail.ahead}</span>{/if}
+				{#if detail.behind}<span class="shrink-0 text-muted">&darr;{detail.behind}</span>{/if}
+			{/snippet}
+			{#if detail.branchUrl}
+				<!--
+					A new tab, not this one: bordr is installed to the home screen,
+					and navigating it away to GitHub leaves no way back to the
+					agent you were reading.
+				-->
+				<a
+					class="flex min-w-0 items-center gap-x-1 underline decoration-branch/40 decoration-dotted underline-offset-[3px] active:decoration-branch"
+					href={detail.branchUrl}
+					target="_blank"
+					rel="noopener noreferrer"
+					title="{detail.branch} on GitHub">{@render gitState()}</a
+				>
+			{:else}
+				<span class="flex min-w-0 items-center gap-x-1" title={detail.branch}
+					>{@render gitState()}</span
+				>
+			{/if}
 		{/if}
 	</span>
 {/snippet}
@@ -1260,9 +2058,9 @@
 	-->
 	{#if prefs.value.workControl === 'header' && toolCount > 0}
 		<button
-			class="flex h-8 shrink-0 items-center rounded-full px-2.5 text-[12px] {showWork
-				? 'bg-working-bg text-working'
-				: 'text-muted'}"
+			class="flex h-9 shrink-0 items-center rounded-full border px-3 text-[12px] {showWork
+				? 'border-working-halo bg-working-bg text-working'
+				: 'border-edge text-muted'}"
 			aria-pressed={showWork}
 			onclick={() => {
 				showWork = !showWork;
@@ -1274,11 +2072,18 @@
 	{/if}
 	{#if detail.status === 'working'}
 		<button
-			class="flex h-9 shrink-0 items-center gap-1.5 rounded-full border border-edge px-3 text-[13px] font-medium"
+			class="flex h-9 shrink-0 items-center gap-1.5 rounded-full border border-edge px-3 text-[13px] font-medium disabled:opacity-50"
+			disabled={stopping}
 			onclick={stop}
 		>
-			<span class="h-2 w-2 rounded-full bg-working ring-[3px] ring-working-halo" aria-hidden="true"
-			></span>
+			{#if stopping}
+				<Spinner size={12} label="Stopping" />
+			{:else}
+				<span
+					class="h-2 w-2 rounded-full bg-working ring-[3px] ring-working-halo"
+					aria-hidden="true"
+				></span>
+			{/if}
 			Stop
 		</button>
 	{/if}
@@ -1308,7 +2113,38 @@
 				The pane strip is what the split itself already is, so it appears
 				only where the split is not being drawn.
 			-->
-			<WorkspaceTabs current={detail.paneId} panes={!(wideScreen && splitLayout)} />
+			<WorkspaceTabs
+				current={detail.paneId}
+				panes={!(wideScreen && splitLayout)}
+				onsiblings={(list) => (tabSiblings = list)}
+			/>
+
+			<!--
+				Sub-agents this session has spawned.
+				
+				A Task call used to say an agent had been dispatched and nothing
+				more — whether it was still going, what it found, whether it
+				failed, none of it was reachable. Each has its own transcript, so
+				each of these opens one.
+			-->
+			{#if subs.length > 0}
+				<div class="flex items-center gap-1.5 overflow-x-auto border-b border-hairline px-2 py-1.5">
+					<span class="shrink-0 font-mono text-[10px] tracking-[.06em] text-faint uppercase"
+						>agents</span
+					>
+					{#each subs as sub (sub.id)}
+						<button
+							class="flex shrink-0 items-center gap-1.5 rounded-full border border-edge px-2.5 py-1 text-[11.5px] transition-colors hover:bg-chip"
+							onclick={() => (openSub = sub.id)}
+							title={sub.description || sub.agentType}
+						>
+							<span class="font-mono text-working">{sub.agentType}</span>
+							<span class="max-w-[9rem] truncate text-muted">{sub.description}</span>
+							<span class="font-mono text-[10px] text-faint">{sub.entries}</span>
+						</button>
+					{/each}
+				</div>
+			{/if}
 
 			<!--
 				Terminal mode lifts the footer off the screen itself, so the page's
@@ -1343,7 +2179,9 @@
 			<PaneTerminal
 				paneId={detail.paneId}
 				agent={detail.agent}
-				ask={detail.picker && detail.picker.options.length > 0 ? pickerCard : undefined}
+				ask={detail.picker && detail.picker.options.length > 0 && !askHidden
+					? pickerCard
+					: undefined}
 				suggestion={detail.suggestion ?? ''}
 				bind:draft
 				mono={prefs.value.monoSize}
@@ -1353,7 +2191,23 @@
 				onmic={speechSupported ? toggleDictation : undefined}
 			/>
 		{:else}
-			<main class="mx-auto w-full max-w-screen-sm flex-1 px-4 pt-3 pb-2 lg:max-w-3xl">
+			<!--
+				The TRANSCRIPT moves, not the scroll container: the header above is
+				`sticky` inside that container, and a transform on an ancestor of a
+				sticky element makes it a containing block and the stickiness stops
+				working. Moving only this leaves the header and the composer put,
+				which also reads better — the chrome stays and the content slides
+				under it.
+			-->
+			<main
+				class="mx-auto w-full max-w-screen-sm flex-1 px-4 pt-3 pb-2 lg:mx-0 lg:max-w-3xl lg:px-6 xl:max-w-4xl 2xl:max-w-5xl {dragging ||
+				leaving
+					? ''
+					: 'transition-transform duration-200 ease-out motion-reduce:transition-none'} {leaving
+					? 'transition-all duration-150 ease-in'
+					: ''}"
+				style="transform: translate3d({dragX}px, 0, 0); {leaving ? 'opacity:0' : ''}"
+			>
 				{#if detail.degraded !== 'none'}
 					<p class="mb-3 flex items-center gap-2 text-[12px] text-muted">
 						<span class="min-w-0 flex-1">
@@ -1433,6 +2287,7 @@
 								class="rounded-full border border-edge px-3 py-1.5 text-[11.5px] text-working"
 								onclick={() => {
 									scrollback = null;
+									following = true;
 									requestAnimationFrame(scrollBottom);
 								}}
 							>
@@ -1443,13 +2298,37 @@
 						{#each rows as row (row.key)}
 							{#if row.kind === 'pending'}
 								{@const sent = row.sent}
+								{@const held =
+									sent.state !== 'sending' && onScreen(sent.text, detail.screenTail ?? '')}
 								{#if prefs.value.bubbles}
-									<div class="flex justify-end">
-										<span
-											class="max-w-[85%] rounded-2xl rounded-br-sm px-3 py-2 [overflow-wrap:anywhere] whitespace-pre-wrap opacity-60"
-											style="background:{prefs.bubbleColours.userBubble}; color:{prefs.bubbleColours
-												.userText}">{sent.text}</span
+									<div class="flex justify-end {tight(row.run)}">
+										<Bubble
+											mine
+											run={row.run}
+											border={userBorder}
+											fill={userFill}
+											fillGradient={gradient}
+											fillEnd={userEnd}
+											tail={prefs.value.bubbleTails}
+											width={prefs.value.bubbleBorderWidth}
+											ink={userInk}
+											extra="max-w-[85%] whitespace-pre-wrap {sent.state === 'sending'
+												? 'sending'
+												: 'opacity-60'}"
 										>
+											{#if sent.question}
+												<!--
+													The question, above the answer it belongs to. Quiet and
+													smaller: the answer is what you said, the question is
+													only there so it still makes sense once the card that
+													asked it has gone.
+												-->
+												<span
+													class="mb-1 block border-l-2 border-current/25 pl-2 text-[12.5px] opacity-70"
+													>{sent.question}</span
+												>
+											{/if}{sent.text}
+										</Bubble>
 									</div>
 								{:else}
 									<div class="flex gap-2 opacity-60">
@@ -1459,13 +2338,60 @@
 										>
 										<span
 											class="min-w-0 flex-1 font-medium [overflow-wrap:anywhere] whitespace-pre-wrap"
-											>{sent.text}</span
 										>
+											{#if sent.question}<span class="block text-[12.5px] font-normal text-muted"
+													>{sent.question}</span
+												>{/if}{sent.text}
+										</span>
 									</div>
 								{/if}
-								<p class="text-right text-[11px] text-faint">
-									{detail.status === 'working' ? 'queued behind this turn' : 'sent'}
+								<p class="flex items-center justify-end gap-1.5 text-right text-[11px] text-faint">
+									{sent.state === 'sending'
+										? 'sending…'
+										: held
+											? 'the agent has it'
+											: detail.status === 'working'
+												? 'queued behind this turn'
+												: 'delivered · waiting to be picked up'}
+									{#if prefs.value.messageTicks}<Ticks
+											state={sent.state === 'sending' ? 'sending' : held ? 'read' : 'sent'}
+										/>{/if}
 								</p>
+							{:else if row.kind === 'tools'}
+								<!--
+									A folded run of tool-only turns. One row, opened on demand —
+									the transcript keeps the shape of the conversation and the
+									work is still one tap away.
+
+									Guarded by showWork like every other tool row. Folding is about
+									how the work is PRESENTED; the toggle is about whether it is
+									shown at all, and a group that ignored it put tool rows back on
+									screen for anyone who had turned them off.
+								-->
+								<!--
+									The kind check stays pure so the {:else} below still narrows to
+									a message row; the toggle is checked inside it.
+								-->
+								{#if showWork}
+									<details class="group">
+										<summary
+											class="flex cursor-pointer items-baseline gap-2 rounded-lg px-2 py-1.5 font-mono text-[11.5px] text-muted transition-colors hover:bg-chip/60"
+										>
+											<span
+												class="shrink-0 self-center text-faint transition-transform group-open:rotate-90 motion-reduce:transition-none"
+												aria-hidden="true">▸</span
+											>
+											<span class="min-w-0 flex-1 truncate">
+												{#each row.tally as t, i (t.name)}{#if i > 0}<span class="mx-1 text-faint"
+															>·</span
+														>{/if}<span class="text-faint">{t.n}</span>&nbsp;{t.name}{/each}
+											</span>
+										</summary>
+										<div class="pl-2">
+											<MessageBlocks blocks={row.blocks} mono={prefs.value.monoSize} showWork />
+										</div>
+									</details>
+								{/if}
 							{:else}
 								{@const message = row.message}
 								{#if message.role === 'system'}
@@ -1477,21 +2403,33 @@
 									</div>
 								{:else if message.role === 'user'}
 									{#if prefs.value.bubbles}
-										<div class="flex justify-end">
-											<span
-												class="max-w-[85%] rounded-2xl rounded-br-sm px-3 py-2 [overflow-wrap:anywhere] whitespace-pre-wrap"
-												style="background:{prefs.bubbleColours.userBubble}; color:{prefs
-													.bubbleColours.userText}"
+										<div class="flex justify-end {tight(row.run)}">
+											<Bubble
+												mine
+												run={row.run}
+												border={userBorder}
+												fill={userFill}
+												fillGradient={gradient}
+												fillEnd={userEnd}
+												tail={prefs.value.bubbleTails}
+												width={prefs.value.bubbleBorderWidth}
+												ink={userInk}
+												extra="max-w-[85%] whitespace-pre-wrap"
 											>
 												<MessageBlocks
 													blocks={message.blocks ?? []}
 													mono={prefs.value.monoSize}
 													plain
 												/>
-											</span>
+											</Bubble>
 										</div>
+										{#if prefs.value.messageTicks}
+											<p class="-mt-0.5 flex justify-end pr-0.5 text-faint">
+												<Ticks state="read" />
+											</p>
+										{/if}
 									{:else}
-										<div class="flex gap-2">
+										<div class="flex gap-2 {tight(row.run)}">
 											<span
 												class="shrink-0 font-mono text-[13px] leading-[1.7] text-working"
 												aria-hidden="true">›</span
@@ -1503,13 +2441,24 @@
 													plain
 												/>
 											</span>
+											{#if prefs.value.messageTicks}
+												<span class="mt-[3px] shrink-0 text-faint"><Ticks state="read" /></span>
+											{/if}
 										</div>
 									{/if}
-								{:else if message.text || (showWork && (message.blocks?.length ?? 0) > 0)}
-									<!-- A turn that is only tool calls has nothing to show while the
-								     work is hidden; rendering the prefix anyway left a column of
-								     bare dots separated by empty space. -->
-									<div class="flex gap-2">
+								{:else if message.text || prose(message).length > 0 || hasTodoPlan(message.blocks) || (showWork && (message.blocks?.length ?? 0) > 0)}
+									<!--
+										A turn that is only tool calls has nothing to show while the
+										work is hidden; rendering the prefix anyway left a column of
+										bare dots separated by empty space.
+
+										`prose` and not just `message.text`: a turn can carry an image
+										and no words — a file sent to the phone is exactly that — and
+										`text` is empty for it, so the whole row was being skipped and
+										the picture went with it whenever the work was hidden. An
+										image is something the agent SAID, not work it did.
+									-->
+									<div class="flex gap-2 {tight(row.run)}">
 										{#if !prefs.value.bubbles}
 											<span
 												class="shrink-0 font-mono text-[13px] leading-[1.7] {harnessText(
@@ -1520,22 +2469,30 @@
 										{/if}
 										<div class="min-w-0 flex-1">
 											{#if prefs.value.bubbles}
-												{#if prose(message).length > 0}
-													<div
-														class="max-w-[92%] rounded-2xl rounded-bl-sm px-3 py-2 [overflow-wrap:anywhere]"
-														style="background:{agentBubbleColour}; color:{prefs.bubbleColours
-															.agentText}{agentEdge
-															? `; border-left:3px solid ${agentEdge}; border-top-left-radius:6px; border-bottom-left-radius:6px`
-															: ''}"
-													>
-														<MessageBlocks blocks={prose(message)} mono={prefs.value.monoSize} />
-													</div>
-												{/if}
-												<MessageBlocks
-													blocks={work(message)}
-													mono={prefs.value.monoSize}
-													{showWork}
-												/>
+												{@const segments = messageSegments(message.blocks)}
+												{#each segments as segment, segmentIndex (segmentIndex)}
+													{#if segment.kind === 'prose'}
+														<Bubble
+															run={bubbleRun(row.run, segments, segmentIndex)}
+															border={agentBorder}
+															fill={agentFill}
+															fillGradient={gradient}
+															fillEnd={agentEnd}
+															tail={prefs.value.bubbleTails}
+															width={prefs.value.bubbleBorderWidth}
+															ink={agentInk}
+															extra="max-w-[92%] block"
+														>
+															<MessageBlocks blocks={segment.blocks} mono={prefs.value.monoSize} />
+														</Bubble>
+													{:else}
+														<MessageBlocks
+															blocks={segment.blocks}
+															mono={prefs.value.monoSize}
+															{showWork}
+														/>
+													{/if}
+												{/each}
 											{:else}
 												<div
 													class="border-l-2 pl-2.5 [overflow-wrap:anywhere] text-body {harnessBorder(
@@ -1665,7 +2622,9 @@
 				{/if}
 			</main>
 
-			<div class="sticky bottom-0 z-10">
+			<div
+				class="sticky bottom-0 z-10 w-full max-w-screen-sm lg:max-w-3xl xl:max-w-4xl 2xl:max-w-5xl"
+			>
 				<!--
 						Above the whole composer stack, never on it: the suggestion chip
 						and the input are the two things you are reaching for, and a pill
@@ -1676,7 +2635,10 @@
 					<div class="pointer-events-none absolute -top-9 right-0 left-0 flex justify-center">
 						<button
 							class="pointer-events-auto flex items-center gap-1 rounded-full border border-hairline bg-card px-3 py-1.5 text-[12.5px] text-working shadow-[0_2px_8px_rgba(0,0,0,.18)]"
-							onclick={() => scrollBottom()}
+							onclick={() => {
+								following = true;
+								scrollBottom();
+							}}
 						>
 							<span aria-hidden="true">↓</span> Latest
 						</button>
@@ -1771,6 +2733,18 @@
 
 					{@render errorBanner()}
 
+					{#if typedInto && detail.picker}
+						<!--
+							Typed, not sent — and the difference matters, because Enter
+							inside a picker takes the highlighted option rather than what
+							was just typed. The key strip is where ⏎ lives.
+						-->
+						<p role="status" class="mb-2 rounded-[10px] bg-chip px-3 py-2 text-[12.5px] text-muted">
+							Typed into the question. Press <span class="font-mono">⏎</span> on the key strip when it
+							looks right — the question's own footer says what else it takes.
+						</p>
+					{/if}
+
 					<!--
 					A `!` draft is a SHELL command, not a message to the agent — it runs
 					on the host. The box says so before you send it, because the two are
@@ -1828,7 +2802,7 @@
 							placeholder={isShell
 								? 'Runs on the host…'
 								: detail.picker
-									? 'Or type a reply…'
+									? 'Type into the question…'
 									: 'Type a reply…'}
 							class="[field-sizing:content] max-h-[min(10rem,22dvh)] min-w-0 flex-1 resize-none bg-transparent py-1.5 pr-2 text-[16px] placeholder:text-faint focus:outline-none"
 						></textarea>
@@ -1869,7 +2843,11 @@
 							disabled={busy || preparing > 0}
 							onclick={send}
 						>
-							<Icon name="arrow-up" size={19} />
+							{#if busy || preparing > 0}
+								<Spinner size={17} label="Sending" />
+							{:else}
+								<Icon name="arrow-up" size={19} />
+							{/if}
 						</button>
 					</div>
 
@@ -1931,7 +2909,7 @@
 	</div>
 {/snippet}
 {#snippet pickerCard()}
-	{#if detail.picker && detail.picker.options.length > 0}
+	{#if detail.picker && detail.picker.options.length > 0 && !askHidden}
 		<section
 			class="mt-4 flex overflow-hidden rounded-xl border border-blocked-edge bg-blocked-surface shadow-[0_6px_18px_rgba(217,119,6,.10)]"
 		>
@@ -1940,12 +2918,25 @@
 				<p class="font-mono text-[10.5px] tracking-[.3px] text-blocked-ink">
 					? WAITING ON YOU{detail.picker.multi ? ' · MULTI-SELECT' : ''}
 				</p>
+				<!--
+					What is being approved, above the question that asks about it.
+					"Do you want to proceed?" with two buttons and no subject is an
+					approval prompt with the one thing you need to decide on
+					missing — it was on screen the whole time, one line further up.
+				-->
+				{#if detail.picker.context.length > 0}
+					<div
+						class="mt-1.5 max-h-40 overflow-y-auto rounded-lg bg-code-bg px-2.5 py-2 font-mono text-[11.5px] break-words whitespace-pre-wrap text-code-ink"
+					>
+						{detail.picker.context.join('\n')}
+					</div>
+				{/if}
 				{#if detail.picker.question}
 					<p class="mt-1.5 text-[15px]">{detail.picker.question}</p>
 				{/if}
 				<div class="mt-2 flex flex-col gap-1.5">
 					{#each detail.picker.options as option (option.index)}
-						{@const sending = busy && sendingIndex === option.index}
+						{@const sending = sendingIndex === option.index}
 						<button
 							class="flex items-center gap-2 rounded-lg px-3 py-2.5 text-left text-[14px] transition-opacity {busy &&
 							!sending
@@ -1966,6 +2957,10 @@
 										? 'bg-working text-white'
 										: 'border-[1.5px] border-idle-rail'}">{option.checked ? '✓' : ''}</span
 								>
+							{:else if sending}
+								<!-- In place of the number, not beside it: the row must not
+								     reflow under the finger that just left it. -->
+								<Spinner size={14} label="Sending your answer" />
 							{:else}
 								<span class="shrink-0 font-mono text-[12px]"
 									>{option.selected ? '❯ ' : ''}{option.index}</span
@@ -1977,10 +2972,11 @@
 				</div>
 				{#if detail.picker.multi}
 					<button
-						class="mt-2.5 w-full rounded-lg bg-ink py-3 text-[14px] font-medium text-card disabled:opacity-50"
+						class="mt-2.5 flex w-full items-center justify-center gap-2 rounded-lg bg-ink py-3 text-[14px] font-medium text-card disabled:opacity-50"
 						disabled={busy}
 						onclick={() => sendKeys(['enter'])}
 					>
+						{#if busy}<Spinner size={14} label="Sending your selection" />{/if}
 						Submit selection
 					</button>
 				{/if}
@@ -2027,6 +3023,7 @@
 		menuExpanded={wideScreen ? prefs.value.sidebarOpen : treeOpen}
 		middle={headerTitle}
 		actions={headerActions}
+		below={detail.cwd || detail.branch ? headerLocation : undefined}
 	/>
 {/snippet}
 
@@ -2059,8 +3056,9 @@
 		and a stray copy of the drawer's markup in the DOM.
 	-->
 		{#if wideScreen && prefs.value.sidebarOpen}
-			<aside class="hidden w-[276px] shrink-0 lg:block">
+			<aside class="relative hidden shrink-0 lg:block" style="width: {prefs.value.sidebarWidth}px">
 				<SessionTree current={detail.paneId} onnew={() => (showNewAgent = true)} />
+				<SidebarResizer onreset={() => prefs.set('sidebarWidth', DEFAULT_SIDEBAR)} />
 			</aside>
 		{/if}
 
@@ -2117,9 +3115,52 @@
 		{/if}
 	</div>
 	<NewAgentSheet open={showNewAgent} onclose={() => (showNewAgent = false)} />
+	{#if openSubAgent}
+		<SubagentSheet pane={detail.paneId} agent={openSubAgent} onclose={() => (openSub = null)} />
+	{/if}
 </div>
 
 <style>
+	/*
+	 * The tail on the last bubble of a run.
+	 *
+	 * A rotated square with two of its four sides drawn, so it reads as the
+	 * bubble's own outline carrying on past the corner rather than as a
+	 * separate shape stuck to the side. Its fill is the bubble's fill and its
+	 * strokes are --tail-ink, both handed down from the inline style, so it
+	 * follows the harness colour and the outline/fill setting without this
+	 * rule needing to know about either.
+	 */
+	:global(.tail) {
+		position: relative;
+	}
+
+	/*
+	 * In flight. A slow breath rather than a spinner: the message is already
+	 * readable and the only thing unresolved is whether it has landed, so the
+	 * bubble should look provisional, not busy.
+	 */
+	:global(.sending) {
+		animation: bordr-sending 1.1s ease-in-out infinite;
+	}
+
+	@keyframes bordr-sending {
+		0%,
+		100% {
+			opacity: 0.45;
+		}
+		50% {
+			opacity: 0.8;
+		}
+	}
+
+	@media (prefers-reduced-motion: reduce) {
+		:global(.sending) {
+			animation: none;
+			opacity: 0.6;
+		}
+	}
+
 	/*
 	 * Terminal snapshots, not UI text. The system monospace goes first: IBM
 	 * Plex Mono has no box-drawing glyphs, so a mixed line falls back per glyph

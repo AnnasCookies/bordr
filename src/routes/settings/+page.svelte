@@ -10,12 +10,22 @@
 	import ToggleRow from '$lib/components/toggle-row.svelte';
 	import ColourRow from '$lib/components/colour-row.svelte';
 	import TabBar from '$lib/components/tab-bar.svelte';
+	import AppHeader from '$lib/components/app-header.svelte';
+	import SessionTree from '$lib/components/session-tree.svelte';
+	import { screen, watchWide } from '$lib/wide.svelte';
+	import SettingsNav from '$lib/components/settings-nav.svelte';
+	import { SECTIONS } from '$lib/settings-sections';
+	import { page } from '$app/state';
 	import Icon from '$lib/components/icon.svelte';
 	import { checkPush, togglePushDetailed, type PushState } from '$lib/push-client';
 	import { onMount } from 'svelte';
 	import { resolve } from '$app/paths';
 	import type {
 		BackTo,
+		FillStyle,
+		SoundAlerts,
+		GradientEnd,
+		StatusIndicators,
 		HarnessAccent,
 		StatusPosition,
 		ToolDetail,
@@ -26,9 +36,25 @@
 		TerminalDensity
 	} from '$lib/prefs.svelte';
 	import MessageBlocks from '$lib/components/message-blocks.svelte';
+	import Bubble from '$lib/components/bubble.svelte';
 	// Aliased: `ToolDetail` is already the name of the preference type.
 	import ToolDetailView from '$lib/components/tool-detail.svelte';
-	import { harnessBubble, harnessHex, harnessText } from '$lib/theme';
+	import {
+		harnessBubble,
+		harnessHex,
+		harnessText,
+		STATUS_INK,
+		STATUS_RAIL,
+		STATUS_SYMBOL,
+		STATUS_WORD
+	} from '$lib/theme';
+	import {
+		bubbleInk,
+		fillFar,
+		fillWorstContrast,
+		DEFAULT_FILL,
+		DEFAULT_USER
+	} from '$lib/bubble-colour';
 	import HarnessMark from '$lib/components/harness-mark.svelte';
 	import CodeBlock from '$lib/components/code-block.svelte';
 	import type { Block } from '$lib/server/transcript/types';
@@ -51,16 +77,111 @@
 	];
 	const sampleWork: Block[] = [{ kind: 'text', text: 'All 322 passed.' }, ...sampleTool];
 
-	const sampleEdge = $derived(
-		prefs.value.harnessAccent === 'edge' && !prefs.value.agentBubble
-			? harnessHex('claude', prefs.resolvedTheme === 'dark')
-			: ''
+	/**
+	 * The swatch is the REAL bubble component, not a copy of it. The copy was
+	 * the problem: it kept drawing a 3px left stripe for a while after the
+	 * transcript had stopped, so the preview showed a look the app no longer
+	 * had.
+	 */
+	const dark = $derived(prefs.resolvedTheme === 'dark');
+	const accentMode = $derived(prefs.value.agentBubble ? 'off' : prefs.value.harnessAccent);
+
+	const sampleAgentBorder = $derived(
+		prefs.value.bubbleBorder
+			? prefs.value.agentBorder ||
+					(accentMode === 'off' ? 'var(--edge)' : harnessHex('claude', dark))
+			: null
 	);
-	const sampleBubble = $derived(
-		prefs.value.harnessAccent === 'tint' && !prefs.value.agentBubble
-			? harnessBubble('claude', prefs.resolvedTheme === 'dark', prefs.bubbleColours.agentBubble)
-			: prefs.bubbleColours.agentBubble
+	const sampleUserBorder = $derived(
+		prefs.value.bubbleBorder
+			? prefs.value.userBorder || (dark ? DEFAULT_USER.dark : DEFAULT_USER.light)
+			: null
 	);
+	const sampleAgentFill = $derived(
+		prefs.value.bubbleFill || accentMode === 'fill'
+			? prefs.value.agentBubble ||
+					(accentMode === 'fill'
+						? harnessHex('claude', dark)
+						: accentMode === 'tint'
+							? harnessBubble('claude', dark, dark ? DEFAULT_FILL.dark : DEFAULT_FILL.light)
+							: dark
+								? DEFAULT_FILL.dark
+								: DEFAULT_FILL.light)
+			: null
+	);
+	const sampleUserFill = $derived(
+		prefs.value.bubbleFill
+			? prefs.value.userBubble || (dark ? DEFAULT_USER.dark : DEFAULT_USER.light)
+			: null
+	);
+	const gradient = $derived(prefs.value.fillStyle === 'gradient');
+	/** Same rule as the transcript: auto derives, harness borrows, custom picks. */
+	function sampleEndFor(side: 'user' | 'agent'): string | null {
+		if (prefs.value.fillStyle !== 'gradient') return null;
+		const mode = prefs.value.gradientEnd;
+		if (mode === 'custom')
+			return (side === 'user' ? prefs.value.userGradientEnd : prefs.value.agentGradientEnd) || null;
+		if (mode === 'harness' && side === 'agent') return harnessHex('claude', dark);
+		return null;
+	}
+	const sampleAgentEnd = $derived(sampleEndFor('agent'));
+	const sampleUserEnd = $derived(sampleEndFor('user'));
+
+	/**
+	 * The worst the text gets anywhere across either bubble.
+	 *
+	 * A picked gradient end is a choice this cannot solve — a pale fill fading
+	 * into a dark harness colour has no single readable ink — so it is
+	 * measured and reported rather than silently shipped half-unreadable.
+	 */
+	const gradientWorst = $derived(
+		Math.min(
+			sampleAgentFill ? fillWorstContrast(sampleAgentFill, dark, gradient, sampleAgentEnd) : 21,
+			sampleUserFill ? fillWorstContrast(sampleUserFill, dark, gradient, sampleUserEnd) : 21
+		)
+	);
+
+	const sampleAgentInk = $derived(
+		!sampleAgentFill
+			? 'var(--ink)'
+			: prefs.value.agentText || bubbleInk(sampleAgentFill, dark, gradient, sampleAgentEnd)
+	);
+
+	/** The accent swatch renders three harnesses, so its fill resolves per kind. */
+	function accentFillFor(kind: string): string | null {
+		if (prefs.value.harnessAccent === 'fill') return harnessHex(kind, dark);
+		if (prefs.value.harnessAccent === 'tint')
+			return harnessBubble(kind, dark, dark ? DEFAULT_FILL.dark : DEFAULT_FILL.light);
+		return prefs.value.bubbleFill ? (dark ? DEFAULT_FILL.dark : DEFAULT_FILL.light) : null;
+	}
+	const sampleUserInk = $derived(
+		!sampleUserFill
+			? 'var(--ink)'
+			: prefs.value.userText || bubbleInk(sampleUserFill, dark, gradient)
+	);
+
+	/**
+	 * Ready-made pairs, because four colour pickers is a fiddly way to choose
+	 * a look on a phone. Each sets the fill AND the border for both sides, so
+	 * a palette lands whichever of the two toggles happen to be on.
+	 *
+	 * Mid-tone values on purpose: one hex has to work on the light page and
+	 * the dark one, so anything near either end of the range fails on a theme.
+	 */
+	const PALETTES: { name: string; user: string; agent: string }[] = [
+		{ name: 'Ocean', user: '#0284c7', agent: '#0d9488' },
+		{ name: 'Orchid', user: '#7c3aed', agent: '#db2777' },
+		{ name: 'Grove', user: '#15803d', agent: '#b45309' },
+		{ name: 'Ember', user: '#dc2626', agent: '#ea580c' },
+		{ name: 'Slate', user: '#475569', agent: '#0f766e' }
+	];
+
+	function applyPalette(p: { user: string; agent: string }) {
+		prefs.setBubble('user', p.user);
+		prefs.setBubble('agent', p.agent);
+		prefs.set('userBorder', p.user);
+		prefs.set('agentBorder', p.agent);
+	}
 
 	let pushState = $state<PushState>('unknown');
 	let pushMessage = $state<string | null>(null);
@@ -86,6 +207,34 @@
 		}
 		setTimeout(() => (testState = 'idle'), 4000);
 	}
+
+	let section = $derived(
+		(page.url.searchParams.get('s') ?? 'agents list') as (typeof SECTIONS)[number]
+	);
+
+	$effect(() => watchWide());
+
+	/** The workspaces drawer, so the app bar here reaches what it does elsewhere. */
+	let treeOpen = $state(false);
+
+	/**
+	 * A phone shows every section, one after another, as it always has — a
+	 * settings page you scroll is the familiar thing there, and a nav would
+	 * cost a tap to reach anything.
+	 *
+	 * A desktop shows one, because the alternative is what it was doing: 5541
+	 * pixels of scrolling in a 640px column stranded in the middle of a 1440px
+	 * window, with no way to get to `notifications` except to travel past
+	 * everything else.
+	 *
+	 * `connection` is the exception. It is a route of its own, and the nav
+	 * sends a desktop straight there, so the card here that links to it would
+	 * only ever be a link to the page you just asked for.
+	 */
+	function shown(key: string): boolean {
+		if (!screen.wide) return true;
+		return key !== 'connection' && section === key;
+	}
 </script>
 
 <!--
@@ -97,18 +246,47 @@
 	<div class="rounded-lg bg-page p-2">
 		{#if prefs.value.bubbles}
 			<div class="mb-1 flex justify-end">
-				<span
-					class="max-w-[80%] rounded-2xl rounded-br-sm px-2.5 py-1.5 text-[12.5px]"
-					style="background:{prefs.bubbleColours.userBubble}; color:{prefs.bubbleColours.userText}"
-					>run the tests</span
+				<Bubble
+					mine
+					small
+					border={sampleUserBorder}
+					fill={sampleUserFill}
+					fillGradient={gradient}
+					fillEnd={sampleUserEnd}
+					tail={prefs.value.bubbleTails}
+					width={prefs.value.bubbleBorderWidth}
+					ink={sampleUserInk}
+					extra="max-w-[80%]">run the tests</Bubble
+				>
+			</div>
+			<!-- Two agent turns, so the run rules show: the first keeps its top
+			     corners, the second joins on and takes the tail. -->
+			<div class="mb-0.5 flex">
+				<Bubble
+					small
+					run="first"
+					border={sampleAgentBorder}
+					fill={sampleAgentFill}
+					fillGradient={gradient}
+					fillEnd={sampleAgentEnd}
+					tail={prefs.value.bubbleTails}
+					width={prefs.value.bubbleBorderWidth}
+					ink={sampleAgentInk}
+					extra="max-w-[80%]">Running them now.</Bubble
 				>
 			</div>
 			<div class="flex">
-				<span
-					class="max-w-[80%] rounded-2xl rounded-bl-sm px-2.5 py-1.5 text-[12.5px]"
-					style="background:{sampleBubble}; color:{prefs.bubbleColours.agentText}{sampleEdge
-						? `; border-left:3px solid ${sampleEdge}`
-						: ''}">All 322 passed.</span
+				<Bubble
+					small
+					run="last"
+					border={sampleAgentBorder}
+					fill={sampleAgentFill}
+					fillGradient={gradient}
+					fillEnd={sampleAgentEnd}
+					tail={prefs.value.bubbleTails}
+					width={prefs.value.bubbleBorderWidth}
+					ink={sampleAgentInk}
+					extra="max-w-[80%]">All 322 passed.</Bubble
 				>
 			</div>
 		{:else}
@@ -123,17 +301,112 @@
 {/snippet}
 
 {#snippet accentPreview()}
-	<div class="flex gap-1.5 rounded-lg bg-page p-2">
+	<div class="flex gap-2 rounded-lg bg-page p-2 pb-3">
 		{#each ['claude', 'codex', 'pi'] as kind (kind)}
-			<span
-				class="flex-1 rounded-lg rounded-bl-sm px-2 py-1.5 text-center font-mono text-[11px]"
-				style="background:{prefs.value.harnessAccent === 'tint'
-					? harnessBubble(kind, prefs.resolvedTheme === 'dark', prefs.bubbleColours.agentBubble)
-					: prefs.bubbleColours.agentBubble}; color:{prefs.bubbleColours.agentText}{prefs.value
-					.harnessAccent === 'edge'
-					? `; border-left:3px solid ${harnessHex(kind, prefs.resolvedTheme === 'dark')}`
-					: ''}">{kind}</span
+			<span class="flex-1">
+				<Bubble
+					small
+					border={prefs.value.harnessAccent === 'off' ? 'var(--edge)' : harnessHex(kind, dark)}
+					fill={accentFillFor(kind)}
+					fillGradient={gradient}
+					width={prefs.value.bubbleBorderWidth}
+					ink={accentFillFor(kind)
+						? bubbleInk(accentFillFor(kind) as string, dark, gradient)
+						: 'var(--ink)'}
+					extra="block text-center font-mono !text-[11px]">{kind}</Bubble
+				>
+			</span>
+		{/each}
+	</div>
+{/snippet}
+
+{#snippet borderColours()}
+	<div class="flex items-center gap-4 px-3.5 py-3">
+		{#each [{ who: 'user' as const, label: 'You', key: 'userBorder' as const }, { who: 'agent' as const, label: 'Agent', key: 'agentBorder' as const }] as side (side.key)}
+			<label class="flex flex-1 items-center gap-2 text-[13px] text-muted">
+				<input
+					type="color"
+					value={prefs.value[side.key] ||
+						(side.who === 'user'
+							? dark
+								? DEFAULT_USER.dark
+								: DEFAULT_USER.light
+							: harnessHex('claude', dark))}
+					oninput={(e) => prefs.set(side.key, (e.currentTarget as HTMLInputElement).value)}
+					class="h-8 w-10 shrink-0 rounded border border-edge bg-transparent"
+					aria-label="{side.label} border colour"
+				/>
+				{side.label}
+			</label>
+		{/each}
+	</div>
+	<button
+		class="w-full px-3.5 pb-2 text-left text-[12px] text-working"
+		onclick={() => prefs.reset('userBorder', 'agentBorder')}
+	>
+		Use the harness colour
+	</button>
+{/snippet}
+
+{#snippet indicatorPreview()}
+	<div class="flex flex-col gap-1 rounded-lg bg-page p-2">
+		{#each [{ s: 'blocked', t: 'waiting on you' }, { s: 'working', t: 'running tests' }, { s: 'idle', t: 'ready' }] as row (row.s)}
+			<span class="flex items-center gap-2">
+				{#if prefs.value.statusIndicators === 'dot'}
+					<span class="h-1.5 w-1.5 shrink-0 rounded-full {STATUS_RAIL[row.s]}" aria-hidden="true"
+					></span>
+				{:else if prefs.value.statusIndicators === 'symbol'}
+					<span
+						class="w-2.5 shrink-0 text-center font-mono text-[10px] leading-none {STATUS_INK[
+							row.s
+						]}"
+						aria-hidden="true">{STATUS_SYMBOL[row.s]}</span
+					>
+				{:else}
+					<span class="w-[52px] shrink-0 font-mono text-[9.5px] {STATUS_INK[row.s]}"
+						>{STATUS_WORD[row.s]}</span
+					>
+				{/if}
+				<span class="text-[12px]">{row.t}</span>
+			</span>
+		{/each}
+	</div>
+{/snippet}
+
+{#snippet gradientColours()}
+	<div class="flex items-center gap-4 px-3.5 py-3">
+		{#each [{ label: 'You', key: 'userGradientEnd' as const, base: sampleUserFill }, { label: 'Agent', key: 'agentGradientEnd' as const, base: sampleAgentFill }] as side (side.key)}
+			<label class="flex flex-1 items-center gap-2 text-[13px] text-muted">
+				<input
+					type="color"
+					value={prefs.value[side.key] || (side.base ? fillFar(side.base) : '#888888')}
+					oninput={(e) => prefs.set(side.key, (e.currentTarget as HTMLInputElement).value)}
+					class="h-8 w-10 shrink-0 rounded border border-edge bg-transparent"
+					aria-label="{side.label} gradient end colour"
+				/>
+				{side.label}
+			</label>
+		{/each}
+	</div>
+	<button
+		class="w-full px-3.5 pb-2 text-left text-[12px] text-working"
+		onclick={() => prefs.reset('userGradientEnd', 'agentGradientEnd')}
+	>
+		Back to the derived ends
+	</button>
+{/snippet}
+
+{#snippet palettePreview()}
+	<div class="flex flex-wrap gap-2 rounded-lg bg-page p-2">
+		{#each PALETTES as palette (palette.name)}
+			<button
+				class="flex items-center gap-1.5 rounded-full border border-edge px-2.5 py-1.5 text-[12px]"
+				onclick={() => applyPalette(palette)}
 			>
+				<span class="h-3 w-3 rounded-full" style="background:{palette.user}"></span>
+				<span class="h-3 w-3 rounded-full" style="background:{palette.agent}"></span>
+				{palette.name}
+			</button>
 		{/each}
 	</div>
 {/snippet}
@@ -552,432 +825,648 @@
 	</div>
 {/snippet}
 
-<div class="flex min-h-dvh flex-col">
-	<header class="px-4 pt-4 pb-3">
-		<h1 class="text-[30px] font-semibold tracking-[-0.6px]">Settings</h1>
+<div class="flex min-h-dvh flex-col lg:h-dvh lg:min-h-0 lg:overflow-hidden">
+	<!--
+		The app bar, the same one the list and a conversation have. Settings had
+		a bare `<h1>` and nothing else: no way home, no workspaces, and a page
+		that did not look like it belonged to the app it was configuring.
+	-->
+	{#snippet title()}
+		<h1 class="truncate text-[17px] font-semibold">Settings</h1>
+	{/snippet}
+
+	<header class="shrink-0 border-b border-hairline">
+		<AppHeader
+			onmenu={() => (treeOpen = true)}
+			menuLabel="Workspaces"
+			menuExpanded={treeOpen}
+			middle={title}
+		/>
 	</header>
 
-	<main class="flex-1 space-y-5 px-4 pb-24">
-		<section>
-			<h2 class="mb-1.5 px-1 font-mono text-[10.5px] text-muted">agents list</h2>
-			<div
-				class="divide-y divide-black/[.06] overflow-hidden rounded-xl border border-hairline bg-card dark:divide-white/[.06]"
-			>
-				<SettingRow
-					label="Group by"
-					value={prefs.value.groupBy}
-					options={[
-						{ v: 'workspace' as GroupBy, l: 'Workspace' },
-						{ v: 'status' as GroupBy, l: 'Status' },
-						{ v: 'harness' as GroupBy, l: 'Harness' },
-						{ v: 'none' as GroupBy, l: 'None' }
-					]}
-					onchange={(v) => prefs.set('groupBy', v)}
-				>
-					{#snippet preview()}{@render groupPreview()}{/snippet}
-				</SettingRow>
-				<ToggleRow
-					label="Show grouping chips"
-					checked={prefs.value.showGrouping}
-					onchange={(v) => prefs.set('showGrouping', v)}
-				/>
-				<SettingRow
-					label="Sort within group"
-					value={prefs.value.sort}
-					options={[
-						{ v: 'status-title' as SortBy, l: 'Status' },
-						{ v: 'title' as SortBy, l: 'Title' },
-						{ v: 'recent' as SortBy, l: 'Recent' }
-					]}
-					onchange={(v) => prefs.set('sort', v)}
-				>
-					{#snippet preview()}{@render sortPreview()}{/snippet}
-				</SettingRow>
-				<ToggleRow
-					label="More on each row"
-					hint="The harness's own status row — whichever one you settled on in a conversation — and a mark on the pane the terminal is looking at. Both come off readings the list already takes."
-					checked={prefs.value.listDetail}
-					onchange={(v) => prefs.set('listDetail', v)}
-				>
-					{#snippet preview()}{@render listDetailPreview()}{/snippet}
-				</ToggleRow>
-				<ToggleRow
-					label="Show rollup counts"
-					checked={prefs.value.rollup}
-					onchange={(v) => prefs.set('rollup', v)}
-				>
-					{#snippet preview()}{@render rollupPreview()}{/snippet}
-				</ToggleRow>
-				<SettingRow
-					label="Preview line"
-					value={prefs.value.preview}
-					options={[
-						{ v: 'activity' as PreviewMode, l: 'Activity' },
-						{ v: 'cwd' as PreviewMode, l: 'cwd' },
-						{ v: 'none' as PreviewMode, l: 'None' }
-					]}
-					onchange={(v) => prefs.set('preview', v)}
-				>
-					{#snippet preview()}{@render previewLinePreview()}{/snippet}
-				</SettingRow>
-			</div>
-		</section>
+	<div class="lg:flex lg:min-h-0 lg:w-full lg:min-w-0 lg:flex-1">
+		<!--
+			Mounted only at desktop widths, not merely hidden: below `lg` every
+			section is on the page already, so a nav there would be a list of
+			links to things three inches further down.
+		-->
+		{#if screen.wide}
+			<SettingsNav active={section} />
+		{/if}
 
-		<section>
-			<h2 class="mb-1.5 px-1 font-mono text-[10.5px] text-muted">appearance</h2>
-			<div
-				class="divide-y divide-black/[.06] overflow-hidden rounded-xl border border-hairline bg-card dark:divide-white/[.06]"
+		<div class="flex min-w-0 flex-1 flex-col lg:min-h-0 lg:overflow-y-auto">
+			<main
+				class="mx-auto w-full max-w-3xl flex-1 space-y-5 px-4 pt-3 pb-24 lg:mx-0 lg:px-6 lg:pb-8"
 			>
-				<SettingRow
-					label="Theme"
-					value={prefs.value.theme}
-					options={[
-						{ v: 'light' as Theme, l: 'Light' },
-						{ v: 'dark' as Theme, l: 'Dark' },
-						{ v: 'system' as Theme, l: 'System' }
-					]}
-					onchange={(v) => prefs.set('theme', v)}
-				>
-					{#snippet preview()}{@render themePreview()}{/snippet}
-				</SettingRow>
-				<SettingRow
-					label="Mono size in peek & tool rows"
-					value={String(prefs.value.monoSize)}
-					options={[
-						{ v: '10', l: '10' },
-						{ v: '11', l: '11' },
-						{ v: '12', l: '12' },
-						{ v: '13', l: '13' }
-					]}
-					onchange={(v) => prefs.set('monoSize', Number(v))}
-				>
-					{#snippet preview()}{@render monoPreview()}{/snippet}
-				</SettingRow>
-			</div>
-		</section>
-
-		<section>
-			<h2 class="mb-1.5 px-1 font-mono text-[10.5px] text-muted">workspaces &amp; panes</h2>
-			<div
-				class="divide-y divide-black/[.06] overflow-hidden rounded-xl border border-hairline bg-card dark:divide-white/[.06]"
-			>
-				<ToggleRow
-					label="Split panes"
-					hint="Draw a tab as the split herdr actually has, with the pane you are in holding its transcript and composer. Desktop widths only."
-					checked={prefs.value.splitPanes}
-					onchange={(v) => prefs.set('splitPanes', v)}
-				>
-					{#snippet preview()}{@render splitPreview()}{/snippet}
-				</ToggleRow>
-				<SettingRow
-					label="Pane view"
-					value={prefs.value.paneView}
-					options={[
-						{ v: 'auto' as PaneView, l: 'Auto' },
-						{ v: 'conversation' as PaneView, l: 'Conversation' },
-						{ v: 'terminal' as PaneView, l: 'Terminal' }
-					]}
-					onchange={(v) => prefs.set('paneView', v)}
-				>
-					{#snippet preview()}{@render paneViewPreview()}{/snippet}
-				</SettingRow>
-				<SettingRow
-					label="Wide screens"
-					value={prefs.value.terminalFit}
-					options={[
-						{ v: 'fit' as TerminalFit, l: 'Fit' },
-						{ v: 'wrap' as TerminalFit, l: 'Wrap' },
-						{ v: 'native' as TerminalFit, l: 'Native' }
-					]}
-					onchange={(v) => prefs.set('terminalFit', v)}
-				>
-					{#snippet preview()}{@render fitPreview()}{/snippet}
-				</SettingRow>
-				<SettingRow
-					label="Terminal density"
-					value={prefs.value.terminalDensity}
-					options={[
-						{ v: 'comfortable' as TerminalDensity, l: 'Comfortable' },
-						{ v: 'compact' as TerminalDensity, l: 'Compact' }
-					]}
-					onchange={(v) => prefs.set('terminalDensity', v)}
-				>
-					{#snippet preview()}{@render densityPreview()}{/snippet}
-				</SettingRow>
-				<ToggleRow
-					label="Git branch in the tree"
-					hint="Read from each workspace's directory; herdr does not serve it."
-					checked={prefs.value.showBranches}
-					onchange={(v) => prefs.set('showBranches', v)}
-				>
-					{#snippet preview()}{@render branchPreview()}{/snippet}
-				</ToggleRow>
-				<ToggleRow
-					label="Name tabs after their contents"
-					hint="herdr labels a tab with its own number until you rename it."
-					checked={prefs.value.smartTabLabels}
-					onchange={(v) => prefs.set('smartTabLabels', v)}
-				>
-					{#snippet preview()}{@render tabLabelPreview()}{/snippet}
-				</ToggleRow>
-			</div>
-		</section>
-
-		<section>
-			<h2 class="mb-1.5 px-1 font-mono text-[10.5px] text-muted">input</h2>
-			<div
-				class="divide-y divide-black/[.06] overflow-hidden rounded-xl border border-hairline bg-card dark:divide-white/[.06]"
-			>
-				<SettingRow
-					label="Manual controls"
-					value={prefs.value.keyStrip}
-					options={[
-						{ v: 'always' as KeyStripMode, l: 'Open' },
-						{ v: 'peek' as KeyStripMode, l: 'On demand' }
-					]}
-					onchange={(v) => prefs.set('keyStrip', v)}
-				>
-					{#snippet preview()}{@render stripPreview()}{/snippet}
-				</SettingRow>
-				<ToggleRow
-					label="Suggested prompts"
-					hint="The ghost prompt the harness offers in its own input box, as a tappable chip above the composer."
-					checked={prefs.value.showSuggestions}
-					onchange={(v) => prefs.set('showSuggestions', v)}
-				>
-					{#snippet preview()}{@render suggestionPreview()}{/snippet}
-				</ToggleRow>
-				<SettingRow
-					label="Back gesture"
-					value={prefs.value.backTo}
-					options={[
-						{ v: 'home' as BackTo, l: 'Home' },
-						{ v: 'history' as BackTo, l: 'Retrace' }
-					]}
-					onchange={(v) => prefs.set('backTo', v)}
-				>
-					{#snippet preview()}{@render backPreview()}{/snippet}
-				</SettingRow>
-				<ToggleRow
-					label="Swipe to cycle agents"
-					hint="Swipe across a conversation for the next or previous agent in the list. Swiping from either screen edge still goes back."
-					checked={prefs.value.swipeAgents}
-					onchange={(v) => prefs.set('swipeAgents', v)}
-				>
-					{#snippet preview()}{@render swipePreview()}{/snippet}
-				</ToggleRow>
-				<ToggleRow
-					label="Enter sends"
-					hint={prefs.value.enterSends
-						? 'Shift+Enter makes a newline.'
-						: 'Enter makes a newline; ⌘/Ctrl+Enter sends.'}
-					checked={prefs.value.enterSends}
-					onchange={(v) => prefs.set('enterSends', v)}
-				>
-					{#snippet preview()}{@render enterPreview()}{/snippet}
-				</ToggleRow>
-				<ToggleRow
-					label="Dictate until you tap stop"
-					hint={prefs.value.dictationHold
-						? 'The engine gives up on every pause; bordr starts it again and keeps appending, so speak as slowly as you like.'
-						: 'Stops at the first pause. Quick for a one-line reply.'}
-					checked={prefs.value.dictationHold}
-					onchange={(v) => prefs.set('dictationHold', v)}
-				>
-					{#snippet preview()}{@render dictatePreview()}{/snippet}
-				</ToggleRow>
-				<label class="block px-3.5 py-3">
-					<span class="mb-2 block text-[15px]">Dictation language</span>
-					<input
-						value={prefs.value.dictationLang}
-						onchange={(e) =>
-							prefs.set('dictationLang', (e.currentTarget as HTMLInputElement).value)}
-						placeholder="en-GB"
-						class="w-full rounded-lg border border-edge bg-page px-3 py-2 font-mono text-[13px]"
-					/>
-					<span class="mt-1.5 block text-[12px] text-muted">Web Speech · BCP-47 tag.</span>
-				</label>
-			</div>
-		</section>
-
-		<section>
-			<h2 class="mb-1.5 px-1 font-mono text-[10.5px] text-muted">messages</h2>
-			<div
-				class="divide-y divide-black/[.06] overflow-hidden rounded-xl border border-hairline bg-card dark:divide-white/[.06]"
-			>
-				<ToggleRow
-					label="Chat bubbles"
-					hint="Off uses the prefixed transcript: › you, · the agent."
-					checked={prefs.value.bubbles}
-					onchange={(v) => prefs.set('bubbles', v)}
-				>
-					{#snippet preview()}{@render bubblePreview()}{/snippet}
-				</ToggleRow>
-				{#if prefs.value.bubbles}
-					<ColourRow
-						label="You"
-						background={prefs.bubbleColours.userBubble}
-						text={prefs.bubbleColours.userText}
-						onbackground={(v) => prefs.setBubble('user', v)}
-						ontext={(v) => prefs.set('userText', v)}
-					/>
-					<ColourRow
-						label="Agent"
-						background={prefs.bubbleColours.agentBubble}
-						text={prefs.bubbleColours.agentText}
-						onbackground={(v) => prefs.setBubble('agent', v)}
-						ontext={(v) => prefs.set('agentText', v)}
-					/>
-					<SettingRow
-						label="Harness accent"
-						value={prefs.value.harnessAccent}
-						options={[
-							{ v: 'edge' as HarnessAccent, l: 'Edge' },
-							{ v: 'tint' as HarnessAccent, l: 'Tint' },
-							{ v: 'off' as HarnessAccent, l: 'Off' }
-						]}
-						onchange={(v) => prefs.set('harnessAccent', v)}
-					>
-						{#snippet preview()}{@render accentPreview()}{/snippet}
-					</SettingRow>
-					<p class="px-3.5 pb-2 text-[12px] text-muted">
-						Edge puts the harness's colour down the side of the bubble; tint blends it into the
-						background. A colour picked above overrides both.
-					</p>
-					<button
-						class="w-full px-3.5 py-3 text-left text-[15px] text-working"
-						onclick={() => prefs.reset('userBubble', 'userText', 'agentBubble', 'agentText')}
-					>
-						Reset colours
-					</button>
+				{#if shown('agents list')}
+					<section>
+						<h2 class="mb-1.5 px-1 font-mono text-[10.5px] text-muted">agents list</h2>
+						<div
+							class="divide-y divide-black/[.06] overflow-hidden rounded-xl border border-hairline bg-card dark:divide-white/[.06]"
+						>
+							<SettingRow
+								label="Group by"
+								value={prefs.value.groupBy}
+								options={[
+									{ v: 'workspace' as GroupBy, l: 'Workspace' },
+									{ v: 'status' as GroupBy, l: 'Status' },
+									{ v: 'harness' as GroupBy, l: 'Harness' },
+									{ v: 'none' as GroupBy, l: 'None' }
+								]}
+								onchange={(v) => prefs.set('groupBy', v)}
+							>
+								{#snippet preview()}{@render groupPreview()}{/snippet}
+							</SettingRow>
+							<ToggleRow
+								label="Show grouping chips"
+								checked={prefs.value.showGrouping}
+								onchange={(v) => prefs.set('showGrouping', v)}
+							/>
+							<SettingRow
+								label="Sort within group"
+								value={prefs.value.sort}
+								options={[
+									{ v: 'status-title' as SortBy, l: 'Status' },
+									{ v: 'title' as SortBy, l: 'Title' },
+									{ v: 'recent' as SortBy, l: 'Recent' }
+								]}
+								onchange={(v) => prefs.set('sort', v)}
+							>
+								{#snippet preview()}{@render sortPreview()}{/snippet}
+							</SettingRow>
+							<ToggleRow
+								label="More on each row"
+								hint="The harness's own status row — whichever one you settled on in a conversation — and a mark on the pane the terminal is looking at. Both come off readings the list already takes."
+								checked={prefs.value.listDetail}
+								onchange={(v) => prefs.set('listDetail', v)}
+							>
+								{#snippet preview()}{@render listDetailPreview()}{/snippet}
+							</ToggleRow>
+							<ToggleRow
+								label="Show rollup counts"
+								checked={prefs.value.rollup}
+								onchange={(v) => prefs.set('rollup', v)}
+							>
+								{#snippet preview()}{@render rollupPreview()}{/snippet}
+							</ToggleRow>
+							<SettingRow
+								label="Preview line"
+								value={prefs.value.preview}
+								options={[
+									{ v: 'activity' as PreviewMode, l: 'Activity' },
+									{ v: 'cwd' as PreviewMode, l: 'cwd' },
+									{ v: 'none' as PreviewMode, l: 'None' }
+								]}
+								onchange={(v) => prefs.set('preview', v)}
+							>
+								{#snippet preview()}{@render previewLinePreview()}{/snippet}
+							</SettingRow>
+						</div>
+					</section>
 				{/if}
-				<ToggleRow
-					label="Show the work"
-					hint="Tool calls, their results and the agent's thinking, as expandable rows. Each conversation's own toggle overrides this and is remembered."
-					checked={prefs.value.showWork}
-					onchange={(v) => prefs.set('showWork', v)}
-				>
-					{#snippet preview()}{@render workPreview()}{/snippet}
-				</ToggleRow>
-				<SettingRow
-					label="Status lines"
-					value={prefs.value.statusPosition}
-					options={[
-						{ v: 'header' as StatusPosition, l: 'Under title' },
-						{ v: 'bottom' as StatusPosition, l: 'Below input' }
-					]}
-					onchange={(v) => prefs.set('statusPosition', v)}
-				>
-					{#snippet preview()}{@render statusPositionPreview()}{/snippet}
-				</SettingRow>
-				<SettingRow
-					label="Show the work control"
-					value={prefs.value.workControl}
-					options={[
-						{ v: 'inline' as WorkControl, l: 'In transcript' },
-						{ v: 'header' as WorkControl, l: 'In header' }
-					]}
-					onchange={(v) => prefs.set('workControl', v)}
-				>
-					{#snippet preview()}{@render workControlPreview()}{/snippet}
-				</SettingRow>
-				<ToggleRow
-					label="Activity line"
-					hint="What the harness says it is doing while it works — its verb, elapsed time and tokens — instead of just 'working'."
-					checked={prefs.value.showActivity}
-					onchange={(v) => prefs.set('showActivity', v)}
-				>
-					{#snippet preview()}{@render activityPreview()}{/snippet}
-				</ToggleRow>
-				<ToggleRow
-					label="Harness icons"
-					hint="A glyph beside each harness name, in the list, the tree and the conversation header."
-					checked={prefs.value.harnessIcons}
-					onchange={(v) => prefs.set('harnessIcons', v)}
-				>
-					{#snippet preview()}{@render iconPreview()}{/snippet}
-				</ToggleRow>
-				<ToggleRow
-					label="Syntax highlighting"
-					hint="VS Code's own grammars and themes for code blocks, tool input and both sides of a diff. Off renders plain monospace and downloads nothing."
-					checked={prefs.value.syntaxHighlight}
-					onchange={(v) => prefs.set('syntaxHighlight', v)}
-				>
-					{#snippet preview()}{@render syntaxPreview()}{/snippet}
-				</ToggleRow>
-				<ToggleRow
-					label="Collapse photos"
-					hint="A photo shows as a strip until tapped. Off shows every image at full height."
-					checked={prefs.value.compactImages}
-					onchange={(v) => prefs.set('compactImages', v)}
-				>
-					{#snippet preview()}{@render photoPreview()}{/snippet}
-				</ToggleRow>
-				<SettingRow
-					label="Tool calls"
-					value={prefs.value.toolDetail}
-					options={[
-						{ v: 'formatted' as ToolDetail, l: 'Readable' },
-						{ v: 'json' as ToolDetail, l: 'Raw JSON' }
-					]}
-					onchange={(v) => prefs.set('toolDetail', v)}
-				>
-					{#snippet preview()}{@render toolPreview()}{/snippet}
-				</SettingRow>
-			</div>
-		</section>
 
-		<section>
-			<h2 class="mb-1.5 px-1 font-mono text-[10.5px] text-muted">notifications</h2>
-			<div
-				class="divide-y divide-black/[.06] overflow-hidden rounded-xl border border-hairline bg-card dark:divide-white/[.06]"
-			>
-				{#if pushState === 'unsupported'}
-					<p class="px-3.5 py-3 text-[13px] text-muted">
-						This browser has no Push API. Add bordr to your home screen over HTTPS to enable it.
-					</p>
-				{:else}
-					<ToggleRow
-						label="Push on this device"
-						hint={pushState === 'unknown' ? 'Checking…' : undefined}
-						checked={pushState === 'on'}
-						onchange={onTogglePush}
-					/>
-					<button
-						class="flex min-h-11 w-full items-center gap-3 px-3.5 py-3 text-left disabled:opacity-50"
-						disabled={pushState !== 'on' || testState === 'sending'}
-						onclick={sendTest}
-					>
-						<span class="flex-1 text-[15px]">Send a test notification</span>
-						<span class="shrink-0 text-[13px] text-muted">
-							{testState === 'sending'
-								? 'Sending…'
-								: testState === 'sent'
-									? 'Sent'
-									: testState === 'failed'
-										? 'Failed'
-										: ''}
-						</span>
-					</button>
+				{#if shown('appearance')}
+					<section>
+						<h2 class="mb-1.5 px-1 font-mono text-[10.5px] text-muted">appearance</h2>
+						<div
+							class="divide-y divide-black/[.06] overflow-hidden rounded-xl border border-hairline bg-card dark:divide-white/[.06]"
+						>
+							<SettingRow
+								label="Theme"
+								value={prefs.value.theme}
+								options={[
+									{ v: 'light' as Theme, l: 'Light' },
+									{ v: 'dark' as Theme, l: 'Dark' },
+									{ v: 'system' as Theme, l: 'System' }
+								]}
+								onchange={(v) => prefs.set('theme', v)}
+							>
+								{#snippet preview()}{@render themePreview()}{/snippet}
+							</SettingRow>
+							<SettingRow
+								label="Mono size in peek & tool rows"
+								value={String(prefs.value.monoSize)}
+								options={[
+									{ v: '10', l: '10' },
+									{ v: '11', l: '11' },
+									{ v: '12', l: '12' },
+									{ v: '13', l: '13' }
+								]}
+								onchange={(v) => prefs.set('monoSize', Number(v))}
+							>
+								{#snippet preview()}{@render monoPreview()}{/snippet}
+							</SettingRow>
+						</div>
+					</section>
 				{/if}
-				{#if pushMessage}
-					<p class="px-3.5 py-3 text-[12.5px] text-danger-ink">{pushMessage}</p>
-				{/if}
-			</div>
-		</section>
 
-		<section>
-			<div class="overflow-hidden rounded-xl border border-hairline bg-card">
-				<a
-					href={resolve('/settings/connection')}
-					class="flex min-h-11 items-center gap-3 px-3.5 py-3"
-				>
-					<span class="flex-1 text-[15px]">Connection</span>
-					<span class="shrink-0 text-faint"><Icon name="arrow-up-right" size={16} /></span>
-				</a>
+				{#if shown('workspaces & panes')}
+					<section>
+						<h2 class="mb-1.5 px-1 font-mono text-[10.5px] text-muted">workspaces &amp; panes</h2>
+						<div
+							class="divide-y divide-black/[.06] overflow-hidden rounded-xl border border-hairline bg-card dark:divide-white/[.06]"
+						>
+							<ToggleRow
+								label="Split panes"
+								hint="Draw a tab as the split herdr actually has, with the pane you are in holding its transcript and composer. Desktop widths only."
+								checked={prefs.value.splitPanes}
+								onchange={(v) => prefs.set('splitPanes', v)}
+							>
+								{#snippet preview()}{@render splitPreview()}{/snippet}
+							</ToggleRow>
+							<SettingRow
+								label="Status indicators"
+								value={prefs.value.statusIndicators}
+								options={[
+									{ v: 'dot' as StatusIndicators, l: 'Dot' },
+									{ v: 'symbol' as StatusIndicators, l: 'Symbol' },
+									{ v: 'text' as StatusIndicators, l: 'Text' }
+								]}
+								onchange={(v) => prefs.set('statusIndicators', v)}
+							>
+								{#snippet preview()}{@render indicatorPreview()}{/snippet}
+							</SettingRow>
+							<p class="px-3.5 pb-2 text-[12px] text-muted">
+								How an agent's state shows in the side list. Symbol adds a shape to the colour, so
+								the list still sorts itself without relying on telling red from green.
+							</p>
+							<SettingRow
+								label="Pane view"
+								value={prefs.value.paneView}
+								options={[
+									{ v: 'auto' as PaneView, l: 'Auto' },
+									{ v: 'conversation' as PaneView, l: 'Conversation' },
+									{ v: 'terminal' as PaneView, l: 'Terminal' }
+								]}
+								onchange={(v) => prefs.set('paneView', v)}
+							>
+								{#snippet preview()}{@render paneViewPreview()}{/snippet}
+							</SettingRow>
+							<SettingRow
+								label="Wide screens"
+								value={prefs.value.terminalFit}
+								options={[
+									{ v: 'fit' as TerminalFit, l: 'Fit' },
+									{ v: 'wrap' as TerminalFit, l: 'Wrap' },
+									{ v: 'native' as TerminalFit, l: 'Native' }
+								]}
+								onchange={(v) => prefs.set('terminalFit', v)}
+							>
+								{#snippet preview()}{@render fitPreview()}{/snippet}
+							</SettingRow>
+							<SettingRow
+								label="Terminal density"
+								value={prefs.value.terminalDensity}
+								options={[
+									{ v: 'comfortable' as TerminalDensity, l: 'Comfortable' },
+									{ v: 'compact' as TerminalDensity, l: 'Compact' }
+								]}
+								onchange={(v) => prefs.set('terminalDensity', v)}
+							>
+								{#snippet preview()}{@render densityPreview()}{/snippet}
+							</SettingRow>
+							<ToggleRow
+								label="Git branch in the list and tree"
+								hint="Branch and drift from its upstream, read from each directory; herdr does not serve it."
+								checked={prefs.value.showBranches}
+								onchange={(v) => prefs.set('showBranches', v)}
+							>
+								{#snippet preview()}{@render branchPreview()}{/snippet}
+							</ToggleRow>
+							<ToggleRow
+								label="Name tabs after their contents"
+								hint="herdr labels a tab with its own number until you rename it."
+								checked={prefs.value.smartTabLabels}
+								onchange={(v) => prefs.set('smartTabLabels', v)}
+							>
+								{#snippet preview()}{@render tabLabelPreview()}{/snippet}
+							</ToggleRow>
+						</div>
+					</section>
+				{/if}
+
+				{#if shown('input')}
+					<section>
+						<h2 class="mb-1.5 px-1 font-mono text-[10.5px] text-muted">input</h2>
+						<div
+							class="divide-y divide-black/[.06] overflow-hidden rounded-xl border border-hairline bg-card dark:divide-white/[.06]"
+						>
+							<SettingRow
+								label="Manual controls"
+								value={prefs.value.keyStrip}
+								options={[
+									{ v: 'always' as KeyStripMode, l: 'Open' },
+									{ v: 'peek' as KeyStripMode, l: 'On demand' }
+								]}
+								onchange={(v) => prefs.set('keyStrip', v)}
+							>
+								{#snippet preview()}{@render stripPreview()}{/snippet}
+							</SettingRow>
+							<ToggleRow
+								label="Suggested prompts"
+								hint="The ghost prompt the harness offers in its own input box, as a tappable chip above the composer."
+								checked={prefs.value.showSuggestions}
+								onchange={(v) => prefs.set('showSuggestions', v)}
+							>
+								{#snippet preview()}{@render suggestionPreview()}{/snippet}
+							</ToggleRow>
+							<SettingRow
+								label="Back gesture"
+								value={prefs.value.backTo}
+								options={[
+									{ v: 'home' as BackTo, l: 'Home' },
+									{ v: 'history' as BackTo, l: 'Retrace' }
+								]}
+								onchange={(v) => prefs.set('backTo', v)}
+							>
+								{#snippet preview()}{@render backPreview()}{/snippet}
+							</SettingRow>
+							<ToggleRow
+								label="Swipe to cycle agents"
+								hint="Swipe across a conversation for the next or previous agent in the list. Swiping from either screen edge still goes back."
+								checked={prefs.value.swipeAgents}
+								onchange={(v) => prefs.set('swipeAgents', v)}
+							>
+								{#snippet preview()}{@render swipePreview()}{/snippet}
+							</ToggleRow>
+							<ToggleRow
+								label="Enter sends"
+								hint={prefs.value.enterSends
+									? 'Shift+Enter makes a newline.'
+									: 'Enter makes a newline; ⌘/Ctrl+Enter sends.'}
+								checked={prefs.value.enterSends}
+								onchange={(v) => prefs.set('enterSends', v)}
+							>
+								{#snippet preview()}{@render enterPreview()}{/snippet}
+							</ToggleRow>
+							<ToggleRow
+								label="Dictate until you tap stop"
+								hint={prefs.value.dictationHold
+									? 'The engine gives up on every pause; bordr starts it again and keeps appending, so speak as slowly as you like.'
+									: 'Stops at the first pause. Quick for a one-line reply.'}
+								checked={prefs.value.dictationHold}
+								onchange={(v) => prefs.set('dictationHold', v)}
+							>
+								{#snippet preview()}{@render dictatePreview()}{/snippet}
+							</ToggleRow>
+							<label class="block px-3.5 py-3">
+								<span class="mb-2 block text-[15px]">Dictation language</span>
+								<input
+									value={prefs.value.dictationLang}
+									onchange={(e) =>
+										prefs.set('dictationLang', (e.currentTarget as HTMLInputElement).value)}
+									placeholder="en-GB"
+									class="w-full rounded-lg border border-edge bg-page px-3 py-2 font-mono text-[13px]"
+								/>
+								<span class="mt-1.5 block text-[12px] text-muted">Web Speech · BCP-47 tag.</span>
+							</label>
+						</div>
+					</section>
+				{/if}
+
+				{#if shown('chat bubbles')}
+					<section>
+						<h2 class="mb-1.5 px-1 font-mono text-[10.5px] text-muted">chat bubbles</h2>
+						<div
+							class="divide-y divide-black/[.06] overflow-hidden rounded-xl border border-hairline bg-card dark:divide-white/[.06]"
+						>
+							<ToggleRow
+								label="Chat bubbles"
+								hint="Off uses the prefixed transcript: › you, · the agent."
+								checked={prefs.value.bubbles}
+								onchange={(v) => prefs.set('bubbles', v)}
+							>
+								{#snippet preview()}{@render bubblePreview()}{/snippet}
+							</ToggleRow>
+							{#if prefs.value.bubbles}
+								<div class="px-3.5 py-3">
+									<div class="mb-2 text-[15px]">Palette</div>
+									<p class="mb-2 text-[12px] text-muted">
+										Sets both sides at once. Under the outline style these colour the rule; under
+										fill they colour the bubble.
+									</p>
+									{@render palettePreview()}
+								</div>
+								{#if prefs.value.bubbleFill}
+									<ColourRow
+										label="You"
+										background={prefs.bubbleColours.userBubble}
+										text={prefs.bubbleColours.userText}
+										onbackground={(v) => prefs.setBubble('user', v)}
+										ontext={(v) => prefs.set('userText', v)}
+									/>
+									<ColourRow
+										label="Agent"
+										background={prefs.bubbleColours.agentBubble}
+										text={prefs.bubbleColours.agentText}
+										onbackground={(v) => prefs.setBubble('agent', v)}
+										ontext={(v) => prefs.set('agentText', v)}
+									/>
+								{/if}
+								<ToggleRow
+									label="Border"
+									hint="A rule that fades away from the bubble's own tail."
+									checked={prefs.value.bubbleBorder}
+									onchange={(v) => prefs.set('bubbleBorder', v)}
+								>
+									{#snippet preview()}{@render bubblePreview()}{/snippet}
+								</ToggleRow>
+								{#if prefs.value.bubbleBorder}
+									<SettingRow
+										label="Thickness"
+										value={prefs.value.bubbleBorderWidth}
+										options={[
+											{ v: 1, l: '1px' },
+											{ v: 2, l: '2px' },
+											{ v: 3, l: '3px' }
+										]}
+										onchange={(v) => prefs.set('bubbleBorderWidth', v)}
+									/>
+									{@render borderColours()}
+									<ToggleRow
+										label="Tails"
+										hint="The pointer on the last bubble of a run. Off leaves the squared corner."
+										checked={prefs.value.bubbleTails}
+										onchange={(v) => prefs.set('bubbleTails', v)}
+									/>
+								{/if}
+								<ToggleRow
+									label="Fill"
+									hint="Off leaves the text on the page, which is what reads as an outline."
+									checked={prefs.value.bubbleFill}
+									onchange={(v) => prefs.set('bubbleFill', v)}
+								/>
+								{#if prefs.value.bubbleFill}
+									<SettingRow
+										label="Fill style"
+										value={prefs.value.fillStyle}
+										options={[
+											{ v: 'solid' as FillStyle, l: 'Solid' },
+											{ v: 'gradient' as FillStyle, l: 'Gradient' }
+										]}
+										onchange={(v) => prefs.set('fillStyle', v)}
+									/>
+									<p class="px-3.5 pb-2 text-[12px] text-muted">
+										Solid lays the colour flat. Gradient fades it away from the bubble's own tail,
+										the same way the border does.
+									</p>
+									{#if prefs.value.fillStyle === 'gradient'}
+										<SettingRow
+											label="Fades to"
+											value={prefs.value.gradientEnd}
+											options={[
+												{ v: 'auto' as GradientEnd, l: 'Auto' },
+												{ v: 'harness' as GradientEnd, l: 'Agent' },
+												{ v: 'custom' as GradientEnd, l: 'Custom' }
+											]}
+											onchange={(v) => prefs.set('gradientEnd', v)}
+										/>
+										<p class="px-3.5 pb-2 text-[12px] text-muted">
+											Auto picks an end that keeps the text readable whatever the fill is. Agent
+											fades towards the harness colour, so the bubble carries who is speaking — your
+											own side has no harness, so it stays on auto. Custom is yours.
+										</p>
+										{#if prefs.value.gradientEnd === 'custom'}
+											{@render gradientColours()}
+										{/if}
+										<!--
+								Auto cannot be unreadable; the other two can. A pale fill fading
+								into a dark harness colour has no single ink that works, and that
+								is a choice this screen can measure but not make.
+							-->
+										{#if prefs.value.gradientEnd !== 'auto' && gradientWorst < 4.5}
+											<p class="px-3.5 pb-2 text-[12px] text-danger-ink">
+												Text drops to {gradientWorst.toFixed(1)}:1 at one end — under the 4.5:1
+												needed to read comfortably.
+											</p>
+										{/if}
+									{/if}
+								{/if}
+								<SettingRow
+									label="Harness accent"
+									value={prefs.value.harnessAccent}
+									options={[
+										{ v: 'edge' as HarnessAccent, l: 'Edge' },
+										{ v: 'tint' as HarnessAccent, l: 'Tint' },
+										{ v: 'fill' as HarnessAccent, l: 'Fill' },
+										{ v: 'off' as HarnessAccent, l: 'Off' }
+									]}
+									onchange={(v) => prefs.set('harnessAccent', v)}
+								>
+									{#snippet preview()}{@render accentPreview()}{/snippet}
+								</SettingRow>
+								<p class="px-3.5 pb-2 text-[12px] text-muted">
+									Edge puts the harness's colour in the rule. Tint also blends it faintly into the
+									bubble; fill uses it at full strength and picks readable text to go on it. A
+									colour picked above overrides all three.
+								</p>
+								<button
+									class="w-full px-3.5 py-3 text-left text-[15px] text-working"
+									onclick={() =>
+										prefs.reset(
+											'userBubble',
+											'userText',
+											'agentBubble',
+											'agentText',
+											'userBorder',
+											'agentBorder'
+										)}
+								>
+									Reset colours
+								</button>
+							{/if}
+						</div>
+					</section>
+				{/if}
+
+				{#if shown('transcript')}
+					<section>
+						<h2 class="mb-1.5 px-1 font-mono text-[10.5px] text-muted">transcript</h2>
+						<div
+							class="divide-y divide-black/[.06] overflow-hidden rounded-xl border border-hairline bg-card dark:divide-white/[.06]"
+						>
+							<ToggleRow
+								label="Delivery ticks on your messages"
+								hint="A spinner while it is being sent, one tick once herdr has it, two once the agent has picked it up — the harness writes the message to its transcript when it starts the turn."
+								checked={prefs.value.messageTicks}
+								onchange={(v) => prefs.set('messageTicks', v)}
+							/>
+							<ToggleRow
+								label="Group tool calls"
+								hint="A run of turns that only ran tools folds into one row you can open. A single call is left alone."
+								checked={prefs.value.groupTools}
+								onchange={(v) => prefs.set('groupTools', v)}
+							/>
+							<ToggleRow
+								label="Show the work"
+								hint="Tool calls, their results and the agent's thinking, as expandable rows. Each conversation's own toggle overrides this and is remembered."
+								checked={prefs.value.showWork}
+								onchange={(v) => prefs.set('showWork', v)}
+							>
+								{#snippet preview()}{@render workPreview()}{/snippet}
+							</ToggleRow>
+							<SettingRow
+								label="Status lines"
+								value={prefs.value.statusPosition}
+								options={[
+									{ v: 'header' as StatusPosition, l: 'Under title' },
+									{ v: 'bottom' as StatusPosition, l: 'Below input' }
+								]}
+								onchange={(v) => prefs.set('statusPosition', v)}
+							>
+								{#snippet preview()}{@render statusPositionPreview()}{/snippet}
+							</SettingRow>
+							<SettingRow
+								label="Show the work control"
+								value={prefs.value.workControl}
+								options={[
+									{ v: 'inline' as WorkControl, l: 'In transcript' },
+									{ v: 'header' as WorkControl, l: 'In header' }
+								]}
+								onchange={(v) => prefs.set('workControl', v)}
+							>
+								{#snippet preview()}{@render workControlPreview()}{/snippet}
+							</SettingRow>
+							<ToggleRow
+								label="Activity line"
+								hint="What the harness says it is doing while it works — its verb, elapsed time and tokens — instead of just 'working'."
+								checked={prefs.value.showActivity}
+								onchange={(v) => prefs.set('showActivity', v)}
+							>
+								{#snippet preview()}{@render activityPreview()}{/snippet}
+							</ToggleRow>
+							<ToggleRow
+								label="Harness icons"
+								hint="A glyph beside each harness name, in the list, the tree and the conversation header."
+								checked={prefs.value.harnessIcons}
+								onchange={(v) => prefs.set('harnessIcons', v)}
+							>
+								{#snippet preview()}{@render iconPreview()}{/snippet}
+							</ToggleRow>
+							<ToggleRow
+								label="Syntax highlighting"
+								hint="VS Code's own grammars and themes for code blocks, tool input and both sides of a diff. Off renders plain monospace and downloads nothing."
+								checked={prefs.value.syntaxHighlight}
+								onchange={(v) => prefs.set('syntaxHighlight', v)}
+							>
+								{#snippet preview()}{@render syntaxPreview()}{/snippet}
+							</ToggleRow>
+							<ToggleRow
+								label="Collapse photos"
+								hint="A photo shows as a strip until tapped. Off shows every image at full height."
+								checked={prefs.value.compactImages}
+								onchange={(v) => prefs.set('compactImages', v)}
+							>
+								{#snippet preview()}{@render photoPreview()}{/snippet}
+							</ToggleRow>
+							<SettingRow
+								label="Tool calls"
+								value={prefs.value.toolDetail}
+								options={[
+									{ v: 'formatted' as ToolDetail, l: 'Readable' },
+									{ v: 'json' as ToolDetail, l: 'Raw JSON' }
+								]}
+								onchange={(v) => prefs.set('toolDetail', v)}
+							>
+								{#snippet preview()}{@render toolPreview()}{/snippet}
+							</SettingRow>
+						</div>
+					</section>
+				{/if}
+
+				{#if shown('notifications')}
+					<section>
+						<h2 class="mb-1.5 px-1 font-mono text-[10.5px] text-muted">notifications</h2>
+						<div
+							class="divide-y divide-black/[.06] overflow-hidden rounded-xl border border-hairline bg-card dark:divide-white/[.06]"
+						>
+							<ToggleRow
+								label="Count waiting agents on the app icon"
+								hint="A badge on the installed app, like a mail app. A notification cannot still be there tomorrow; this can."
+								checked={prefs.value.appBadge}
+								onchange={(v) => prefs.set('appBadge', v)}
+							/>
+							<SettingRow
+								label="Sound while the app is open"
+								value={prefs.value.soundAlerts}
+								options={[
+									{ v: 'off' as SoundAlerts, l: 'Off' },
+									{ v: 'attention' as SoundAlerts, l: 'Needs you' },
+									{ v: 'all' as SoundAlerts, l: 'And done' }
+								]}
+								onchange={(v) => prefs.set('soundAlerts', v)}
+							/>
+							<p class="px-3.5 pb-2 text-[12px] text-muted">
+								A short tone when an agent changes state. Push covers the app being closed; this
+								covers it being open, where a notification is either suppressed or redundant. Phones
+								only start audio after you have touched the page, so the first tone of a visit may
+								not sound.
+							</p>
+							{#if pushState === 'unsupported'}
+								<p class="px-3.5 py-3 text-[13px] text-muted">
+									This browser has no Push API. Add bordr to your home screen over HTTPS to enable
+									it.
+								</p>
+							{:else}
+								<ToggleRow
+									label="Push on this device"
+									hint={pushState === 'unknown' ? 'Checking…' : undefined}
+									checked={pushState === 'on'}
+									onchange={onTogglePush}
+								/>
+								<button
+									class="flex min-h-11 w-full items-center gap-3 px-3.5 py-3 text-left disabled:opacity-50"
+									disabled={pushState !== 'on' || testState === 'sending'}
+									onclick={sendTest}
+								>
+									<span class="flex-1 text-[15px]">Send a test notification</span>
+									<span class="shrink-0 text-[13px] text-muted">
+										{testState === 'sending'
+											? 'Sending…'
+											: testState === 'sent'
+												? 'Sent'
+												: testState === 'failed'
+													? 'Failed'
+													: ''}
+									</span>
+								</button>
+							{/if}
+							{#if pushMessage}
+								<p class="px-3.5 py-3 text-[12.5px] text-danger-ink">{pushMessage}</p>
+							{/if}
+						</div>
+					</section>
+				{/if}
+
+				{#if shown('connection')}
+					<section>
+						<div class="overflow-hidden rounded-xl border border-hairline bg-card">
+							<a
+								href={resolve('/settings/connection')}
+								class="flex min-h-11 items-center gap-3 px-3.5 py-3"
+							>
+								<span class="flex-1 text-[15px]">Connection</span>
+								<span class="shrink-0 text-faint"><Icon name="arrow-up-right" size={16} /></span>
+							</a>
+						</div>
+					</section>
+				{/if}
+			</main>
+		</div>
+	</div>
+
+	{#if treeOpen}
+		<div class="fixed inset-0 z-40">
+			<button
+				class="absolute inset-0 bg-black/40"
+				aria-label="Close the workspaces list"
+				onclick={() => (treeOpen = false)}
+			></button>
+			<div class="absolute inset-y-0 left-0 w-[86%] max-w-[320px] shadow-2xl">
+				<SessionTree />
 			</div>
-		</section>
-	</main>
+		</div>
+	{/if}
 
 	<TabBar />
 </div>

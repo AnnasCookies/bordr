@@ -153,7 +153,7 @@
 		{/if}
 	</div>
 
-	<main class="flex-1 px-4 pb-24">
+	<main class="flex-1 px-4 pt-3 pb-24">
 		{#if q.trim().length >= 2}
 			{#if truncated}
 				<p class="pb-2 text-[11.5px] text-muted">

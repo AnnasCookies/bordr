@@ -1,5 +1,19 @@
 /// <reference lib="webworker" />
+import { version } from '$service-worker';
+import { actionFor, chosenIndex, MAX_ACTIONS } from '$lib/notify';
+
 declare const self: ServiceWorkerGlobalScope;
+
+/**
+ * The build this worker was compiled for.
+ *
+ * Load-bearing, not decoration: a browser installs a new worker only when the
+ * FILE's bytes differ. Nothing else in here changes between builds, so
+ * without the version baked in the worker was byte-identical every deploy,
+ * `activate` never fired again, and the reload below never ran. Verified: the
+ * open page stayed on the old document until this was added.
+ */
+const BUILD = version;
 
 interface PickerAction {
 	index: number;
@@ -48,11 +62,7 @@ function readPayload(data: PushMessageData | null): PushPayload {
 
 /** Notification buttons are a strip, not a menu: two short ones fit. */
 function actionsFor(options: PickerAction[] | undefined): NotificationAction[] {
-	if (!options?.length) return [];
-	return options.slice(0, 2).map((option) => ({
-		action: `opt:${option.index}`,
-		title: option.label.length > 28 ? `${option.label.slice(0, 27)}…` : option.label
-	}));
+	return (options ?? []).slice(0, MAX_ACTIONS).map(actionFor);
 }
 
 /**
@@ -72,6 +82,12 @@ async function show(data: PushPayload): Promise<void> {
 		data: { url: data.url ?? '/', paneId: data.paneId } satisfies NotificationData,
 		tag: data.url ?? 'bordr', // one notification per agent, not a pile
 		actions: actionsFor(data.options),
+		// An agent waiting on you is not a thing to miss because you happened
+		// to be looking at your phone when it arrived. One carrying answer
+		// buttons stays in the tray until it is dealt with, and a repeat for
+		// the same pane re-alerts rather than swapping itself in silently.
+		requireInteraction: Boolean(data.options?.length),
+		renotify: true,
 		icon: ICON,
 		badge: BADGE
 	});
@@ -180,8 +196,9 @@ self.addEventListener('notificationclick', (event) => {
 	const url = data.url ?? '/';
 	event.notification.close();
 
-	if (event.action.startsWith('opt:') && data.paneId) {
-		event.waitUntil(answer(data.paneId, Number(event.action.slice(4)), url));
+	const chosen = chosenIndex(event.action);
+	if (chosen !== null && data.paneId) {
+		event.waitUntil(answer(data.paneId, chosen, url));
 		return;
 	}
 	event.waitUntil(openTarget(url));
@@ -189,4 +206,36 @@ self.addEventListener('notificationclick', (event) => {
 
 // No fetch caching — bordr is a live tool; stale UI is worse than no cache.
 self.addEventListener('install', () => void self.skipWaiting());
-self.addEventListener('activate', (event) => event.waitUntil(self.clients.claim()));
+
+/**
+ * A new build must reach the pages already open on the old one.
+ *
+ * `vite build` empties the output, so a hashed chunk the open app has not
+ * loaded yet is simply gone, and the next navigation 404s. The attic keeps
+ * those chunks alive; this is the other half, telling the app a new build
+ * exists at the moment it lands rather than on a poll.
+ *
+ * Only when the worker CHANGES, which is once per deploy — not on every
+ * start, or this would be a reload loop.
+ */
+self.addEventListener('activate', (event) => {
+	event.waitUntil(
+		(async () => {
+			await self.clients.claim();
+			console.info(`bordr service worker active for build ${BUILD}`);
+
+			// A page being READ is not reloaded out from under whoever is
+			// reading it — it gets told, and the layout offers its banner. A
+			// backgrounded one is reloaded outright: nobody is looking, and it
+			// is the copy most likely to be days old and pointing at assets
+			// that no longer exist.
+			for (const client of await self.clients.matchAll({ type: 'window' })) {
+				if (client.visibilityState === 'visible') {
+					client.postMessage({ type: 'bordr:updated', build: BUILD });
+				} else if ('navigate' in client) {
+					await client.navigate(client.url).catch(() => {});
+				}
+			}
+		})()
+	);
+});
