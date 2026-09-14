@@ -225,10 +225,24 @@ describe('list filters', () => {
 		expect(isDirty(agent({ paneId: 'w3:p2', branch: 'main', ahead: 1, behind: 4 }))).toBe(true);
 	});
 
-	it('narrows the list to one status, pinned section included', () => {
-		const { blocked, groups } = partitionAgents(REPOS, 'none', 'status-title', 'idle');
-		expect(blocked).toEqual([]);
+	it('narrows the groups to one status', () => {
+		const { groups } = partitionAgents(REPOS, 'none', 'status-title', 'idle');
 		expect(groups.flatMap((g) => g.agents).map((a) => a.paneId)).toEqual(['w1:p2', 'w2:p2']);
+	});
+
+	/**
+	 * The filter is persisted, so one left lit from yesterday must not hide an
+	 * agent that is waiting on you now. The summary notification opens `/` on
+	 * the promise that blocked agents are pinned to the top of it.
+	 */
+	it('never hides a blocked agent, whatever filter is lit', () => {
+		for (const filter of ['working', 'done', 'idle', 'unknown'] as const) {
+			const { blocked, groups } = partitionAgents(REPOS, 'none', 'status-title', filter);
+			expect(blocked.map((a) => a.paneId), filter).toEqual(['w2:p1']);
+			expect(groups.flatMap((g) => g.agents).map((a) => a.paneId), filter).not.toContain('w2:p1');
+		}
+		// Swiping follows the list, so the blocked pane leads there too.
+		expect(flatOrder(REPOS, 'none', 'status-title', 'working')).toEqual(['w2:p1', 'w1:p1']);
 	});
 
 	it('keeps a blocked pane pinned when it matches the filter', () => {

@@ -82,6 +82,12 @@ export function sortAgents(agents: AgentSummary[], sort: SortBy): AgentSummary[]
  *
  * Blocked panes are removed from the groups they would otherwise fall into, so
  * an agent waiting on you appears exactly once however the list is grouped.
+ *
+ * Blocked panes are also exempt from the badge filter. The filter is
+ * persisted, so one left lit from yesterday would otherwise hide an agent
+ * that is waiting on you right now — and the service worker's summary
+ * notification opens `/` precisely because blocked agents are pinned to the
+ * top of it. A filter narrows the groups; it never hides a question.
  */
 export function partitionAgents(
 	agents: AgentSummary[],
@@ -89,14 +95,15 @@ export function partitionAgents(
 	sort: SortBy,
 	filter: ListFilter | null = null
 ): { blocked: AgentSummary[]; groups: AgentGroup[] } {
-	// Narrowed here rather than at the caller, so every reader of the list —
-	// the page, and the conversation's swipe order — sees the same rows.
-	const shown = filter ? agents.filter((a) => matchesFilter(a, filter)) : agents;
 	const blocked = sortAgents(
-		shown.filter((a) => a.status === 'blocked'),
+		agents.filter((a) => a.status === 'blocked'),
 		sort
 	);
-	const rest = shown.filter((a) => a.status !== 'blocked');
+	// Narrowed here rather than at the caller, so every reader of the list —
+	// the page, and the conversation's swipe order — sees the same rows.
+	const rest = agents.filter(
+		(a) => a.status !== 'blocked' && (filter === null || matchesFilter(a, filter))
+	);
 
 	if (groupBy === 'none') {
 		return {
