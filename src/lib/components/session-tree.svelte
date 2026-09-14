@@ -2,9 +2,9 @@
 	import { resolve } from '$app/paths';
 	import Icon from './icon.svelte';
 	import { SvelteSet } from 'svelte/reactivity';
-	import { agentTitle } from '$lib/grouping';
+	import { agentTitle, compareAgentPriority } from '$lib/grouping';
 	import { agentStore } from '$lib/agents.svelte';
-	import { prefs } from '$lib/prefs.svelte';
+	import { prefs, type AgentOrder } from '$lib/prefs.svelte';
 	import { harnessText } from '$lib/theme';
 	import HarnessMark from './harness-mark.svelte';
 	import PreviewText from './preview-text.svelte';
@@ -105,13 +105,27 @@
 	const currentWorkspace = $derived(allPanes.find((p) => p.paneId === current)?.workspaceId ?? '');
 
 	/**
-	 * The agent section in Herdr's workspace, tab and pane order.
+	 * Herdr's two Agents-panel orders.
 	 *
-	 * `allPanes` is flattened directly from Herdr's tree. Sorting it again by
-	 * status or title made this sidebar disagree with the TUI and moved rows as
-	 * work changed state. Panes with no agent stay in the machines tree above.
+	 * Grouped leaves the tree alone: workspace, then tab, then pane layout.
+	 * Priority is Herdr's attention queue, using the live SSE state so a blocked
+	 * or finished agent moves at once rather than on the five-second tree poll.
 	 */
-	const agentRows = $derived(allPanes.filter((pane) => pane.hasAgent));
+	const agentRows = $derived.by(() => {
+		const rows = allPanes.filter((pane) => pane.hasAgent);
+		if (prefs.value.agentOrder === 'grouped') return rows;
+		return [...rows].sort((a, b) =>
+			compareAgentPriority(
+				live.get(a.paneId) ?? { status: a.status, seq: 0 },
+				live.get(b.paneId) ?? { status: b.status, seq: 0 }
+			)
+		);
+	});
+
+	function toggleAgentOrder() {
+		const next: AgentOrder = prefs.value.agentOrder === 'priority' ? 'grouped' : 'priority';
+		prefs.set('agentOrder', next);
+	}
 
 	/**
 	 * The machines section: one collapsible group per machine, this host first.
@@ -435,7 +449,23 @@
 	</button>
 
 	<div data-agent-list class="min-h-0 flex-1 overflow-y-auto overscroll-contain py-1">
-		<p class="px-2 py-0.5 font-mono text-[10px] tracking-[0.08em] text-faint uppercase">agents</p>
+		<div class="flex items-center gap-1 px-2 py-0.5">
+			<span class="flex-1 font-mono text-[10px] tracking-[0.08em] text-faint uppercase">agents</span
+			>
+			<!-- Herdr uses the label itself as the toggle: it names the current mode. -->
+			<button
+				type="button"
+				class="rounded-md bg-chip px-2 py-0.5 font-mono text-[10px] text-muted transition-colors hover:bg-edge hover:text-ink"
+				aria-label="Agent order: {prefs.value.agentOrder}. Switch to {prefs.value.agentOrder ===
+				'priority'
+					? 'grouped'
+					: 'priority'}"
+				title={prefs.value.agentOrder === 'priority'
+					? 'Attention queue: blocked, done, working, idle, unknown'
+					: 'Workspace, tab and pane order'}
+				onclick={toggleAgentOrder}>{prefs.value.agentOrder}</button
+			>
+		</div>
 
 		{#if agentRows.length === 0}
 			<p class="px-2 py-2 text-[12px] text-muted">Nothing here.</p>
@@ -443,6 +473,7 @@
 
 		{#each agentRows as pane (pane.paneId)}
 			{@const info = live.get(pane.paneId)}
+			{@const status = info?.status ?? pane.status}
 			<a
 				href={paneHref(pane.paneId)}
 				class="flex items-start gap-2 border-l-2 py-1 pr-2 pl-1.5 transition-colors hover:bg-chip/60 {pane.paneId ===
@@ -452,7 +483,7 @@
 				aria-current={pane.paneId === current ? 'page' : undefined}
 			>
 				<span class="mt-[6px] flex shrink-0 items-center"
-					>{@render indicator(pane.status, pane.hasAgent)}</span
+					>{@render indicator(status, pane.hasAgent)}</span
 				>
 				<span class="min-w-0 flex-1">
 					<span class="block truncate text-[12.5px]"

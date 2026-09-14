@@ -84,9 +84,14 @@ test('the agents list drawer has the same toggle, and no Home of its own', async
 	await expect(close).toBeHidden();
 });
 
-test("the sidebar keeps Herdr's workspace, tab and pane order", async ({ page }) => {
+test("the sidebar toggles to Herdr's grouped workspace, tab and pane order", async ({ page }) => {
 	await page.goto('/');
 	await page.getByRole('button', { name: 'Workspaces', exact: true }).click();
+
+	const order = page.getByRole('button', { name: /Agent order:/ });
+	await expect(order).toHaveAccessibleName('Agent order: priority. Switch to grouped');
+	await order.click();
+	await expect(order).toHaveAccessibleName('Agent order: grouped. Switch to priority');
 
 	const expected = await page.evaluate(async () => {
 		const response = await fetch('/api/panes');
@@ -105,6 +110,9 @@ test("the sidebar keeps Herdr's workspace, tab and pane order", async ({ page })
 	);
 
 	expect(actual).toEqual(expected);
+
+	await order.click();
+	await expect(order).toHaveAccessibleName('Agent order: priority. Switch to grouped');
 });
 
 /**

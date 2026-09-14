@@ -147,6 +147,8 @@ export type PaneView = 'auto' | 'conversation' | 'terminal';
 export type TerminalFit = 'fit' | 'wrap' | 'native';
 export type TerminalDensity = 'compact' | 'comfortable';
 
+/** Herdr's Agents-panel modes: an attention queue, or stable Space groups. */
+export type AgentOrder = 'priority' | 'grouped';
 export type StatusPosition = 'header' | 'bottom';
 export type WorkControl = 'inline' | 'header';
 
@@ -217,6 +219,8 @@ export interface Prefs {
 	agentBorder: string;
 	/** Render tool input for reading, as a collapsible tree, or as raw JSON. */
 	toolDetail: ToolDetail;
+	/** How the sidebar's Agents panel is ordered, matching Herdr's toggle. */
+	agentOrder: AgentOrder;
 	/**
 	 * How much of the sidebar the workspaces section takes, 0.15 to 0.75.
 	 * Dragged by the divider between the two sections.
@@ -368,6 +372,7 @@ export const DEFAULTS: Prefs = {
 	userBorder: '',
 	agentBorder: '',
 	toolDetail: 'formatted',
+	agentOrder: 'priority',
 	sidebarSplit: 0.4,
 	sidebarWidth: DEFAULT_SIDEBAR,
 	sidebarOpen: true,
@@ -447,6 +452,7 @@ const SOUNDS: SoundAlerts[] = ['off', 'attention', 'all'];
 const FILL_STYLES: FillStyle[] = ['solid', 'gradient'];
 const GRADIENT_ENDS: GradientEnd[] = ['auto', 'harness', 'custom'];
 const TOOL_DETAILS: ToolDetail[] = ['formatted', 'tree', 'json'];
+const AGENT_ORDERS: AgentOrder[] = ['priority', 'grouped'];
 const STATUS_POSITIONS: StatusPosition[] = ['header', 'bottom'];
 const WORK_CONTROLS: WorkControl[] = ['inline', 'header'];
 const PANE_VIEWS: PaneView[] = ['auto', 'conversation', 'terminal'];
@@ -529,6 +535,11 @@ export function normalisePrefs(raw: unknown): Prefs {
 		userBorder: colour(stored.userBorder, DEFAULTS.userBorder),
 		agentBorder: colour(stored.agentBorder, DEFAULTS.agentBorder),
 		toolDetail: pick(stored.toolDetail, TOOL_DETAILS, DEFAULTS.toolDetail),
+		// `workspace` was Bordr's old name for Herdr's `grouped`/`spaces` mode.
+		agentOrder:
+			stored.agentOrder === 'workspace'
+				? 'grouped'
+				: pick(stored.agentOrder, AGENT_ORDERS, DEFAULTS.agentOrder),
 		// Clamped on read: it comes from storage a person can hand-edit, and a
 		// value outside this range collapses one section to nothing.
 		sidebarSplit:

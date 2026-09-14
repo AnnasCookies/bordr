@@ -80,6 +80,13 @@ describe('normalisePrefs', () => {
 		});
 	});
 
+	it('accepts Herdr’s agent orders and migrates the old workspace name', () => {
+		expect(normalisePrefs({ agentOrder: 'priority' }).agentOrder).toBe('priority');
+		expect(normalisePrefs({ agentOrder: 'grouped' }).agentOrder).toBe('grouped');
+		expect(normalisePrefs({ agentOrder: 'workspace' }).agentOrder).toBe('grouped');
+		expect(normalisePrefs({ agentOrder: 'alphabetical' }).agentOrder).toBe(DEFAULTS.agentOrder);
+	});
+
 	it('accepts the collapsible JSON tree tool view', () => {
 		expect(normalisePrefs({ toolDetail: 'tree' }).toolDetail).toBe('tree');
 		expect(normalisePrefs({ toolDetail: 'xml' }).toolDetail).toBe(DEFAULTS.toolDetail);
