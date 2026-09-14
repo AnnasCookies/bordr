@@ -26,9 +26,11 @@ test('the key strip offers exactly the eight allowed keys, including enter', asy
 	}
 });
 
-test('desktop transcript rows skip off-screen layout while the window resizes', async ({
-	page
-}) => {
+test('desktop conversation uses all space beside the sidebar while resizing', async ({ page }) => {
+	await page.addInitScript(() => {
+		// An old saved cap must not keep winning after the choice was removed.
+		localStorage.setItem('bordr-prefs', JSON.stringify({ conversationWidth: 'comfortable' }));
+	});
 	await page.setViewportSize({ width: 1400, height: 900 });
 	const href = await firstPane(page);
 	if (!href) test.skip(true, 'no agents running');
@@ -37,6 +39,13 @@ test('desktop transcript rows skip off-screen layout while the window resizes', 
 	const row = page.locator('.transcript-rows > *').first();
 	await expect(row).toBeAttached();
 	expect(await row.evaluate((element) => getComputedStyle(element).contentVisibility)).toBe('auto');
+
+	const main = page.locator('.transcript-rows').locator('xpath=ancestor::main[1]');
+	const widths = await main.evaluate((element) => ({
+		main: element.getBoundingClientRect().width,
+		available: element.parentElement?.getBoundingClientRect().width ?? 0
+	}));
+	expect(Math.abs(widths.main - widths.available)).toBeLessThan(2);
 });
 
 test('desktop picker questions take arrow and number keys from an empty composer', async ({

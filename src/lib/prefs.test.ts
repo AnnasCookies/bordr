@@ -91,6 +91,12 @@ describe('normalisePrefs', () => {
 		expect(normalisePrefs({ toolDetail: 'tree' }).toolDetail).toBe('tree');
 		expect(normalisePrefs({ toolDetail: 'xml' }).toolDetail).toBe(DEFAULTS.toolDetail);
 	});
+
+	it('drops the old conversation width cap', () => {
+		expect(normalisePrefs({ conversationWidth: 'comfortable' })).not.toHaveProperty(
+			'conversationWidth'
+		);
+	});
 });
 
 describe('resolveTheme', () => {

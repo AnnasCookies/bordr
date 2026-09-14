@@ -58,7 +58,6 @@
 	import { track } from '$lib/pending.svelte';
 	import { nextFollowing } from '$lib/follow';
 	import { swipeSequence } from '$lib/swipe-order';
-	import { widthClasses } from '$lib/conversation-width';
 	import { glideDuration, glidePosition } from '$lib/glide';
 	import { reduceMotion } from '$lib/motion';
 	import { showChrome, touchPoints } from '$lib/header-chrome';
@@ -528,8 +527,8 @@
 	 * same lines as `statusLines` with their escapes intact; the fallback
 	 * covers a payload cached on a phone that has not reloaded yet.
 	 */
-	/** One width for the transcript, its banners and the composer. */
-	const widths = $derived(widthClasses(prefs.value.conversationWidth));
+	/** Transcript, banners and composer always take the space beside the sidebar. */
+	const widths = 'max-w-screen-sm lg:max-w-none';
 
 	const statusRows = $derived(detail.statusAnsi?.length ? detail.statusAnsi : detail.statusLines);
 
