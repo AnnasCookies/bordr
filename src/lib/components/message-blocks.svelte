@@ -128,6 +128,7 @@
 											lang={langForPath(diff.file)}
 											{mono}
 											tone="del"
+											lineNumbers={diff.beforeLines ?? true}
 										/>
 									{/if}
 									{#if diff.after}
@@ -138,6 +139,7 @@
 											lang={langForPath(diff.file)}
 											{mono}
 											tone="add"
+											lineNumbers={diff.afterLines ?? true}
 										/>
 									{/if}
 								</div>

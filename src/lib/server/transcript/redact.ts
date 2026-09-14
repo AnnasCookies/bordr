@@ -103,6 +103,7 @@ function redactResult(result: ToolResult | null): ToolResult | null {
 
 function redactDiff(diff: EditDiff): EditDiff {
 	return {
+		...diff,
 		file: redactSecrets(diff.file),
 		before: redactSecrets(diff.before),
 		after: redactSecrets(diff.after)

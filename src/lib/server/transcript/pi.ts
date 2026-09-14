@@ -167,18 +167,36 @@ function editDiff(path: unknown, diff: unknown): EditDiff | null {
 	const file = str(path);
 	const before: string[] = [];
 	const after: string[] = [];
+	const beforeLines: number[] = [];
+	const afterLines: number[] = [];
 	for (const line of str(diff).split('\n')) {
 		if (line[0] !== '-' && line[0] !== '+') continue;
-		const separator = line.indexOf('|');
-		if (separator < 0) continue;
-		(line[0] === '-' ? before : after).push(line.slice(separator + 1));
+		// OMP writes `-501|text`; native Pi writes `-501 text`. Keep the
+		// real file line rather than turning a far-apart multi-edit into 1,2,3.
+		const match = /^[+-](\d+)(?:\|(.*)|\s(.*))$/.exec(line);
+		if (!match) continue;
+		const number = Number(match[1]);
+		const text = match[2] ?? match[3] ?? '';
+		if (line[0] === '-') {
+			before.push(text);
+			beforeLines.push(number);
+		} else {
+			after.push(text);
+			afterLines.push(number);
+		}
 	}
 	return file && (before.length > 0 || after.length > 0)
-		? { file, before: before.join('\n'), after: after.join('\n') }
+		? {
+				file,
+				before: before.join('\n'),
+				after: after.join('\n'),
+				beforeLines,
+				afterLines
+			}
 		: null;
 }
 
-function ompEditDiffs(details: unknown): EditDiff[] {
+function ompEditDiffs(details: unknown, fallbackPath = ''): EditDiff[] {
 	const value = record(details);
 	if (!value) return [];
 	if (Array.isArray(value.perFileResults)) {
@@ -190,7 +208,9 @@ function ompEditDiffs(details: unknown): EditDiff[] {
 			.filter((diff): diff is EditDiff => diff !== null);
 		if (diffs.length > 0) return diffs;
 	}
-	const diff = editDiff(value.path, value.diff);
+	// Native Pi's edit result includes the numbered diff but not its path; the
+	// path is still on the matching tool call. OMP normally repeats it here.
+	const diff = editDiff(str(value.path) || fallbackPath, value.diff);
 	return diff ? [diff] : [];
 }
 
@@ -287,10 +307,10 @@ export const piAdapter: Adapter = {
 				if (tool?.kind === 'tool') {
 					tool.result = toResult(message, imageBudget);
 					if (tool.name.toLowerCase() === 'edit') {
-						const diffs = ompEditDiffs(message.details);
-						// OMP puts the canonical focused diff in result details. Native Pi
-						// puts old/new text in the call itself, so an empty result must not
-						// wipe out the diff already extracted from its arguments.
+						const inputPath = str(tool.input?.path) || str(tool.input?.file_path);
+						const diffs = ompEditDiffs(message.details, inputPath);
+						// The numbered result is better when present. An empty result must not
+						// wipe out the old/new text already extracted from the call.
 						if (diffs.length > 0) tool.diffs = diffs;
 					}
 					if (tool.name.toLowerCase() === 'todo') {

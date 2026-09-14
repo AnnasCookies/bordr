@@ -162,6 +162,52 @@ describe('piAdapter.parse', () => {
 		});
 	});
 
+	it('keeps native Pi line numbers from result details that omit the path', () => {
+		const jsonl = [
+			JSON.stringify({
+				type: 'message',
+				message: {
+					role: 'assistant',
+					content: [
+						{
+							type: 'toolCall',
+							id: 'edit-numbered',
+							name: 'edit',
+							arguments: {
+								path: '/repo/example.ts',
+								edits: [{ oldText: 'old one\nold two', newText: 'new one\nnew two' }]
+							}
+						}
+					]
+				}
+			}),
+			JSON.stringify({
+				type: 'message',
+				message: {
+					role: 'toolResult',
+					toolCallId: 'edit-numbered',
+					content: [{ type: 'text', text: 'Successfully replaced 2 blocks.' }],
+					details: {
+						diff: '-145 old one\n+145 new one\n     ...\n-219 \told two\n+219 \tnew two',
+						firstChangedLine: 145
+					}
+				}
+			})
+		].join('\n');
+		expect(piAdapter.parse(jsonl)[0].blocks?.[0]).toMatchObject({
+			kind: 'tool',
+			diffs: [
+				{
+					file: '/repo/example.ts',
+					before: 'old one\n\told two',
+					after: 'new one\n\tnew two',
+					beforeLines: [145, 219],
+					afterLines: [145, 219]
+				}
+			]
+		});
+	});
+
 	it('uses OMP diff lines instead of duplicating whole-file snapshots', () => {
 		const oldText = `${Array.from({ length: 500 }, (_, i) => `old ${i}`).join('\n')}\nconst value = 1;`;
 		const newText = oldText.replace('const value = 1;', 'const value = 2;');
