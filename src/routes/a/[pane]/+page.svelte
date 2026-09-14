@@ -70,6 +70,7 @@
 	import { showChrome, touchPoints } from '$lib/header-chrome';
 	import { screen as layout, watchWide } from '$lib/wide.svelte';
 	import { afterClose } from '$lib/after-close';
+	import { echoesAnswer, holdsAnswer } from './answer-echo';
 	import { keepPending, onScreen, say, type PendingSend } from '$lib/pending-sends';
 	import { queueVerdict } from '$lib/queue';
 	import { parseModelLine } from '$lib/model-line';
@@ -301,9 +302,11 @@
 	 * vanished a second or two later — and the obvious thing to do with a
 	 * question that has apparently come back is to answer it again.
 	 *
-	 * Only set when the SERVER confirmed the screen moved (`outcome: 'ok'`).
-	 * An unconfirmed send leaves the card up on purpose: that is the case
-	 * where you do need to look.
+	 * Only set when the SERVER confirmed the screen moved (`outcome:
+	 * 'accepted'`), and only for a single-select answer: a checkbox tick is
+	 * `accepted` too but leaves the question open, and holding it hid the card
+	 * and its Submit button mid-choice. An unconfirmed send leaves the card up
+	 * on purpose: that is the case where you do need to look.
 	 *
 	 * Keyed on the question and its options, not on a flag, so the next
 	 * question — even one asked a moment later — is not swallowed with it.
@@ -1719,19 +1722,25 @@
 		 * retires the same way: on the transcript showing it, or on the grace
 		 * period once the agent settles.
 		 */
-		const chose = detail.picker?.options.find((o) => o.index === index);
-		const echo = ++pendingSeq;
-		pendingSends = [
-			...pendingSends,
-			{
-				id: echo,
-				text: chose?.label ?? String(index),
-				question: detail.picker?.question ?? '',
-				at: Date.now(),
-				state: 'sending'
-			}
-		];
-		requestAnimationFrame(scrollBottom);
+		const picker = detail.picker;
+		const chose = picker?.options.find((o) => o.index === index);
+		// A checkbox tick is not a turn: the question is still open and Submit
+		// is what answers it, so ticking gets no bubble. Null matches no row, so
+		// the retire and confirm paths below leave the list alone.
+		const echo = echoesAnswer(picker) ? ++pendingSeq : null;
+		if (echo !== null) {
+			pendingSends = [
+				...pendingSends,
+				{
+					id: echo,
+					text: chose?.label ?? String(index),
+					question: picker?.question ?? '',
+					at: Date.now(),
+					state: 'sending'
+				}
+			];
+			requestAnimationFrame(scrollBottom);
+		}
 
 		try {
 			const r = await track(() =>
@@ -1768,10 +1777,13 @@
 				);
 				// The server checked the screen and the menu moved. Retire the card
 				// now rather than letting it sit there looking unanswered until the
-				// next read catches up.
-				answeredKey = pickerKey;
-				answeredAt = Date.now();
-				now = answeredAt;
+				// next read catches up — unless it was a checkbox, whose card must
+				// stay up with its Submit button while the rest are ticked.
+				if (holdsAnswer(picker, body?.outcome)) {
+					answeredKey = pickerKey;
+					answeredAt = Date.now();
+					now = answeredAt;
+				}
 			}
 		} catch (e) {
 			pendingSends = pendingSends.filter((p) => p.id !== echo);
