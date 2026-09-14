@@ -76,12 +76,9 @@
 			{#if block.caption}<figcaption>{block.caption}</figcaption>{/if}
 		</figure>
 	{:else if block.kind === 'thinking' && showWork}
-		<details class="fold">
-			<summary
-				><span class="marker" aria-hidden="true"></span><span class="name">thinking</span></summary
-			>
-			<div class="body"><RichText text={block.text} {mono} /></div>
-		</details>
+		<!-- Thinking follows Show tools, but stays open and visually quieter than
+		     either the reply or a tool call. -->
+		<div class="thinking"><RichText text={block.text} {mono} /></div>
 	{:else if block.kind === 'tool'}
 		{@const plan = todoPlanForBlock(block)}
 		{#if plan}
@@ -218,6 +215,18 @@
 		margin-top: 0.3em;
 		font-size: 0.9em;
 		opacity: 0.8;
+	}
+
+	.thinking {
+		margin: 0.35em 0;
+		padding: 0.2em 0.7em;
+		border-inline-start: 2px solid color-mix(in srgb, currentColor 22%, transparent);
+		font-style: italic;
+		opacity: 0.68;
+	}
+	.thinking :global(code),
+	.thinking :global(pre) {
+		font-style: normal;
 	}
 
 	.fold {
