@@ -192,6 +192,8 @@ await tap(page.getByRole('link', { name: 'Home — all agents' }), 800);
 
 // Dark mode, because half the people looking at this will want to see it.
 await tap(page.getByRole('link', { name: 'Settings' }), 550);
+// Settings groups start closed on a phone; open this one as a reader would.
+await tap(page.locator('details[data-section="appearance"] > summary'), 500);
 await tap(page.getByRole('group', { name: 'Theme' }).getByRole('button', { name: 'Dark' }), 900);
 await tap(page.getByRole('link', { name: 'Agents' }), 1400);
 

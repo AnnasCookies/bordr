@@ -58,9 +58,15 @@ for (const scheme of ['light', 'dark'] as const) {
 
 	await page.getByRole('link', { name: 'Settings' }).click();
 	await page.waitForTimeout(700);
+	// At this width every group starts closed, and a page of closed headings
+	// shows nothing Settings does; open the one with the live previews.
+	await page.locator('details[data-section="appearance"] > summary').click();
+	await page.waitForTimeout(300);
 	await page.screenshot({ path: `${outDir}/settings-${scheme}.png` });
 
 	// Terminal mode is chosen in Settings, so switch it there and walk back.
+	await page.locator('details[data-section="workspaces & panes"] > summary').click();
+	await page.waitForTimeout(300);
 	await page
 		.getByRole('group', { name: 'Pane view' })
 		.getByRole('button', { name: 'Terminal' })
