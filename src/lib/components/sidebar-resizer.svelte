@@ -1,14 +1,18 @@
 <script lang="ts">
 	import { prefs } from '$lib/prefs.svelte';
+	import { followPointer } from '$lib/pointer-drag';
 	import { clampSidebar } from '$lib/sidebar';
 
 	/**
 	 * The grab strip down the sidebar's right edge.
 	 *
 	 * Pointer events rather than mouse ones, so a trackpad and a touchscreen
-	 * drag it too, and pointer capture so the drag survives the pointer
-	 * leaving a 4px strip — the same arrangement the divider inside the
-	 * sidebar already uses.
+	 * drag it too, followed through the same helper as the divider inside the
+	 * sidebar. This strip used to carry its own copy and repeated all three of
+	 * the bugs that divider had been fixed for: listeners on the window, no
+	 * `pointercancel`, and no `touch-action: none` — so on a touchscreen laptop
+	 * a drag the browser cancelled left the window listening, and later
+	 * movement anywhere resized the sidebar.
 	 *
 	 * A button rather than `role="separator"` for the same reason as that one:
 	 * a focusable separator with aria-valuenow is the correct splitter
@@ -20,33 +24,51 @@
 
 	const STEP = 24;
 
-	function startDrag(event: PointerEvent) {
+	/** Live width while dragging; null when the pref is in charge. */
+	let dragWidth = $state<number | null>(null);
+	const width = $derived(dragWidth ?? prefs.value.sidebarWidth);
+
+	/**
+	 * The width is held here while dragging and written once, on release:
+	 * `prefs.set` serialises the whole preferences object into localStorage,
+	 * synchronously, and this used to do that on every pointermove.
+	 *
+	 * The page sizes the sidebar from the pref, which does not change until
+	 * then, so the drag sets the sidebar's own width in the meantime. Release
+	 * stores that same value, so the page's binding takes over without a jump.
+	 */
+	function startDrag(event: PointerEvent, handle: HTMLElement) {
+		const sidebar = handle.parentElement;
+		if (!sidebar) return;
 		event.preventDefault();
-		const handle = event.target as HTMLElement;
-		handle.setPointerCapture(event.pointerId);
 		// Measured from the sidebar's own left edge, so the width follows the
 		// pointer exactly rather than drifting by wherever the grab started.
-		const left = handle.parentElement?.getBoundingClientRect().left ?? 0;
+		const left = sidebar.getBoundingClientRect().left;
 		document.body.style.userSelect = 'none';
 
-		const move = (e: PointerEvent) => prefs.set('sidebarWidth', clampSidebar(e.clientX - left));
-		const stop = (e: PointerEvent) => {
-			handle.releasePointerCapture(e.pointerId);
-			document.body.style.userSelect = '';
-			window.removeEventListener('pointermove', move);
-			window.removeEventListener('pointerup', stop);
-		};
-		window.addEventListener('pointermove', move);
-		window.addEventListener('pointerup', stop);
+		followPointer(handle, event.pointerId, {
+			move: (at) => {
+				dragWidth = clampSidebar(at.clientX - left);
+				sidebar.style.width = `${dragWidth}px`;
+			},
+			end: () => {
+				document.body.style.userSelect = '';
+				if (dragWidth !== null) prefs.set('sidebarWidth', dragWidth);
+				dragWidth = null;
+			}
+		});
 	}
 </script>
 
+<!--
+	touch-none in CSS, not preventDefault() in the listener: the browser decides
+	whether a touch scrolls before any listener runs.
+-->
 <button
 	type="button"
-	aria-label="Resize the sidebar, currently {prefs.value
-		.sidebarWidth}px — arrow keys adjust, double-click resets"
-	class="group absolute inset-y-0 right-0 z-10 w-1 cursor-col-resize before:absolute before:-inset-x-2 before:inset-y-0 before:content-['']"
-	onpointerdown={startDrag}
+	aria-label="Resize the sidebar, currently {width}px — arrow keys adjust, double-click resets"
+	class="group absolute inset-y-0 right-0 z-10 w-1 cursor-col-resize touch-none before:absolute before:-inset-x-2 before:inset-y-0 before:content-['']"
+	onpointerdown={(e) => startDrag(e, e.currentTarget)}
 	ondblclick={onreset}
 	onkeydown={(e) => {
 		if (e.key !== 'ArrowLeft' && e.key !== 'ArrowRight') return;

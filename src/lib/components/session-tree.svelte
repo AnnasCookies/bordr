@@ -5,6 +5,7 @@
 	import { agentTitle } from '$lib/grouping';
 	import { agentStore } from '$lib/agents.svelte';
 	import { prefs, type AgentOrder } from '$lib/prefs.svelte';
+	import { followPointer } from '$lib/pointer-drag';
 	import { harnessText } from '$lib/theme';
 	import HarnessMark from './harness-mark.svelte';
 	import PreviewText from './preview-text.svelte';
@@ -215,30 +216,25 @@
 	 * And the fraction is held locally while dragging. `prefs.set` serialises
 	 * the whole preferences object into localStorage, synchronously, and it
 	 * was doing that on every pointermove.
+	 *
+	 * The listeners live in followPointer, shared with the sidebar's own
+	 * edge, which had copied the old version of this and all three bugs.
 	 */
-	function startDrag(event: PointerEvent) {
+	function startDrag(event: PointerEvent, handle: HTMLElement) {
 		const host = shell;
 		if (!host) return;
 		event.preventDefault();
-		const handle = event.currentTarget as HTMLElement;
-		handle.setPointerCapture(event.pointerId);
 		const box = host.getBoundingClientRect();
 
-		const move = (e: PointerEvent) => {
-			dragSplit = clamp((e.clientY - box.top) / box.height);
-		};
-		const stop = () => {
-			handle.removeEventListener('pointermove', move);
-			handle.removeEventListener('pointerup', stop);
-			handle.removeEventListener('pointercancel', stop);
-			if (dragSplit !== null) prefs.set('sidebarSplit', dragSplit);
-			dragSplit = null;
-		};
-		// On the handle, not the window: pointer capture routes the whole drag
-		// here, and a listener that cannot outlive its element cannot leak.
-		handle.addEventListener('pointermove', move);
-		handle.addEventListener('pointerup', stop);
-		handle.addEventListener('pointercancel', stop);
+		followPointer(handle, event.pointerId, {
+			move: (at) => {
+				dragSplit = clamp((at.clientY - box.top) / box.height);
+			},
+			end: () => {
+				if (dragSplit !== null) prefs.set('sidebarSplit', dragSplit);
+				dragSplit = null;
+			}
+		});
 	}
 
 	function paneHref(paneId: string) {
@@ -433,7 +429,7 @@
 			split * 100
 		)}% — arrow keys adjust"
 		class="group relative h-1.5 w-full shrink-0 cursor-row-resize touch-none border-y border-hairline bg-card before:absolute before:inset-x-0 before:-inset-y-2 before:content-['']"
-		onpointerdown={startDrag}
+		onpointerdown={(e) => startDrag(e, e.currentTarget)}
 		onkeydown={(e) => {
 			// Keyboard-resizable too, in 5% steps.
 			if (e.key !== 'ArrowUp' && e.key !== 'ArrowDown') return;
