@@ -156,7 +156,8 @@ export const GET: RequestHandler = async ({ params, url }) => {
 	}
 
 	const sessionId = (raw.agent_session as { value?: string } | undefined)?.value;
-	const adapter = adapterFor(summary.agent);
+	// A remote pane's transcript names files on its own machine, never this one.
+	const adapter = adapterFor(summary.agent, { remote: parsePane(params.pane).machineId !== '' });
 
 	let messages: Message[] = [];
 	let degraded: Degraded = 'none';
