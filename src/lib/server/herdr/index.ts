@@ -7,7 +7,7 @@ import { HerdrClient, HerdrRequestError } from './client';
 import { judgeCompatibility, type Compatibility } from './compat';
 import { SubscriptionManager } from './subscriptions';
 import { ensureConnection } from './connections';
-import { parsePane } from './address';
+import { formatPane, parsePane } from './address';
 
 const DEFAULT_SOCKET = join(homedir(), '.config', 'herdr', 'sessions', 'main', 'herdr.sock');
 
@@ -113,24 +113,35 @@ export function toSummary(
 	tabLabels: Map<string, string> = new Map()
 ): AgentSummary {
 	const status = raw.agent_status as AgentStatus;
-	const workspaceLabel = workspaceLabels.get(String(raw.workspace_id ?? ''));
+	const paneId = String(raw.pane_id ?? '');
+	const bareWorkspace = String(raw.workspace_id ?? '');
+	const bareTab = String(raw.tab_id ?? '');
+	// `rawAgent`/`rawPane` re-address `pane_id` but hand `tab_id` and
+	// `workspace_id` through as herdr's bare ids. Left bare, a remote pane's tab
+	// id carried no machine, so the tab controls parsed it as LOCAL and closed
+	// this host's `w8:t1` when asked to close `tm-dev~w8:t1`. The machine the
+	// pane is on is the machine its tab and workspace are on, and the address
+	// format is the one the pane tree already uses.
+	const { machineId } = parsePane(paneId);
+	const readdress = (bare: string) => (bare ? formatPane(machineId, bare) : '');
+	// The label maps come from this host's herdr, keyed by herdr's own ids.
+	const workspaceLabel = workspaceLabels.get(bareWorkspace);
 	const named =
 		(typeof raw.name === 'string' && raw.name) ||
 		(workspaceLabel && !/^\d+$/.test(workspaceLabel) ? workspaceLabel : '');
-	const tabId = String(raw.tab_id ?? '');
 	// A default tab is labelled with its own number, which says nothing the
 	// pane address does not already say.
-	const tabLabel = tabName(tabLabels.get(tabId) ?? '');
+	const tabLabel = tabName(tabLabels.get(bareTab) ?? '');
 	return {
-		paneId: String(raw.pane_id ?? ''),
+		paneId,
 		agent: String(raw.agent ?? 'unknown'),
 		title: named || String(raw.terminal_title_stripped ?? ''),
 		status: STATUSES.includes(status) ? status : 'unknown',
 		cwd: String(raw.cwd ?? ''),
 		seq: Number(raw.state_change_seq ?? 0),
-		workspaceId: String(raw.workspace_id ?? ''),
+		workspaceId: readdress(bareWorkspace),
 		workspaceLabel: workspaceLabel && !/^\d+$/.test(workspaceLabel) ? workspaceLabel : '',
-		tabId,
+		tabId: readdress(bareTab),
 		tabLabel: /^\d+$/.test(tabLabel) ? '' : tabLabel
 	};
 }
