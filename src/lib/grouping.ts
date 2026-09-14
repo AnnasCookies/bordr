@@ -209,6 +209,49 @@ export function rollupCounts(
 	}));
 }
 
+type ListPicker = AgentSummary['picker'];
+
+/** What the list remembers about a question it answered, until the screen catches up. */
+export interface AnsweredMark {
+	key: string;
+	at: number;
+	/** What was chosen, so the row can say which button was hit. */
+	label: string;
+}
+
+/** A picker's identity: its question and options, so the NEXT question is never mistaken for it. */
+export function pickerKey(picker: ListPicker): string {
+	if (!picker?.options?.length) return '';
+	return [picker.question ?? '', ...picker.options.map((o) => `${o.index}:${o.label}`)].join(
+		'\u0000'
+	);
+}
+
+/**
+ * Does an accepted answer retire this picker's buttons?
+ *
+ * Single-select only. On a checkbox picker the server's "accepted" means one
+ * box flipped and the question is still open, waiting for more ticks and a
+ * submit. Replacing its buttons with "sent" after the first toggle left no
+ * way to tick a second option. A toggle also leaves the key unchanged —
+ * `checked` is not part of it — so the key alone cannot tell the two apart.
+ */
+export function holdsAnswer(picker: ListPicker): boolean {
+	return Boolean(picker?.options?.length) && picker?.multi !== true;
+}
+
+/** Has this exact question already been answered from the list, and not yet cleared? */
+export function answerSettled(
+	mark: AnsweredMark | undefined,
+	picker: ListPicker,
+	now: number,
+	holdMs: number
+): boolean {
+	if (!mark || !holdsAnswer(picker)) return false;
+	if (now - mark.at >= holdMs) return false;
+	return mark.key === pickerKey(picker);
+}
+
 /**
  * The order the conversation view swipes through — the same order the list
  * renders, flattened, so "next" on a pane means the next one you can see.

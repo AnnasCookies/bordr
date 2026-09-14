@@ -6,7 +6,15 @@
 	import { resolve } from '$app/paths';
 	import { agentStore } from '$lib/agents.svelte';
 	import { prefs, type GroupBy } from '$lib/prefs.svelte';
-	import { collapseHome, partitionAgents, rollupCounts } from '$lib/grouping';
+	import {
+		answerSettled,
+		collapseHome,
+		holdsAnswer,
+		partitionAgents,
+		pickerKey,
+		rollupCounts,
+		type AnsweredMark
+	} from '$lib/grouping';
 	import { harnessText, STATUS_INK, STATUS_RAIL } from '$lib/theme';
 	import AgentRow from '$lib/components/agent-row.svelte';
 	import ConnectionBanner from '$lib/components/connection-banner.svelte';
@@ -117,8 +125,12 @@
 	 * Keyed on the question itself so the NEXT question is never swallowed,
 	 * and held for a bounded time so a card cannot go missing for good if the
 	 * screen does not move after all.
+	 *
+	 * Single-select only. A tap on a checkbox picker toggles one box and the
+	 * question stays open, so holding it would take away the very buttons
+	 * needed to tick a second option — see `holdsAnswer`.
 	 */
-	let answered = $state<Record<string, { key: string; at: number; label: string }>>({});
+	let answered = $state<Record<string, AnsweredMark>>({});
 	const ANSWERED_HOLD_MS = 8_000;
 	let clock = $state(Date.now());
 	$effect(() => {
@@ -135,20 +147,9 @@
 		return () => clearInterval(timer);
 	});
 
-	function pickerKey(agent: AgentSummary): string {
-		const picker = agent.picker;
-		if (!picker?.options?.length) return '';
-		return [picker.question ?? '', ...picker.options.map((o) => `${o.index}:${o.label}`)].join(
-			'\u0000'
-		);
-	}
-
 	/** Has this exact question already been answered, and not yet cleared? */
 	function settled(agent: AgentSummary): boolean {
-		const mark = answered[agent.paneId];
-		if (!mark) return false;
-		if (clock - mark.at >= ANSWERED_HOLD_MS) return false;
-		return mark.key === pickerKey(agent);
+		return answerSettled(answered[agent.paneId], agent.picker, clock, ANSWERED_HOLD_MS);
 	}
 
 	onMount(() => {
@@ -231,13 +232,15 @@
 				flagAnswer(agent.paneId, body?.message ?? `Could not answer (${response.status}).`);
 			} else if (body?.outcome === 'unknown') {
 				flagAnswer(agent.paneId, 'Sent, but the screen did not confirm it.');
-			} else {
+			} else if (holdsAnswer(agent.picker)) {
 				// The server checked the screen and the menu moved. Retire the
-				// buttons now instead of letting them come back unanswered.
+				// buttons now instead of letting them come back unanswered. A
+				// checkbox picker never reaches here: its "accepted" means one box
+				// flipped, and the buttons must stay for the next tick.
 				answered = {
 					...answered,
 					[agent.paneId]: {
-						key: pickerKey(agent),
+						key: pickerKey(agent.picker),
 						at: Date.now(),
 						// What was chosen, not merely that something was: "sent" alone
 						// leaves you wondering which button you actually hit.
@@ -544,21 +547,36 @@
 												{#each agent.picker.options.slice(0, 3) as option, i (option.index)}
 													{@const sending =
 														answering === agent.paneId && answeringIndex === option.index}
+													{@const multi = agent.picker.multi === true}
+													<!--
+														On a checkbox picker a tap toggles one box, so the lit
+														buttons are the ticked ones rather than the first: the
+														buttons stay after a toggle, and they have to say which
+														boxes are ticked or the next tap is a guess.
+													-->
 													<button
-														class="flex items-center gap-2 rounded-[7px] px-3.5 py-2 text-[12.5px] transition-opacity {i ===
-														0
+														class="flex items-center gap-2 rounded-[7px] px-3.5 py-2 text-[12.5px] transition-opacity {(
+															multi ? option.checked === true : i === 0
+														)
 															? 'bg-ink text-card'
 															: 'bg-chip text-ink'} {answering === agent.paneId && !sending
 															? 'opacity-40'
 															: ''} {sending ? 'animate-pulse' : ''}"
+														aria-pressed={multi ? option.checked === true : undefined}
 														disabled={answering === agent.paneId}
 														onclick={() => answer(agent, option.index)}
 													>
 														{#if sending}<Spinner size={13} label="Sending your answer" />{/if}
+														{#if multi && option.checked}✓{/if}
 														{option.index}. {option.label}
 													</button>
 												{/each}
-												{#if agent.picker.options.length > 3}
+												<!--
+													A checkbox picker is submitted from the conversation, which
+													has the Submit control; the list only toggles boxes, so it
+													always offers the way there.
+												-->
+												{#if agent.picker.options.length > 3 || agent.picker.multi}
 													<a
 														href={resolve('/a/[pane]', { pane: agent.paneId })}
 														class="rounded-[7px] bg-chip px-3.5 py-2 text-[12.5px] text-ink">Open</a

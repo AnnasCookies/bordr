@@ -1,10 +1,13 @@
 import { describe, expect, it } from 'vitest';
 import {
 	agentTitle,
+	answerSettled,
 	collapseHome,
 	flatOrder,
+	holdsAnswer,
 	isDirty,
 	partitionAgents,
+	pickerKey,
 	rollupCounts,
 	sortAgents
 } from './grouping';
@@ -200,6 +203,59 @@ describe('agentTitle', () => {
 	});
 });
 
+describe('answered pickers on the list', () => {
+	type ListPicker = NonNullable<AgentSummary['picker']>;
+	const HOLD = 8_000;
+	const single: ListPicker = {
+		question: 'Which colour?',
+		multi: false,
+		options: [
+			{ index: 1, label: 'Red', selected: true },
+			{ index: 2, label: 'Blue', selected: false }
+		]
+	};
+	const multi: ListPicker = {
+		question: 'Which colours?',
+		multi: true,
+		options: [
+			{ index: 1, label: 'Red', selected: true, checked: true },
+			{ index: 2, label: 'Blue', selected: false, checked: false }
+		]
+	};
+	const markFor = (picker: ListPicker) => ({ key: pickerKey(picker), at: 1_000, label: 'Red' });
+
+	it('holds a single-select answer until the screen catches up, and no longer', () => {
+		expect(holdsAnswer(single)).toBe(true);
+		expect(answerSettled(markFor(single), single, 2_000, HOLD)).toBe(true);
+		expect(answerSettled(markFor(single), single, 1_000 + HOLD, HOLD)).toBe(false);
+	});
+
+	/**
+	 * The defect: one checkbox toggle replaced the options with `sent "Red"`,
+	 * so a second option could never be ticked. A toggle leaves the key as it
+	 * was, so nothing but the picker's kind can tell the two cases apart.
+	 */
+	it('never holds a multi-select picker after a checkbox toggle', () => {
+		expect(holdsAnswer(multi)).toBe(false);
+		const toggled: ListPicker = {
+			...multi,
+			options: multi.options.map((o) => (o.index === 2 ? { ...o, checked: true } : o))
+		};
+		expect(pickerKey(toggled)).toBe(pickerKey(multi));
+		expect(answerSettled(markFor(multi), toggled, 2_000, HOLD)).toBe(false);
+	});
+
+	it('does not swallow the next question', () => {
+		const next: ListPicker = { ...single, question: 'Which shade?' };
+		expect(answerSettled(markFor(single), next, 2_000, HOLD)).toBe(false);
+	});
+
+	it('holds nothing once the picker has gone', () => {
+		expect(holdsAnswer(null)).toBe(false);
+		expect(answerSettled(markFor(single), null, 2_000, HOLD)).toBe(false);
+	});
+});
+
 describe('list filters', () => {
 	const REPOS: AgentSummary[] = [
 		agent({ paneId: 'w1:p1', status: 'working', branch: 'main', ahead: 0, behind: 0 }),
@@ -238,8 +294,14 @@ describe('list filters', () => {
 	it('never hides a blocked agent, whatever filter is lit', () => {
 		for (const filter of ['working', 'done', 'idle', 'unknown'] as const) {
 			const { blocked, groups } = partitionAgents(REPOS, 'none', 'status-title', filter);
-			expect(blocked.map((a) => a.paneId), filter).toEqual(['w2:p1']);
-			expect(groups.flatMap((g) => g.agents).map((a) => a.paneId), filter).not.toContain('w2:p1');
+			expect(
+				blocked.map((a) => a.paneId),
+				filter
+			).toEqual(['w2:p1']);
+			expect(
+				groups.flatMap((g) => g.agents).map((a) => a.paneId),
+				filter
+			).not.toContain('w2:p1');
 		}
 		// Swiping follows the list, so the blocked pane leads there too.
 		expect(flatOrder(REPOS, 'none', 'status-title', 'working')).toEqual(['w2:p1', 'w1:p1']);
