@@ -1,7 +1,9 @@
 <script lang="ts">
 	import './layout.css';
 	import { navigating, page, updated } from '$app/state';
+	import { browser } from '$app/environment';
 	import { onMount } from 'svelte';
+	import { installCapture } from '$lib/install-event.svelte';
 	import { prefs } from '$lib/prefs.svelte';
 	import { reportStandalone } from '$lib/push-client';
 	import { agentStore } from '$lib/agents.svelte';
@@ -28,6 +30,15 @@
 	 */
 	const WIDE_ROUTES = ['/', '/a/[pane]', '/settings', '/settings/connection'];
 	const wide = $derived(WIDE_ROUTES.includes(page.route.id ?? ''));
+
+	/**
+	 * Catch the install offer as early as app code runs, on every route.
+	 *
+	 * At the top of the script rather than in `onMount`: `beforeinstallprompt`
+	 * fires once per page load and can arrive while the tree is still
+	 * hydrating. The layout never unmounts, so there is no teardown to run.
+	 */
+	if (browser) installCapture.listen(window);
 
 	/**
 	 * A phone brought back to the app is the moment a new build is most

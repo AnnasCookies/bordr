@@ -1,6 +1,7 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
 	import { installOffer, isIOS, type InstallOffer } from '$lib/install';
+	import { installCapture } from '$lib/install-event.svelte';
 
 	/**
 	 * An offer to install bordr, for the browser copy.
@@ -14,17 +15,15 @@
 	 * at a moment of its choosing. Safari fires nothing and has no API at all,
 	 * so the iOS half can only say where Add to Home Screen lives.
 	 *
+	 * The event is caught by the root layout, not here: it fires once per page
+	 * load, often before this page exists — see `install-event.svelte.ts`.
+	 *
 	 * Dismissal is kept out of `prefs`: it is a fact about this browser, not a
 	 * preference, and it has no business in the settings page or in an export.
 	 */
 	const DISMISSED_KEY = 'bordr-install-dismissed';
 
-	interface InstallEvent extends Event {
-		prompt(): Promise<void>;
-		userChoice: Promise<{ outcome: 'accepted' | 'dismissed' }>;
-	}
-
-	let held = $state<InstallEvent | null>(null);
+	const held = $derived(installCapture.held);
 	let standalone = $state(true);
 	let ios = $state(false);
 	let dismissedAt = $state(0);
@@ -33,7 +32,7 @@
 
 	const offer = $derived<InstallOffer>(
 		installOffer({
-			standalone,
+			standalone: standalone || installCapture.installed,
 			hasPrompt: held !== null,
 			ios,
 			dismissedAt,
@@ -57,23 +56,6 @@
 		} catch {
 			// A private window with storage blocked simply gets the offer.
 		}
-
-		const capture = (event: Event) => {
-			// Without this Chromium shows its own mini-infobar, and the event is
-			// spent — bordr could never raise the dialog from its own button.
-			event.preventDefault();
-			held = event as InstallEvent;
-		};
-		const installedNow = () => {
-			held = null;
-			standalone = true;
-		};
-		addEventListener('beforeinstallprompt', capture);
-		addEventListener('appinstalled', installedNow);
-		return () => {
-			removeEventListener('beforeinstallprompt', capture);
-			removeEventListener('appinstalled', installedNow);
-		};
 	});
 
 	function remember() {
@@ -95,10 +77,13 @@
 			const { outcome } = await event.userChoice;
 			// Spent either way: the event cannot be used twice. A refusal is a
 			// dismissal — asking again on the next page load would be nagging.
-			held = null;
+			installCapture.spend();
 			if (outcome === 'dismissed') remember();
-		} catch {
-			held = null;
+		} catch (err) {
+			// A prompt that throws has been used or revoked by the browser, so it
+			// cannot be offered again; say why in the console rather than nowhere.
+			console.warn('bordr: the install prompt could not be shown', err);
+			installCapture.spend();
 		}
 		busy = false;
 	}
