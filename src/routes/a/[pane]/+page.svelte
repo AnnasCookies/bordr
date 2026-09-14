@@ -71,6 +71,7 @@
 	import { screen as layout, watchWide } from '$lib/wide.svelte';
 	import { afterClose } from '$lib/after-close';
 	import { echoesAnswer, holdsAnswer } from './answer-echo';
+	import { glideInterrupted } from './glide-interrupt';
 	import { keepPending, onScreen, say, type PendingSend } from '$lib/pending-sends';
 	import { queueVerdict } from '$lib/queue';
 	import { parseModelLine } from '$lib/model-line';
@@ -1259,6 +1260,12 @@
 		const top = height() - fromBottom;
 		if (host) host.scrollTop = top;
 		else window.scrollTo(0, top);
+		// The auto-load observer calls this too, and on a short transcript it
+		// fires with the reader at the end. A load that added nothing visible
+		// makes the write above a no-op, so no scroll event follows to undo the
+		// `false` set on the way in: the Latest button would sit over the end
+		// and new turns would stop being followed.
+		if (nearBottom()) following = true;
 		loadingEarlier = false;
 	}
 
@@ -1416,8 +1423,21 @@
 		 * pushing the end away and the glide would never arrive.
 		 */
 		let rescues = 3;
+		/** Where this glide last left the scroller, read back after writing. */
+		let written: number | null = null;
 		programmatic = true;
 		const step = (now: number) => {
+			// The reader takes over by touching or by scrolling back up, and a
+			// page that has gone must not scroll whatever replaced it. Checked
+			// before anything is written, every frame, rescues included: a
+			// growing transcript used to restart a glide the reader was fighting.
+			if (glideInterrupted({ live, touching, top: scrollTop(), written })) {
+				gliding = 0;
+				glideActive = false;
+				programmatic = false;
+				if (live) following = nearBottom();
+				return;
+			}
 			const moved = target();
 			if (rescues > 0 && Math.abs(moved - aim) > Math.abs(aim - origin) * 0.25 + 200) {
 				rescues -= 1;
@@ -1431,6 +1451,9 @@
 			const at = glidePosition(origin, to, elapsed, duration);
 			if (host) host.scrollTop = at;
 			else window.scrollTo(0, at);
+			// Read back rather than kept as `at`: the browser rounds and clamps
+			// what it is given, and the difference must not look like the reader.
+			written = scrollTop();
 			if (elapsed < duration) {
 				gliding = requestAnimationFrame(step);
 				return;
@@ -1555,6 +1578,9 @@
 			// Before anything else: a frame already requested cannot be
 			// cancelled from here, but it can be made harmless.
 			live = false;
+			// The glide is a frame loop of its own. Cancelled here; its step
+			// checks `live` as well, for a frame already handed to the browser.
+			cancelAnimationFrame(gliding);
 			store.stop();
 			refreshGate.cancel();
 			clearTimeout(poll);
