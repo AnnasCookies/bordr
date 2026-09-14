@@ -122,6 +122,46 @@ describe('piAdapter.parse', () => {
 		});
 	});
 
+	it('keeps native Pi edit changes when the result has no diff details', () => {
+		const jsonl = [
+			JSON.stringify({
+				type: 'message',
+				message: {
+					role: 'assistant',
+					content: [
+						{
+							type: 'toolCall',
+							id: 'edit-native',
+							name: 'edit',
+							arguments: {
+								path: '/repo/example.ts',
+								edits: [
+									{ oldText: 'const one = 1;', newText: 'const one = 2;' },
+									{ oldText: 'const two = 2;', newText: 'const two = 3;' }
+								]
+							}
+						}
+					]
+				}
+			}),
+			JSON.stringify({
+				type: 'message',
+				message: {
+					role: 'toolResult',
+					toolCallId: 'edit-native',
+					content: [{ type: 'text', text: 'Successfully replaced 2 blocks.' }]
+				}
+			})
+		].join('\n');
+		expect(piAdapter.parse(jsonl)[0].blocks?.[0]).toMatchObject({
+			kind: 'tool',
+			diffs: [
+				{ file: '/repo/example.ts', before: 'const one = 1;', after: 'const one = 2;' },
+				{ file: '/repo/example.ts', before: 'const two = 2;', after: 'const two = 3;' }
+			]
+		});
+	});
+
 	it('uses OMP diff lines instead of duplicating whole-file snapshots', () => {
 		const oldText = `${Array.from({ length: 500 }, (_, i) => `old ${i}`).join('\n')}\nconst value = 1;`;
 		const newText = oldText.replace('const value = 1;', 'const value = 2;');

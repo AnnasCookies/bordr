@@ -194,6 +194,21 @@ function ompEditDiffs(details: unknown): EditDiff[] {
 	return diff ? [diff] : [];
 }
 
+/** Diffs carried directly in Pi's native edit tool arguments. */
+function piEditDiffs(input: Record<string, unknown> | null): EditDiff[] {
+	if (!input) return [];
+	const file = str(input.path) || str(input.file_path);
+	if (!file) return [];
+	const changes = Array.isArray(input.edits) ? input.edits : [input];
+	return changes.flatMap((change) => {
+		const edit = record(change);
+		if (!edit) return [];
+		const before = str(edit.oldText) || str(edit.old_string);
+		const after = str(edit.newText) || str(edit.new_string);
+		return before || after ? [{ file, before, after }] : [];
+	});
+}
+
 function askedQuestion(input: Record<string, unknown> | null): Message['ask'] | undefined {
 	const questions = input?.questions;
 	if (!Array.isArray(questions) || questions.length === 0) return undefined;
@@ -271,7 +286,13 @@ export const piAdapter: Adapter = {
 				const tool = message.toolCallId ? pending.get(message.toolCallId) : undefined;
 				if (tool?.kind === 'tool') {
 					tool.result = toResult(message, imageBudget);
-					if (tool.name.toLowerCase() === 'edit') tool.diffs = ompEditDiffs(message.details);
+					if (tool.name.toLowerCase() === 'edit') {
+						const diffs = ompEditDiffs(message.details);
+						// OMP puts the canonical focused diff in result details. Native Pi
+						// puts old/new text in the call itself, so an empty result must not
+						// wipe out the diff already extracted from its arguments.
+						if (diffs.length > 0) tool.diffs = diffs;
+					}
 					if (tool.name.toLowerCase() === 'todo') {
 						const todo = todoPlanFromDetails(message.details);
 						if (todo) tool.todo = todo;
@@ -310,7 +331,7 @@ export const piAdapter: Adapter = {
 						summary: piToolSummary(block, input),
 						input,
 						result: null,
-						diffs: []
+						diffs: block.name.toLowerCase() === 'edit' ? piEditDiffs(input) : []
 					};
 					blocks.push(tool);
 					if (block.id) pending.set(block.id, tool);

@@ -50,6 +50,19 @@
 		if (block.kind !== 'tool') return false;
 		return block.input !== null || block.result !== null || block.diffs.length > 0;
 	}
+
+	/** A Read result is file content, not terminal output. */
+	function readLanguage(block: Block): string | null {
+		if (block.kind !== 'tool' || block.name.toLowerCase() !== 'read' || !block.input) return null;
+		const path = [block.input.path, block.input.file_path].find(
+			(value): value is string => typeof value === 'string' && value.length > 0
+		);
+		return path ? langForPath(path) : null;
+	}
+
+	function isRead(block: Block): boolean {
+		return block.kind === 'tool' && block.name.toLowerCase() === 'read';
+	}
 </script>
 
 {#each blocks as block, i (i)}
@@ -104,7 +117,7 @@
 							<!-- Both sides highlighted as the language of the file being
 						     edited, so a diff reads like the editor rather than a
 						     wall of red and green. -->
-							{#each block.diffs as diff (diff.file)}
+							{#each block.diffs as diff, i (`${diff.file}:${i}`)}
 								<div class="diff">
 									{#if block.diffs.length > 1}<p class="diff-file">{diff.file}</p>{/if}
 									{#if diff.before}
@@ -135,7 +148,13 @@
 						{#if block.result}
 							<!-- A result whose only content was an image has no text to show. -->
 							{#if block.result.text}
-								<pre class="pre out" class:bad={block.result.isError}>{block.result.text}</pre>
+								{#if isRead(block) && !block.result.isError}
+									<div class="result-code">
+										<CodeBlock code={block.result.text} lang={readLanguage(block)} {mono} />
+									</div>
+								{:else}
+									<pre class="pre out" class:bad={block.result.isError}>{block.result.text}</pre>
+								{/if}
 							{/if}
 							{#if block.result.truncatedLines > 0}
 								<p class="more">+{block.result.truncatedLines} more lines</p>
@@ -342,12 +361,17 @@
 		-webkit-overflow-scrolling: touch;
 		white-space: pre;
 	}
-	.pre.out {
+	.pre.out,
+	.result-code {
 		opacity: 0.9;
 		/* Bound the row rather than dropping lines: a 40-line result would
 		   otherwise push the next message off the screen entirely. */
 		max-height: 16em;
 		overflow-y: auto;
+	}
+	.result-code {
+		margin-bottom: 0.4em;
+		border-radius: 6px;
 	}
 	.pre.bad {
 		/* Mixed INTO the code surface, not over it: a translucent red on a
