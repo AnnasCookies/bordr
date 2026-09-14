@@ -1,7 +1,6 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
 	import { version } from '$app/environment';
-	import { resolve } from '$app/paths';
 	import SettingsNav from '$lib/components/settings-nav.svelte';
 	import AppHeader from '$lib/components/app-header.svelte';
 	import SessionTree from '$lib/components/session-tree.svelte';
@@ -69,24 +68,16 @@
 
 <div class="flex min-h-dvh flex-col lg:h-dvh lg:min-h-0 lg:overflow-hidden">
 	<!--
-		The same app bar as everywhere else. The back arrow lives in the title
-		row rather than replacing the bar: on a phone this page IS the whole
-		screen and you need the way back to settings, but you also want the menu
-		and the mark that say which app you are in.
+		The same app bar as everywhere else.
 
-		Desktop drops the arrow — the settings nav is beside it with
-		`connection` lit, so an arrow back to a list you can already see is a
-		control that does nothing.
+		This page drew its OWN back arrow in the title row, from before the bar
+		had one. Now the bar does, and the two sat side by side pointing at
+		different places — the agents list and Settings — with the one that
+		looks like the back button being the wrong one. One arrow, aimed here at
+		the page this sits under.
 	-->
 	{#snippet title()}
-		<span class="flex min-w-0 items-center gap-1">
-			<a
-				href={resolve('/settings')}
-				class="-ml-1 flex h-8 w-7 shrink-0 items-center justify-center font-mono text-base text-working lg:hidden"
-				aria-label="Back to settings">←</a
-			>
-			<h1 class="truncate text-[17px] font-semibold">Connection</h1>
-		</span>
+		<h1 class="truncate text-[17px] font-semibold">Connection</h1>
 	{/snippet}
 
 	<header class="shrink-0 border-b border-hairline">
@@ -95,10 +86,12 @@
 			menuLabel="Workspaces"
 			menuExpanded={treeOpen}
 			middle={title}
+			backTo="/settings"
+			backLabel="Back to settings"
 		/>
 	</header>
 
-	<div class="lg:flex lg:min-h-0 lg:w-full lg:min-w-0 lg:flex-1">
+	<div class="flex w-full min-w-0 flex-1 lg:min-h-0">
 		{#if screen.wide}
 			<SettingsNav active="connection" />
 		{/if}

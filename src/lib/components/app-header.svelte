@@ -20,11 +20,21 @@
 		menuExpanded = false,
 		middle,
 		actions,
-		below
+		below,
+		backTo,
+		backLabel
 	}: {
 		onmenu: () => void;
 		menuLabel?: string;
 		menuExpanded?: boolean;
+		/**
+		 * Where the back arrow goes, for a page that is not one step from the
+		 * agents list. Connection sits under Settings, and drew its own second
+		 * arrow to say so — two arrows side by side, to two different places,
+		 * and the one that looked like the back button was the wrong one.
+		 */
+		backTo?: '/settings';
+		backLabel?: string;
 		middle?: Snippet;
 		actions?: Snippet;
 		/**
@@ -79,9 +89,9 @@
 				the actions have taken theirs, and the title needs what is left.
 			-->
 			<a
-				href={resolve('/')}
+				href={backTo ? resolve(backTo) : resolve('/')}
 				class="flex w-8 shrink-0 grow-0 items-center justify-center self-stretch rounded-lg text-[20px] leading-none text-muted"
-				aria-label="Back to agents">&#x2190;</a
+				aria-label={backLabel ?? 'Back to agents'}>&#x2190;</a
 			>
 		{/if}
 		{#if showMenu}

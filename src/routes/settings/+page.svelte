@@ -1086,7 +1086,17 @@
 		/>
 	</header>
 
-	<div class="lg:flex lg:min-h-0 lg:w-full lg:min-w-0 lg:flex-1">
+	<!--
+		Grows at every width, not only at `lg`.
+
+		Every class on this was `lg:`-prefixed, so below the breakpoint it was a
+		plain block that took only the height of its contents — and the tab bar
+		after it sits where the content stops rather than at the bottom of the
+		screen. It never showed while Settings was one long scroll; collapsing
+		the groups made the page shorter than the phone, and left the bar
+		floating 226px up a 844px screen.
+	-->
+	<div class="flex w-full min-w-0 flex-1 lg:min-h-0">
 		<!--
 			Mounted only at desktop widths, not merely hidden: below `lg` every
 			section is on the page already, so a nav there would be a list of

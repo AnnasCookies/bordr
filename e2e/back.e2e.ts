@@ -147,3 +147,39 @@ test('back returns to the agents list however much you moved around', async ({ p
 	await page.goBack();
 	await expect(page).toHaveURL(/\/$|\/\?/);
 });
+
+/**
+ * The tab bar is `sticky bottom-0`, which only holds it down while there is
+ * something to scroll. Every class on the row above it was `lg:`-prefixed, so
+ * below the breakpoint that row took only the height of its contents and the
+ * bar sat wherever the content stopped — 226px up an 844px screen on Settings
+ * once its groups collapsed and the page got shorter than the phone.
+ */
+for (const path of ['/', '/settings', '/settings/connection', '/search']) {
+	test(`the tab bar sits on the bottom of the screen on ${path}`, async ({ page }) => {
+		await page.goto(path);
+		const bar = page.getByRole('navigation').filter({ hasText: 'Settings' }).first();
+		await expect(bar).toBeVisible();
+		const gap = await bar.evaluate(
+			(el) => window.innerHeight - Math.round(el.getBoundingClientRect().bottom)
+		);
+		expect(gap, `tab bar floats ${gap}px above the bottom on ${path}`).toBeLessThanOrEqual(1);
+	});
+}
+
+/**
+ * Connection drew its own back arrow before the bar had one. Two arrows side
+ * by side, pointing at different places, and the one that looked like the back
+ * button was the wrong one.
+ */
+test('a screen has one back arrow, and it goes one level up', async ({ page }) => {
+	await page.goto('/settings/connection');
+	const backs = page.locator('header a').filter({ hasText: '←' });
+	await expect(backs).toHaveCount(1);
+	await expect(backs.first()).toHaveAttribute('href', '/settings');
+
+	await page.goto('/settings');
+	const fromSettings = page.locator('header a').filter({ hasText: '←' });
+	await expect(fromSettings).toHaveCount(1);
+	await expect(fromSettings.first()).toHaveAttribute('href', '/');
+});
