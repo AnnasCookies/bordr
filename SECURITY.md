@@ -13,8 +13,8 @@ browse and download files under the roots you configure.
 The agents themselves can run arbitrary commands. So:
 
 > **Anyone who can reach bordr's port can run arbitrary code on the host and
-> read files from it, and on every machine you have named in
-> `BORDR_MACHINES`. There is no login.**
+> read files from it, and on every other machine bordr can reach
+> ([Machines](#machines)). There is no login.**
 
 That is not a bug being tracked. It is the design, and everything below follows
 from it.
@@ -70,10 +70,11 @@ every agent on it. A second list there is bookkeeping that duplicates the first,
 and the usual result of asking for it is a sidebar that silently stops listing
 the machines you use daily.
 
-**With that flag set, it does not.** The flag means bordr was deliberately bound
-somewhere else, so "everyone who can reach this port" is a wider set than
-"whoever is sitting at this terminal", and the list has to be a decision
-someone made here.
+**With that flag set, or with `BORDR_ALLOWED_HOSTS` set, it does not.** The flag
+means bordr was deliberately bound somewhere else; an allowed hostname means
+something such as a proxy on a name of your own sits in front of it. Either way
+"everyone who can reach this port" is a wider set than "whoever is sitting at
+this terminal", and the list has to be a decision someone made here.
 
 Either way, naming machines narrows it to exactly those:
 

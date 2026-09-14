@@ -54,7 +54,7 @@ All you need is Tailscale, Herdr and a PC to run it on.
 **Your whole estate**
 
 - Machines, workspaces, tabs and panes, in herdr's own shape.
-- Other machines over SSH — only the ones `BORDR_MACHINES` names, none by default.
+- Other machines over SSH: the ones herdr already knows, or just those `BORDR_MACHINES` names.
 - Browse and preview files: Markdown, images, PDFs, and agent-built HTML, sandboxed.
 
 **Make it yours**
@@ -119,8 +119,9 @@ herdr (named machines) ──ssh -L──┘
 - **Write.** Always through herdr's socket API: `agent.prompt` for text,
   `agent.send_keys` for pickers and the key strip, `pane.send_text` for typing
   in terminal mode.
-- **Reach.** Other machines only when `BORDR_MACHINES` names them, over an SSH
-  forward to that machine's own herdr socket. Empty by default.
+- **Reach.** Other machines over an SSH forward to each one's own herdr socket:
+  the ones herdr lists, or only those `BORDR_MACHINES` names.
+  [SECURITY.md](SECURITY.md#machines) says when bordr refuses herdr's list.
 - **Live.** One herdr event stream, fanned out to phones over SSE.
 - **Push.** A boot-time watcher fires a Web Push the moment any agent turns
   `blocked`.
@@ -128,7 +129,7 @@ herdr (named machines) ──ssh -L──┘
 ## Before you start
 
 **bordr has no login.** Anyone who can reach its port can run any command on
-this machine, and on every machine you name in `BORDR_MACHINES`, and can read
+this machine, and on every other machine bordr reaches, and can read
 the files you point it at. That is deliberate: the tailnet is the boundary.
 
 Three things follow.
@@ -257,6 +258,7 @@ reads `.env` when you run the build by hand, and the unit below sets the same.
 mkdir -p ~/.config/systemd/user
 cp deploy/herdr-session.service deploy/bordr.service ~/.config/systemd/user/
 # edit WorkingDirectory, EnvironmentFile and ExecStart (`which bun`, `which herdr`)
+bun run build && bun scripts/publish-build.ts   # the copy the unit runs
 systemctl --user daemon-reload
 systemctl --user enable --now herdr-session bordr
 loginctl enable-linger "$USER"   # so it survives logout and starts at boot
@@ -271,8 +273,11 @@ opens the terminal, and bordr comes up pointing at nothing.
 On macOS there is no systemd; a `launchd` agent or a herdr pane that runs
 `bun ./build/index.js` does the same job.
 
-To deploy a change, `bun run deploy` builds, restarts the service and smoke
-tests it. A phone that has the app open keeps running the old code until it
+To deploy a change, `bun run deploy` builds, copies the result to
+`~/.local/lib/bordr` (`BORDR_LIVE_DIR` moves it) with its own production
+dependencies, restarts the service and smoke tests it. The unit runs that copy
+rather than `build/`, so a build for a check never swaps files under the running
+app. A phone that has the app open keeps running the old code until it
 reloads, so the app checks for a new build every 30 seconds (and whenever it
 comes back to the foreground) and offers a "tap to reload" pill.
 
@@ -311,8 +316,9 @@ Mostly it is what it looks like. The parts that are not:
 
 The tailnet is the entire boundary, treat bordr like an open terminal on
 every machine that can reach it, and on every machine it can reach. Other
-machines are opt-in: bordr drives only the ones `BORDR_MACHINES` names, and
-none by default. There is no login. Served artifacts render in
+machines come from herdr's own list, narrowed by `BORDR_MACHINES`;
+[SECURITY.md](SECURITY.md#machines) covers when bordr will not inherit it.
+There is no login. Served artifacts render in
 a sandboxed opaque origin and cannot call bordr's APIs; the file browser is
 traversal- and symlink-proofed to its configured roots and refuses dotfiles at
 the resolver, so `.env` cannot be listed or fetched; the keypad endpoint
