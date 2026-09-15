@@ -31,6 +31,11 @@ vi.mock('node:child_process', async (importOriginal) => {
 	};
 });
 
+const policy = vi.hoisted(() => ({
+	machines: [{ id: 'a', label: 'tm-dev', target: 'tm-dev', session: 'default', enabled: true }]
+}));
+vi.mock('./machines', () => ({ listMachines: () => policy.machines }));
+
 vi.mock('$env/dynamic/private', () => ({ env: {} }));
 
 const saved = {
@@ -203,5 +208,22 @@ describe('cancelForward', () => {
 		const { cancelForward } = await import('./connections');
 		await cancelForward(join(base, 'missing.ctl'), '/run/a.sock', '/r.sock', 'tm-dev');
 		expect(ssh.spawned).toHaveLength(0);
+	});
+});
+
+describe('cached permission identity (pre-existing defect)', () => {
+	it('separates target and session and rejects removed machines without SSH', async () => {
+		const { connectionKey, ensureConnection, runOn } = await import('./connections');
+		expect(connectionKey(MACHINE)).not.toBe(connectionKey({ ...MACHINE, target: 'other' }));
+		expect(connectionKey(MACHINE)).not.toBe(connectionKey({ ...MACHINE, session: 'other' }));
+		const saved = policy.machines;
+		try {
+			policy.machines = [];
+			expect(await ensureConnection('a')).toBeNull();
+			expect(await runOn(MACHINE, 'true')).toBeNull();
+			expect(ssh.spawned).toHaveLength(0);
+		} finally {
+			policy.machines = saved;
+		}
 	});
 });

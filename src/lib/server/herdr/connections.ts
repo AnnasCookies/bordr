@@ -111,6 +111,20 @@ function killOnTimeout(
 	return () => clearTimeout(timer);
 }
 
+/** Cache and SSH paths belong to a target/session, never just an editable id. */
+export function connectionKey(machine: Machine): string {
+	return createHash('sha256')
+		.update(JSON.stringify([machine.id, machine.target, machine.session]))
+		.digest('hex')
+		.slice(0, 24);
+}
+
+function permitted(machine: Machine): boolean {
+	return listMachines().some(
+		(current) => current.enabled && connectionKey(current) === connectionKey(machine)
+	);
+}
+
 const connections = new Map<string, Connection>();
 const starting = new Map<string, Promise<Connection | null>>();
 const lastFailure = new Map<string, number>();
@@ -135,14 +149,14 @@ const PROVEN_MS = 20_000;
 
 async function alive(connection: Connection): Promise<boolean> {
 	if (!existsSync(connection.socketPath)) return false;
-	const last = provenAt.get(connection.machine.id) ?? 0;
+	const last = provenAt.get(connectionKey(connection.machine)) ?? 0;
 	if (Date.now() - last < PROVEN_MS) return true;
 	try {
 		await connection.client.request('ping', {}, 4000);
-		provenAt.set(connection.machine.id, Date.now());
+		provenAt.set(connectionKey(connection.machine), Date.now());
 		return true;
 	} catch {
-		provenAt.delete(connection.machine.id);
+		provenAt.delete(connectionKey(connection.machine));
 		return false;
 	}
 }
@@ -185,16 +199,19 @@ export function cancelForward(
 const CANCEL_TIMEOUT_MS = 4_000;
 
 async function connect(machine: Machine): Promise<Connection | null> {
-	const live = connections.get(machine.id);
-	if (live && !live.error && (await alive(live))) return live;
+	const live = connections.get(connectionKey(machine));
+	if (live && !live.error && (await alive(live))) return permitted(machine) ? live : null;
 
-	const pending = starting.get(machine.id);
-	if (pending) return pending;
+	const pending = starting.get(connectionKey(machine));
+	if (pending) {
+		const result = await pending;
+		return permitted(machine) ? result : null;
+	}
 
 	// A machine that just failed is not retried on the next poll: the connect
 	// itself costs an ssh timeout, which is the whole reason a down machine
 	// made everything slow.
-	const failedAt = lastFailure.get(machine.id) ?? 0;
+	const failedAt = lastFailure.get(connectionKey(machine)) ?? 0;
 	if (Date.now() - failedAt < RETRY_MS) return null;
 
 	const attempt = (async (): Promise<Connection | null> => {
@@ -207,8 +224,8 @@ async function connect(machine: Machine): Promise<Connection | null> {
 			// failed `activeConnections` as "no machines this time".
 			const reason = `bordr's runtime directory is unusable: ${e instanceof Error ? e.message : String(e)}`;
 			console.error(`bordr: machine ${machine.label} — ${reason}`);
-			lastFailure.set(machine.id, Date.now());
-			connections.set(machine.id, {
+			lastFailure.set(connectionKey(machine), Date.now());
+			connections.set(connectionKey(machine), {
 				machine,
 				socketPath: '',
 				client: new HerdrClient(''),
@@ -216,15 +233,15 @@ async function connect(machine: Machine): Promise<Connection | null> {
 			});
 			return null;
 		}
-		const socketPath = join(dir, `${machine.id}.sock`);
-		const controlPath = join(dir, `${machine.id}.ctl`);
+		const socketPath = join(dir, `${connectionKey(machine)}.sock`);
+		const controlPath = join(dir, `${connectionKey(machine)}.ctl`);
 		// A socket left by a dead forward refuses connections forever.
 		rmSync(socketPath, { force: true });
 
 		const home = await remoteHome(machine, controlPath);
 		if (!home) {
-			lastFailure.set(machine.id, Date.now());
-			connections.set(machine.id, {
+			lastFailure.set(connectionKey(machine), Date.now());
+			connections.set(connectionKey(machine), {
 				machine,
 				socketPath,
 				client: new HerdrClient(socketPath),
@@ -284,8 +301,8 @@ async function connect(machine: Machine): Promise<Connection | null> {
 		});
 
 		if (!ready || !existsSync(socketPath)) {
-			lastFailure.set(machine.id, Date.now());
-			connections.set(machine.id, {
+			lastFailure.set(connectionKey(machine), Date.now());
+			connections.set(connectionKey(machine), {
 				machine,
 				socketPath,
 				client: new HerdrClient(socketPath),
@@ -300,18 +317,19 @@ async function connect(machine: Machine): Promise<Connection | null> {
 			client: new HerdrClient(socketPath),
 			error: null
 		};
-		connections.set(machine.id, connection);
-		lastFailure.delete(machine.id);
-		provenAt.set(machine.id, Date.now());
+		connections.set(connectionKey(machine), connection);
+		lastFailure.delete(connectionKey(machine));
+		provenAt.set(connectionKey(machine), Date.now());
 		console.log(`bordr: machine ${machine.label} connected via ${machine.target}`);
 		return connection;
 	})();
 
-	starting.set(machine.id, attempt);
+	starting.set(connectionKey(machine), attempt);
 	try {
-		return await attempt;
+		const result = await attempt;
+		return permitted(machine) ? result : null;
 	} finally {
-		starting.delete(machine.id);
+		starting.delete(connectionKey(machine));
 	}
 }
 
@@ -326,7 +344,7 @@ async function connect(machine: Machine): Promise<Connection | null> {
 const homes = new Map<string, string>();
 
 async function remoteHome(machine: Machine, controlPath: string): Promise<string | null> {
-	const cached = homes.get(machine.id);
+	const cached = homes.get(connectionKey(machine));
 	if (cached) return cached;
 	const home = await new Promise<string | null>((done) => {
 		const child = spawn(
@@ -362,7 +380,7 @@ async function remoteHome(machine: Machine, controlPath: string): Promise<string
 			done(null);
 		});
 	});
-	if (home) homes.set(machine.id, home);
+	if (home) homes.set(connectionKey(machine), home);
 	return home;
 }
 
@@ -387,7 +405,7 @@ export function connectionStates(): Connection[] {
 		.filter((m) => m.enabled)
 		.map(
 			(m) =>
-				connections.get(m.id) ?? {
+				connections.get(connectionKey(m)) ?? {
 					machine: m,
 					socketPath: '',
 					client: new HerdrClient(''),
@@ -410,11 +428,11 @@ export function machineStates(): { machine: Machine; state: MachineState; error:
 	return listMachines()
 		.filter((m) => m.enabled)
 		.map((machine) => {
-			const connection = connections.get(machine.id);
+			const connection = connections.get(connectionKey(machine));
 			if (connection && !connection.error) {
 				return { machine, state: 'connected' as const, error: null };
 			}
-			if (starting.has(machine.id)) {
+			if (starting.has(connectionKey(machine))) {
 				return { machine, state: 'connecting' as const, error: null };
 			}
 			if (connection?.error) {
@@ -426,7 +444,8 @@ export function machineStates(): { machine: Machine; state: MachineState; error:
 }
 
 export function connectionFor(machineId: string): Connection | undefined {
-	return connections.get(machineId);
+	const machine = listMachines().find((m) => m.id === machineId && m.enabled);
+	return machine ? connections.get(connectionKey(machine)) : undefined;
 }
 
 /**
@@ -437,8 +456,6 @@ export function connectionFor(machineId: string): Connection | undefined {
  * beats requiring some other call to have warmed it.
  */
 export async function ensureConnection(machineId: string): Promise<Connection | null> {
-	const live = connections.get(machineId);
-	if (live && !live.error && (await alive(live))) return live;
 	const machine = listMachines().find((m) => m.id === machineId && m.enabled);
 	if (!machine) return null;
 	return connect(machine);
@@ -455,6 +472,7 @@ export function runOn(
 	command: string,
 	limitBytes = 4 * 1024 * 1024
 ): Promise<string | null> {
+	if (!permitted(machine)) return Promise.resolve(null);
 	return new Promise((resolve) => {
 		let dir: string;
 		try {
@@ -479,7 +497,7 @@ export function runOn(
 					'-o',
 					'ControlMaster=auto',
 					'-o',
-					`ControlPath=${join(dir, `${machine.id}.ctl`)}`,
+					`ControlPath=${join(dir, `${connectionKey(machine)}.ctl`)}`,
 					'-o',
 					'ControlPersist=300'
 				],
