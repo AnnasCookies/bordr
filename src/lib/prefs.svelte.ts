@@ -57,20 +57,6 @@ export type DrawerHome = 'mark' | 'icon' | 'off';
 export type ChromeWhen = 'always' | 'mobile' | 'off';
 
 /**
- * How much of a desktop window the conversation is allowed to use.
- *
- * It was capped at 1024px however wide the window was: measured at 1920 the
- * column is 1644px and the transcript took 1024 of it, leaving 620px empty;
- * at 2560 it leaves 1260px.
- *
- * A cap is not wrong — prose past about 90 characters a line is harder to
- * read, and that is why one was there — but which side of that trade you want
- * depends on what you are reading. Diffs and terminal output want the room;
- * long prose does not.
- */
-export type ConversationWidth = 'comfortable' | 'wide' | 'full';
-
-/**
  * Whether the Latest button rides down to the bottom or simply arrives.
  *
  * 'auto' asks the browser, which is the right default — someone who has
@@ -80,6 +66,8 @@ export type ConversationWidth = 'comfortable' | 'wide' | 'full';
  * that happens there is nothing on the page to argue with, so the glide looks
  * broken rather than switched off.
  */
+export type ConversationWidth = 'comfortable' | 'wide' | 'full';
+
 export type Motion = 'auto' | 'full' | 'none';
 
 /**
@@ -142,12 +130,13 @@ export type GradientEnd = 'auto' | 'harness' | 'custom';
  * both gives a filled bubble with a rule, and neither leaves the text bare
  * on the page. Each has its own colour per side.
  */
-export type ToolDetail = 'formatted' | 'json';
+export type ToolDetail = 'formatted' | 'tree' | 'json';
 export type PaneView = 'auto' | 'conversation' | 'terminal';
 export type TerminalFit = 'fit' | 'wrap' | 'native';
 export type TerminalDensity = 'compact' | 'comfortable';
 
-export type AgentOrder = 'priority' | 'workspace';
+/** Herdr's Agents-panel modes: an attention queue, or stable Space groups. */
+export type AgentOrder = 'priority' | 'grouped';
 export type StatusPosition = 'header' | 'bottom';
 export type WorkControl = 'inline' | 'header';
 
@@ -191,8 +180,10 @@ export interface Prefs {
 	theme: Theme;
 	monoSize: number;
 	keyStrip: KeyStripMode;
-	/** Show tool calls, results and thinking in a conversation by default. */
+	/** Show tool calls and their results in a conversation by default. */
 	showWork: boolean;
+	/** Show the agent's thinking as separate, quiet transcript rows. */
+	showThinking: boolean;
 	/**
 	 * How the harness's accent reaches a bubble. 'edge' is a stripe down the
 	 * side; 'tint' blends it into the background, which muddies every theme
@@ -215,9 +206,9 @@ export interface Prefs {
 	bubbleBorderWidth: number;
 	userBorder: string;
 	agentBorder: string;
-	/** Render a tool call the way a terminal shows it, or as raw JSON. */
+	/** Render tool input for reading, as a collapsible tree, or as raw JSON. */
 	toolDetail: ToolDetail;
-	/** How the sidebar's agent section is ordered: by urgency, or by workspace. */
+	/** How the sidebar's Agents panel is ordered, matching Herdr's toggle. */
 	agentOrder: AgentOrder;
 	/**
 	 * How much of the sidebar the workspaces section takes, 0.15 to 0.75.
@@ -259,7 +250,7 @@ export interface Prefs {
 	 */
 	appBadge: boolean;
 	messageTicks: boolean;
-	/** How often a bubble carries the time it was written. */
+	/** How often a message carries the time it was written. */
 	messageTime: MessageTime;
 	/** Which sub-agents appear in the strip above a conversation. */
 	subagentStrip: SubagentStrip;
@@ -281,7 +272,6 @@ export interface Prefs {
 	 * already moves between the same panes.
 	 */
 	tabStrip: ChromeWhen;
-	/** How wide the transcript and composer run on a desktop. */
 	conversationWidth: ConversationWidth;
 	/** Whether "Latest" glides to the bottom or jumps there. */
 	motion: Motion;
@@ -316,7 +306,7 @@ export interface Prefs {
 	 * out of the way of the thing you came to read.
 	 */
 	statusPosition: StatusPosition;
-	/** Where the show-the-work control lives: with the transcript, or in the header. */
+	/** Where the show-tools control lives: with the transcript, or in the header. */
 	workControl: WorkControl;
 	/**
 	 * Which status row to show when the block is collapsed, per harness.
@@ -354,6 +344,7 @@ export const DEFAULTS: Prefs = {
 	monoSize: 11,
 	keyStrip: 'peek',
 	showWork: true,
+	showThinking: true,
 	harnessAccent: 'edge',
 	statusIndicators: 'dot',
 	soundAlerts: 'attention',
@@ -437,8 +428,8 @@ const BACKS: BackTo[] = ['home', 'history'];
 const MESSAGE_TIMES: MessageTime[] = ['off', 'runs', 'all'];
 const SUBAGENT_STRIPS: SubagentStrip[] = ['off', 'running', 'all'];
 const DRAWER_HOMES: DrawerHome[] = ['mark', 'icon', 'off'];
-const CHROME_WHENS: ChromeWhen[] = ['always', 'mobile', 'off'];
 const WIDTHS: ConversationWidth[] = ['comfortable', 'wide', 'full'];
+const CHROME_WHENS: ChromeWhen[] = ['always', 'mobile', 'off'];
 const MOTIONS: Motion[] = ['auto', 'full', 'none'];
 const HEADER_PULLS: HeaderPull[] = ['off', 'number', 'checks'];
 const HEADER_MODELS: HeaderModel[] = ['off', 'model', 'model-effort'];
@@ -448,8 +439,8 @@ const INDICATORS: StatusIndicators[] = ['dot', 'symbol', 'text'];
 const SOUNDS: SoundAlerts[] = ['off', 'attention', 'all'];
 const FILL_STYLES: FillStyle[] = ['solid', 'gradient'];
 const GRADIENT_ENDS: GradientEnd[] = ['auto', 'harness', 'custom'];
-const TOOL_DETAILS: ToolDetail[] = ['formatted', 'json'];
-const AGENT_ORDERS: AgentOrder[] = ['priority', 'workspace'];
+const TOOL_DETAILS: ToolDetail[] = ['formatted', 'tree', 'json'];
+const AGENT_ORDERS: AgentOrder[] = ['priority', 'grouped'];
 const STATUS_POSITIONS: StatusPosition[] = ['header', 'bottom'];
 const WORK_CONTROLS: WorkControl[] = ['inline', 'header'];
 const PANE_VIEWS: PaneView[] = ['auto', 'conversation', 'terminal'];
@@ -509,6 +500,10 @@ export function normalisePrefs(raw: unknown): Prefs {
 		keyStrip:
 			stored.v === VERSION ? pick(stored.keyStrip, STRIPS, DEFAULTS.keyStrip) : DEFAULTS.keyStrip,
 		showWork: bool(stored.showWork, DEFAULTS.showWork),
+		// Before this setting existed, showWork controlled both tools and thinking.
+		// Preserve that old choice on upgrade instead of making hidden thinking
+		// suddenly appear; once saved, the two switches are independent.
+		showThinking: bool(stored.showThinking, bool(stored.showWork, DEFAULTS.showThinking)),
 		harnessAccent: pick(stored.harnessAccent, ACCENTS, DEFAULTS.harnessAccent),
 		statusIndicators: pick(stored.statusIndicators, INDICATORS, DEFAULTS.statusIndicators),
 		soundAlerts: pick(stored.soundAlerts, SOUNDS, DEFAULTS.soundAlerts),
@@ -528,9 +523,13 @@ export function normalisePrefs(raw: unknown): Prefs {
 		userBorder: colour(stored.userBorder, DEFAULTS.userBorder),
 		agentBorder: colour(stored.agentBorder, DEFAULTS.agentBorder),
 		toolDetail: pick(stored.toolDetail, TOOL_DETAILS, DEFAULTS.toolDetail),
+		// `workspace` was Bordr's old name for Herdr's `grouped`/`spaces` mode.
+		agentOrder:
+			stored.agentOrder === 'workspace'
+				? 'grouped'
+				: pick(stored.agentOrder, AGENT_ORDERS, DEFAULTS.agentOrder),
 		// Clamped on read: it comes from storage a person can hand-edit, and a
 		// value outside this range collapses one section to nothing.
-		agentOrder: pick(stored.agentOrder, AGENT_ORDERS, DEFAULTS.agentOrder),
 		sidebarSplit:
 			typeof stored.sidebarSplit === 'number' && Number.isFinite(stored.sidebarSplit)
 				? Math.min(Math.max(stored.sidebarSplit, 0.15), 0.75)

@@ -4,6 +4,29 @@ import type { GroupBy, SortBy } from '$lib/prefs.svelte';
 /** Order statuses appear in the rollup and in status grouping. */
 export const STATUS_ORDER: AgentStatus[] = ['blocked', 'working', 'done', 'idle', 'unknown'];
 
+/** Herdr's priority-mode attention queue, highest first. */
+const ATTENTION_PRIORITY: Record<string, number> = {
+	blocked: 4,
+	done: 3,
+	working: 2,
+	idle: 1,
+	unknown: 0
+};
+
+/**
+ * Compare two agents exactly as Herdr's priority mode does.
+ *
+ * A newer state change wins within one status. Returning zero after that is
+ * deliberate: modern JS sorting is stable, so a complete tie keeps Herdr's
+ * workspace, tab and pane order instead of inventing an alphabetical one.
+ */
+export function compareAgentPriority(
+	a: { status: string; seq: number },
+	b: { status: string; seq: number }
+): number {
+	return (ATTENTION_PRIORITY[b.status] ?? 0) - (ATTENTION_PRIORITY[a.status] ?? 0) || b.seq - a.seq;
+}
+
 /** Grouping order excludes blocked — those are pinned above every group. */
 const GROUPED_STATUSES = STATUS_ORDER.filter((s) => s !== 'blocked');
 

@@ -93,7 +93,11 @@
 			diffs: []
 		}
 	];
-	const sampleWork: Block[] = [{ kind: 'text', text: 'All 322 passed.' }, ...sampleTool];
+	const sampleWork: Block[] = [
+		{ kind: 'thinking', text: 'Checking the result before replying.' },
+		{ kind: 'text', text: 'All 322 passed.' },
+		...sampleTool
+	];
 
 	/**
 	 * The swatch is the REAL bubble component, not a copy of it. The copy was
@@ -461,10 +465,13 @@
 		<MessageBlocks
 			blocks={sampleWork}
 			mono={prefs.value.monoSize}
-			showWork={prefs.value.showWork}
+			showTools={prefs.value.showWork}
+			showThinking={prefs.value.showThinking}
 		/>
-		{#if !prefs.value.showWork}
-			<p class="text-[12px] text-muted">Tool calls hidden; the agent's prose still shows.</p>
+		{#if !prefs.value.showWork && !prefs.value.showThinking}
+			<p class="text-[12px] text-muted">
+				Tools and thinking hidden; the agent's reply still shows.
+			</p>
 		{/if}
 	</div>
 {/snippet}
@@ -537,10 +544,10 @@
 {#snippet workControlPreview()}
 	<div class="rounded-lg bg-page p-2">
 		{#if prefs.value.workControl === 'header'}
-			<span class="rounded-full bg-working-bg px-2.5 py-1 text-[12px] text-working">work 27</span>
+			<span class="rounded-full bg-working-bg px-2.5 py-1 text-[12px] text-working">tools 27</span>
 			<span class="ml-1 text-[11px] text-muted">in the header, always reachable</span>
 		{:else}
-			<span class="text-[11.5px] text-working">Hide the work (27)</span>
+			<span class="text-[11.5px] text-working">Hide tools (27)</span>
 			<span class="ml-1 text-[11px] text-muted">at the end of the transcript</span>
 		{/if}
 	</div>
@@ -1712,8 +1719,8 @@
 								{#snippet preview()}{@render messageTimePreview()}{/snippet}
 							</SettingRow>
 							<p class="px-3.5 pb-2 text-[12px] text-muted">
-								Per run stamps only the last bubble of a run from the same speaker: five replies
-								inside the same minute get one time, not five.
+								Per run stamps only the last message in a run from the same speaker: five replies
+								inside the same minute get one time, not five. This works with bubbles on or off.
 							</p>
 							<SettingRow
 								label="Clock"
@@ -1769,10 +1776,18 @@
 								onchange={(v) => prefs.set('groupTools', v)}
 							/>
 							<ToggleRow
-								label="Show the work"
-								hint="Tool calls, their results and the agent's thinking, as expandable rows. Each conversation's own toggle overrides this and is remembered."
+								label="Show tools"
+								hint="Tool calls and their results, as expandable rows. The conversation's own tools control updates this setting."
 								checked={prefs.value.showWork}
 								onchange={(v) => prefs.set('showWork', v)}
+							>
+								{#snippet preview()}{@render workPreview()}{/snippet}
+							</ToggleRow>
+							<ToggleRow
+								label="Show thinking"
+								hint="The agent's thinking as separate, quiet italic rows. This does not follow the tools control."
+								checked={prefs.value.showThinking}
+								onchange={(v) => prefs.set('showThinking', v)}
 							>
 								{#snippet preview()}{@render workPreview()}{/snippet}
 							</ToggleRow>
@@ -1788,7 +1803,7 @@
 								{#snippet preview()}{@render statusPositionPreview()}{/snippet}
 							</SettingRow>
 							<SettingRow
-								label="Show the work control"
+								label="Show tools control"
 								value={prefs.value.workControl}
 								options={[
 									{ v: 'inline' as WorkControl, l: 'In transcript' },
@@ -1835,12 +1850,17 @@
 								value={prefs.value.toolDetail}
 								options={[
 									{ v: 'formatted' as ToolDetail, l: 'Readable' },
+									{ v: 'tree' as ToolDetail, l: 'JSON tree' },
 									{ v: 'json' as ToolDetail, l: 'Raw JSON' }
 								]}
 								onchange={(v) => prefs.set('toolDetail', v)}
 							>
 								{#snippet preview()}{@render toolPreview()}{/snippet}
 							</SettingRow>
+							<p class="px-3.5 pb-2 text-[12px] text-muted">
+								JSON tree folds nested objects and arrays. Raw JSON follows the syntax highlighting
+								switch above.
+							</p>
 						</div>
 					</SettingsSection>
 				{/if}

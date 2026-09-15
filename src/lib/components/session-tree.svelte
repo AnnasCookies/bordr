@@ -4,7 +4,7 @@
 	import { showBackArrow, touchPoints } from '$lib/header-chrome';
 	import Icon from './icon.svelte';
 	import { SvelteSet } from 'svelte/reactivity';
-	import { agentTitle } from '$lib/grouping';
+	import { agentTitle, compareAgentPriority } from '$lib/grouping';
 	import { agentStore } from '$lib/agents.svelte';
 	import { prefs, type AgentOrder } from '$lib/prefs.svelte';
 	import { followPointer } from '$lib/pointer-drag';
@@ -128,27 +128,28 @@
 	/** The workspace the open pane belongs to, so the list can mark it. */
 	const currentWorkspace = $derived(allPanes.find((p) => p.paneId === current)?.workspaceId ?? '');
 
-	const RANK: Record<string, number> = { blocked: 0, working: 1, done: 2, idle: 3, unknown: 4 };
-
 	/**
-	 * The agent section: agents, ordered by whichever rule is chosen.
+	 * Herdr's two Agents-panel orders.
 	 *
-	 * Panes with no agent are left out. A section called "agents" is a list of
-	 * things that might need you, and a shell never does — it sat there
-	 * outnumbering them, one row per terminal, pushing the ones that do off
-	 * the screen. Shells are reached where they live: the machines section
-	 * above, and the pane strip inside their own tab.
+	 * Grouped leaves the tree alone: workspace, then tab, then pane layout.
+	 * Priority is Herdr's attention queue, using the live SSE state so a blocked
+	 * or finished agent moves at once rather than on the five-second tree poll.
 	 */
 	const agentRows = $derived.by(() => {
-		return allPanes
-			.filter((p) => p.hasAgent)
-			.sort((a, b) => {
-				if (prefs.value.agentOrder === 'workspace') {
-					return a.workspaceLabel.localeCompare(b.workspaceLabel) || a.title.localeCompare(b.title);
-				}
-				return (RANK[a.status] ?? 9) - (RANK[b.status] ?? 9) || a.title.localeCompare(b.title);
-			});
+		const rows = allPanes.filter((pane) => pane.hasAgent);
+		if (prefs.value.agentOrder === 'grouped') return rows;
+		return [...rows].sort((a, b) =>
+			compareAgentPriority(
+				live.get(a.paneId) ?? { status: a.status, seq: 0 },
+				live.get(b.paneId) ?? { status: b.status, seq: 0 }
+			)
+		);
 	});
+
+	function toggleAgentOrder() {
+		const next: AgentOrder = prefs.value.agentOrder === 'priority' ? 'grouped' : 'priority';
+		prefs.set('agentOrder', next);
+	}
 
 	/**
 	 * The machines section: one collapsible group per machine, this host first.
@@ -483,29 +484,23 @@
 		></span>
 	</button>
 
-	<div class="min-h-0 flex-1 overflow-y-auto overscroll-contain py-1">
+	<div data-agent-list class="min-h-0 flex-1 overflow-y-auto overscroll-contain py-1">
 		<div class="flex items-center gap-1 px-2 py-0.5">
 			<span class="flex-1 font-mono text-[10px] tracking-[0.08em] text-faint uppercase">agents</span
 			>
-			<!-- One control with two positions, rather than two chips that happen
-			     to be adjacent — it is a single choice and should look like it. -->
-			<span class="flex gap-px rounded-md bg-chip p-px" role="group" aria-label="Order agents by">
-				{#each [{ v: 'priority', l: 'priority' }, { v: 'workspace', l: 'group' }] as option (option.v)}
-					<!--
-						Equal width, not text width: "priority" is twice the length of
-						"group", so sizing to content made the selected half jump about
-						as you switched. A fixed cell each keeps the control still.
-					-->
-					<button
-						class="w-[52px] rounded-[5px] py-0.5 font-mono text-[10px] transition-colors {prefs
-							.value.agentOrder === option.v
-							? 'bg-card text-ink shadow-sm'
-							: 'text-faint hover:text-muted'}"
-						aria-pressed={prefs.value.agentOrder === option.v}
-						onclick={() => prefs.set('agentOrder', option.v as AgentOrder)}>{option.l}</button
-					>
-				{/each}
-			</span>
+			<!-- Herdr uses the label itself as the toggle: it names the current mode. -->
+			<button
+				type="button"
+				class="rounded-md bg-chip px-2 py-0.5 font-mono text-[10px] text-muted transition-colors hover:bg-edge hover:text-ink"
+				aria-label="Agent order: {prefs.value.agentOrder}. Switch to {prefs.value.agentOrder ===
+				'priority'
+					? 'grouped'
+					: 'priority'}"
+				title={prefs.value.agentOrder === 'priority'
+					? 'Attention queue: blocked, done, working, idle, unknown'
+					: 'Workspace, tab and pane order'}
+				onclick={toggleAgentOrder}>{prefs.value.agentOrder}</button
+			>
 		</div>
 
 		{#if agentRows.length === 0}
@@ -514,6 +509,7 @@
 
 		{#each agentRows as pane (pane.paneId)}
 			{@const info = live.get(pane.paneId)}
+			{@const status = info?.status ?? pane.status}
 			<a
 				href={paneHref(pane.paneId)}
 				class="flex items-start gap-2 border-l-2 py-1 pr-2 pl-1.5 transition-colors hover:bg-chip/60 {pane.paneId ===
@@ -523,7 +519,7 @@
 				aria-current={pane.paneId === current ? 'page' : undefined}
 			>
 				<span class="mt-[6px] flex shrink-0 items-center"
-					>{@render indicator(pane.status, pane.hasAgent)}</span
+					>{@render indicator(status, pane.hasAgent)}</span
 				>
 				<span class="min-w-0 flex-1">
 					<span class="block truncate text-[12.5px]"

@@ -28,6 +28,20 @@
 	);
 
 	let strip = $state<HTMLDivElement | undefined>();
+	let wheelReady = true;
+
+	/** One desktop wheel gesture moves exactly one status row. */
+	function onWheel(event: WheelEvent) {
+		if (!strip || rows.length < 2 || event.deltaY === 0) return;
+		event.preventDefault();
+		if (!wheelReady) return;
+		wheelReady = false;
+		const height = strip.clientHeight || 1;
+		const current = Math.round(strip.scrollTop / height);
+		const target = Math.min(rows.length - 1, Math.max(0, current + Math.sign(event.deltaY)));
+		strip.scrollTo({ top: target * height, behavior: 'smooth' });
+		window.setTimeout(() => (wheelReady = true), 220);
+	}
 
 	/** Whichever row the strip has settled on becomes the chosen one. */
 	function onScroll() {
@@ -65,6 +79,7 @@
 		<div
 			bind:this={strip}
 			onscroll={onScroll}
+			onwheel={onWheel}
 			class="strip min-w-0 flex-1"
 			role="group"
 			aria-label="Status lines"
@@ -103,5 +118,8 @@
 		height: 1.9em;
 		line-height: 1.9em;
 		scroll-snap-align: start;
+		/* A desktop wheel can carry several rows in one event. Stop at the next
+		   snap point instead of skipping from the first status line to the last. */
+		scroll-snap-stop: always;
 	}
 </style>

@@ -46,12 +46,19 @@
 		const left = sidebar.getBoundingClientRect().left;
 		document.body.style.userSelect = 'none';
 
+		let frame = 0;
+		const paint = () => {
+			frame = 0;
+			sidebar.style.width = `${dragWidth}px`;
+		};
 		followPointer(handle, event.pointerId, {
 			move: (at) => {
 				dragWidth = clampSidebar(at.clientX - left);
-				sidebar.style.width = `${dragWidth}px`;
+				if (!frame) frame = requestAnimationFrame(paint);
 			},
 			end: () => {
+				if (frame) cancelAnimationFrame(frame);
+				if (dragWidth !== null) paint();
 				document.body.style.userSelect = '';
 				if (dragWidth !== null) prefs.set('sidebarWidth', dragWidth);
 				dragWidth = null;

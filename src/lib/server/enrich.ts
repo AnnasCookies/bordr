@@ -8,6 +8,7 @@ import { parsePane } from './herdr/address';
 import { branchesFor, type BranchInfo } from './herdr/branches';
 import { connectionFor } from './herdr/connections';
 import { extractStatusLines } from './status';
+import { piScreenWorking, piTranscriptSettled, reconcilePiStatus } from './pi-status';
 import type { AgentSummary } from '$lib/types';
 import type { Message } from './transcript/types';
 
@@ -48,6 +49,8 @@ interface ScreenReading {
 	at: number;
 	picker: AgentSummary['picker'];
 	menu: string | null;
+	/** Whether Pi's live turn row is still on screen. */
+	piWorking: boolean;
 	/** The harness's status footer, from the same read. */
 	status: string[];
 }
@@ -80,6 +83,8 @@ interface Cached {
 	seq: number;
 	at: number;
 	preview: string;
+	idlePreview: string;
+	settled: boolean;
 	/** A tool-asked question still waiting on the person (codex). */
 	ask: AgentSummary['picker'];
 }
@@ -128,6 +133,8 @@ async function previewFor(summary: AgentSummary, sessionId: string | undefined):
 	if (fresh) return hit;
 
 	let preview = '';
+	let idlePreview = '';
+	let settled = false;
 	let ask: AgentSummary['picker'] = null;
 	const adapter = sessionId ? adapterFor(summary.agent) : null;
 	if (adapter && sessionId) {
@@ -138,6 +145,8 @@ async function previewFor(summary: AgentSummary, sessionId: string | undefined):
 				if (summary.agent !== 'omp' || !piSessionEnded(tail)) {
 					const messages = adapter.parse(tail);
 					preview = previewFrom(messages, summary.status);
+					idlePreview = previewFrom(messages, 'idle');
+					settled = piTranscriptSettled(messages);
 					const pending = pendingAsk(messages);
 					if (pending) ask = { question: pending.question, options: pending.options, multi: false };
 				}
@@ -146,7 +155,7 @@ async function previewFor(summary: AgentSummary, sessionId: string | undefined):
 			// No transcript is not an error — the row falls back to the cwd.
 		}
 	}
-	const entry = { seq: summary.seq, at: now, preview, ask };
+	const entry = { seq: summary.seq, at: now, preview, idlePreview, settled, ask };
 	cache.set(summary.paneId, entry);
 	// Bounded by the pane count in practice; trim if panes churn a lot.
 	if (cache.size > 128) cache.delete(cache.keys().next().value as string);
@@ -254,6 +263,7 @@ export async function enrichAgents(agents: AgentSummary[]): Promise<AgentSummary
 					// A menu the person opened is not a blocked agent, so the
 					// status stands; the row just says where to drive it.
 					menu: picker || summary.status === 'working' ? null : menuFooter(visible),
+					piWorking: piScreenWorking(visible),
 					// The footer is already on the screen this read fetched, so
 					// carrying it costs nothing — model, context and spend on the
 					// list without a call per row.
@@ -271,19 +281,25 @@ export async function enrichAgents(agents: AgentSummary[]): Promise<AgentSummary
 
 	return agents.map((summary, i) => {
 		const reading = screens.get(summary.paneId);
-		const picker = reading?.picker ?? transcripts[i].ask;
+		const transcript = transcripts[i];
+		const picker = reading?.picker ?? transcript.ask;
 		const repo = git.get(`${parsePane(summary.paneId).machineId ?? ''}\0${summary.cwd}`);
+		const reported = picker && summary.status !== 'blocked' ? 'blocked' : summary.status;
+		const status = picker
+			? reported
+			: reconcilePiStatus(summary.agent, reported, reading?.piWorking ?? true, transcript.settled);
 		return {
 			...summary,
 			branch: repo?.branch ?? '',
 			ahead: repo?.ahead ?? 0,
 			behind: repo?.behind ?? 0,
-			preview: transcripts[i].preview,
+			preview:
+				status === 'idle' && transcript.settled ? transcript.idlePreview : transcript.preview,
 			statusRows: reading?.status ?? [],
 			focused: focused.has(summary.paneId),
 			picker,
 			menu: picker ? null : (reading?.menu ?? null),
-			status: picker && summary.status !== 'blocked' ? 'blocked' : summary.status
+			status
 		};
 	});
 }

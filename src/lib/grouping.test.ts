@@ -3,6 +3,7 @@ import {
 	agentTitle,
 	answerSettled,
 	collapseHome,
+	compareAgentPriority,
 	flatOrder,
 	holdsAnswer,
 	isDirty,
@@ -60,6 +61,36 @@ describe('collapseHome', () => {
 	it('leaves a path outside home alone rather than mangling it', () => {
 		expect(collapseHome('/srv/app')).toBe('/srv/app');
 		expect(collapseHome('/home')).toBe('/home');
+	});
+});
+
+describe('compareAgentPriority', () => {
+	it('matches Herdr’s attention queue and breaks status ties by newest change', () => {
+		const rows = [
+			{ id: 'idle', status: 'idle', seq: 100 },
+			{ id: 'working-old', status: 'working', seq: 2 },
+			{ id: 'done', status: 'done', seq: 1 },
+			{ id: 'blocked', status: 'blocked', seq: 0 },
+			{ id: 'unknown', status: 'unknown', seq: 200 },
+			{ id: 'working-new', status: 'working', seq: 9 }
+		];
+
+		expect(rows.sort(compareAgentPriority).map((row) => row.id)).toEqual([
+			'blocked',
+			'done',
+			'working-new',
+			'working-old',
+			'idle',
+			'unknown'
+		]);
+	});
+
+	it('leaves exact ties in their existing grouped order', () => {
+		const rows = [
+			{ id: 'first', status: 'idle', seq: 4 },
+			{ id: 'second', status: 'idle', seq: 4 }
+		];
+		expect(rows.sort(compareAgentPriority).map((row) => row.id)).toEqual(['first', 'second']);
 	});
 });
 

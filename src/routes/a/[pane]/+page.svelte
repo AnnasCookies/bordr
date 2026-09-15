@@ -32,11 +32,12 @@
 	import { termGrid } from '$lib/term-grid';
 	import { throttleTrailing } from '$lib/throttle';
 	import { createSessionDraftStore, type SessionDraftStore } from '$lib/session-draft';
-	import { rankCommands, type SlashCommand } from '$lib/commands';
+	import { rankCommands, slashCommandName, type SlashCommand } from '$lib/commands';
 	import { bubbleInk, DEFAULT_FILL, DEFAULT_USER } from '$lib/bubble-colour';
 	import {
 		messageSegments,
 		hasTodoPlan,
+		onlyThinking,
 		onlyToolWork,
 		proseBlocks,
 		workBlocks,
@@ -62,12 +63,10 @@
 	import WorktreeSheet from '$lib/components/worktree-sheet.svelte';
 	import SubagentSheet from '$lib/components/subagent-sheet.svelte';
 	import Spinner from '$lib/components/spinner.svelte';
-	import Ticks from '$lib/components/ticks.svelte';
 	import BubbleMeta from '$lib/components/bubble-meta.svelte';
 	import { track } from '$lib/pending.svelte';
 	import { nextFollowing } from '$lib/follow';
 	import { swipeSequence } from '$lib/swipe-order';
-	import { widthClasses } from '$lib/conversation-width';
 	import { glideDuration, glidePosition } from '$lib/glide';
 	import { reduceMotion } from '$lib/motion';
 	import { showChrome, touchPoints } from '$lib/header-chrome';
@@ -77,6 +76,8 @@
 	import { glideInterrupted } from './glide-interrupt';
 	import { keepPending, onScreen, say, type PendingSend } from '$lib/pending-sends';
 	import { queueVerdict } from '$lib/queue';
+	import { widthClasses } from '$lib/conversation-width';
+	import { pickerShortcut } from '$lib/picker-shortcut';
 	import { parseModelLine } from '$lib/model-line';
 	import { shortModel } from '$lib/short-model';
 	import type { Block } from '$lib/server/transcript/types';
@@ -87,11 +88,11 @@
 	const TAIL = 80;
 
 	/**
-	 * Tool calls, results and thinking. Starts from the persisted preference
-	 * so the choice survives leaving the conversation — it used to reset to
-	 * hidden on every open, which made the work look like it was not there.
+	 * Tool calls and results. Starts from the persisted preference so the choice
+	 * survives leaving the conversation — it used to reset on every open.
+	 * Thinking has its own setting and does not follow this quick control.
 	 */
-	let showWork = $state(prefs.value.showWork);
+	let showTools = $state(prefs.value.showWork);
 	/** The ＋ in the desktop tree opens the same sheet the agents list uses. */
 	let showNewAgent = $state(false);
 	/** The sub-agent being read, if any. */
@@ -227,6 +228,13 @@
 		return workBlocks(message.blocks);
 	}
 
+	/** Whether an optional non-prose block in this turn will actually draw. */
+	function optionalWorkVisible(message: { blocks?: Block[] }): boolean {
+		return work(message).some((block) =>
+			block.kind === 'thinking' ? prefs.value.showThinking : showTools
+		);
+	}
+
 	/**
 	 * The manual harness controls: the screen peek and the key strip together.
 	 * They belong together — you press a key and watch the screen react — and
@@ -254,11 +262,23 @@
 	let commandList = $state<SlashCommand[] | null>(null);
 	let commandsPane = '';
 	let commandsLoading = false;
+	let commandIndex = $state(0);
+	let previousSlashQuery: string | null = null;
+	let commandBox = $state<HTMLDivElement | undefined>();
 	/** The draft while it is still a single slash-word: the query for the list. */
 	const slashQuery = $derived(/^\/\S*$/.test(draft) ? draft : null);
 	const suggestions = $derived(
 		slashQuery && commandList ? rankCommands(commandList, slashQuery) : []
 	);
+	const selectedCommand = $derived(suggestions[commandIndex] ?? suggestions[0]);
+	$effect(() => {
+		const query = slashQuery;
+		if (query !== previousSlashQuery) {
+			previousSlashQuery = query;
+			commandIndex = 0;
+		}
+		if (suggestions.length > 0 && commandIndex >= suggestions.length) commandIndex = 0;
+	});
 	$effect(() => {
 		if (!slashQuery) return;
 		const pane = detail.paneId;
@@ -283,6 +303,17 @@
 	function pickCommand(command: SlashCommand) {
 		draft = `/${command.name} `;
 		textarea?.focus();
+	}
+
+	/** Move the highlighted slash command and keep it inside the scroll box. */
+	function moveCommand(by: number) {
+		if (suggestions.length === 0) return;
+		commandIndex = (commandIndex + by + suggestions.length) % suggestions.length;
+		requestAnimationFrame(() => {
+			commandBox
+				?.querySelector<HTMLElement>('[aria-selected="true"]')
+				?.scrollIntoView({ block: 'nearest' });
+		});
 	}
 	let busy = $state(false);
 	/**
@@ -722,7 +753,14 @@
 	}
 
 	type Row =
-		| { kind: 'message'; message: (typeof visibleMessages)[number]; key: string; run: RunPos }
+		| {
+				kind: 'message';
+				message: (typeof visibleMessages)[number];
+				key: string;
+				run: RunPos;
+				/** Pull this row towards the thinking-only row directly above it. */
+				thinkingJoin: boolean;
+		  }
 		| { kind: 'pending'; sent: Pending; key: string; run: RunPos }
 		| {
 				kind: 'tools';
@@ -748,6 +786,29 @@
 			row.message.role === 'assistant' &&
 			prose(row.message).length === 0 &&
 			onlyToolWork(row.message.blocks)
+		);
+	}
+
+	/** A row whose only VISIBLE content is thinking.
+	 *
+	 * Pi commonly records one thinking block beside one tool call. When tools
+	 * are hidden that is still a thinking-only row on screen, and it should join
+	 * the next one. A todo remains visible regardless of the tools switch, so it
+	 * must keep the normal gap.
+	 */
+	function thinkingOnly(row: Row): boolean {
+		if (
+			row.kind !== 'message' ||
+			row.message.role !== 'assistant' ||
+			!prefs.value.showThinking ||
+			prose(row.message).length > 0 ||
+			hasTodoPlan(row.message.blocks)
+		) {
+			return false;
+		}
+		const blocks = work(row.message);
+		return (
+			blocks.some((block) => block.kind === 'thinking') && (!showTools || onlyThinking(blocks))
 		);
 	}
 
@@ -810,7 +871,8 @@
 			kind: 'message' as const,
 			message,
 			key: `m${base + i}`,
-			run: 'only' as RunPos
+			run: 'only' as RunPos,
+			thinkingJoin: false
 		}));
 		// Slot each queued prompt where it was actually sent, not at the end.
 		// Appending piled every unclaimed prompt below whatever the agent said
@@ -827,6 +889,25 @@
 			out.splice(i, 0, { kind: 'pending', sent, key: `p${sent.id}`, run: 'only' as RunPos });
 		}
 
+		// Join adjacent VISIBLE thinking-only rows. A hidden tool-only turn is not
+		// a gap on screen and must not break the stack; a visible tool or reply is.
+		let previousThinking = false;
+		for (const row of out) {
+			if (row.kind === 'message' && thinkingOnly(row)) {
+				row.thinkingJoin = previousThinking;
+				previousThinking = true;
+				continue;
+			}
+			const hiddenAssistantWork =
+				row.kind === 'message' &&
+				row.message.role === 'assistant' &&
+				!row.message.text &&
+				prose(row.message).length === 0 &&
+				!hasTodoPlan(row.message.blocks) &&
+				!optionalWorkVisible(row.message);
+			if (!hiddenAssistantWork) previousThinking = false;
+		}
+
 		// Second pass, once the list is whole: a row's place in its run depends
 		// on both neighbours, which the map above cannot see.
 		//
@@ -835,7 +916,9 @@
 		// counting it would put the tail on the wrong message — and it is the
 		// same agent still talking, so it must not break the run either.
 		const drawn = out.filter(
-			(row) => row.kind === 'pending' || (row.kind === 'message' && prose(row.message).length > 0)
+			(row) =>
+				(row.kind === 'pending' && row.sent.state !== 'accepted') ||
+				(row.kind === 'message' && prose(row.message).length > 0)
 		);
 		for (let i = 0; i < drawn.length; i++) {
 			const me = speakerOf(drawn[i]);
@@ -899,8 +982,11 @@
 						(p) => p && typeof p.text === 'string' && now - Number(p.at ?? 0) < PENDING_TTL_MS
 					)
 					// Nothing restored is still in flight — that request died with the
-					// page. Anything stored was accepted, or it would not have persisted.
-					.map((p) => ({ ...p, state: 'queued' as const }));
+					// page. Keep a command receipt distinct; normal prompts are queued.
+					.map((p) => ({
+						...p,
+						state: p.state === 'accepted' ? ('accepted' as const) : ('queued' as const)
+					}));
 			}
 		} catch {
 			// Unreadable storage is not a reason to lose the conversation.
@@ -1340,6 +1426,56 @@
 	 */
 	let live = true;
 
+	/**
+	 * Keep heavyweight route invalidation off the input path while keys are
+	 * arriving. A quiet pause catches up once; focus starts the guard before
+	 * the first character, so a two-second poll cannot land between tap and key.
+	 */
+	const COMPOSER_QUIET_MS = 600;
+	const RESIZE_QUIET_MS = 250;
+	let composerQuietUntil = 0;
+	let composerQuietTimer: ReturnType<typeof setTimeout> | undefined;
+	let resizeQuietUntil = 0;
+	let resizeQuietTimer: ReturnType<typeof setTimeout> | undefined;
+	let refreshDeferred = false;
+
+	function releaseDeferredRefresh() {
+		if (Date.now() < composerQuietUntil || Date.now() < resizeQuietUntil) return;
+		if (!refreshDeferred) return;
+		refreshDeferred = false;
+		refreshGate.call();
+	}
+
+	function holdComposerRefresh() {
+		composerQuietUntil = Date.now() + COMPOSER_QUIET_MS;
+		clearTimeout(composerQuietTimer);
+		composerQuietTimer = setTimeout(() => {
+			composerQuietUntil = 0;
+			releaseDeferredRefresh();
+		}, COMPOSER_QUIET_MS);
+	}
+
+	function onComposerBlur() {
+		clearTimeout(composerQuietTimer);
+		composerQuietUntil = 0;
+		releaseDeferredRefresh();
+	}
+
+	/**
+	 * A transcript refresh rebuilt roughly 15,000 DOM nodes in the middle of a
+	 * desktop window drag, producing measured 234–260ms main-thread stalls.
+	 * Hold that work until the resize stream has been quiet for one short beat.
+	 */
+	function holdResizeRefresh() {
+		if (!wideScreen) return;
+		resizeQuietUntil = Date.now() + RESIZE_QUIET_MS;
+		clearTimeout(resizeQuietTimer);
+		resizeQuietTimer = setTimeout(() => {
+			resizeQuietUntil = 0;
+			releaseDeferredRefresh();
+		}, RESIZE_QUIET_MS);
+	}
+
 	function scrollHost(): HTMLElement | null {
 		if (!swipeRoot || !swipeRoot.isConnected) return null;
 		return getComputedStyle(swipeRoot).overflowY === 'auto' ? swipeRoot : null;
@@ -1535,6 +1671,7 @@
 		// visualViewport as well as window: the soft keyboard resizes the
 		// visual viewport and, on iOS, fires nothing on window at all.
 		window.addEventListener('resize', onScroll);
+		window.addEventListener('resize', holdResizeRefresh);
 		window.visualViewport?.addEventListener('resize', onScroll);
 		// The transcript growing is what a new turn looks like to the DOM. While
 		// following, that is the moment to stay at the end; while not, it must
@@ -1554,7 +1691,11 @@
 		return () => {
 			target.removeEventListener('scroll', onScroll);
 			window.removeEventListener('resize', onScroll);
+			window.removeEventListener('resize', holdResizeRefresh);
 			window.visualViewport?.removeEventListener('resize', onScroll);
+			clearTimeout(resizeQuietTimer);
+			resizeQuietTimer = undefined;
+			resizeQuietUntil = 0;
 			observer.disconnect();
 		};
 	});
@@ -1562,6 +1703,16 @@
 	/** Refresh from the server; keep the view pinned to the bottom unless the
 	 *  reader has deliberately scrolled up. */
 	async function refresh() {
+		// Yield one paint before starting the expensive route load. A window
+		// resize or the first composer key queued in this frame gets to raise its
+		// quiet guard before a transcript rebuild has already become unstoppable.
+		await new Promise<void>((resolveFrame) => requestAnimationFrame(() => resolveFrame()));
+		if (!live) return;
+		if (Date.now() < composerQuietUntil || Date.now() < resizeQuietUntil) {
+			refreshDeferred = true;
+			return;
+		}
+		refreshDeferred = false;
 		// This page mounts before its route navigation settles. Starting an
 		// invalidateAll here keeps that navigation open forever, so the global
 		// loading bar never finishes. The event/poll path will refresh again.
@@ -1600,6 +1751,7 @@
 			store.stop();
 			refreshGate.cancel();
 			clearTimeout(poll);
+			clearTimeout(composerQuietTimer);
 			for (const timer of burst) clearTimeout(timer);
 			draftStore?.flush();
 			removeEventListener('pagehide', flushDraft);
@@ -1610,14 +1762,23 @@
 		};
 	});
 
-	// Any agent event may mean new transcript content or a status change.
-	// Server-side coalescing already bounds the rate; this only stops a burst
-	// of store updates turning into a burst of loads, without ever dropping
-	// the last one.
+	// Only this pane's projected state can change this transcript. An estate
+	// event for another pane used to reload the full current transcript too.
+	const currentAgentRevision = $derived.by(() => {
+		const agent = store.agents.find((candidate) => candidate.paneId === detail.paneId);
+		if (!agent) return '';
+		return [
+			agent.seq,
+			agent.status,
+			agent.preview ?? '',
+			agent.picker?.question ?? '',
+			agent.menu ?? '',
+			...(agent.statusRows ?? [])
+		].join('\u0000');
+	});
 	const refreshGate = throttleTrailing(() => void refresh(), 300);
 	$effect(() => {
-		void store.agents;
-		refreshGate.call();
+		if (currentAgentRevision) refreshGate.call();
 	});
 
 	/**
@@ -1738,9 +1899,9 @@
 	/** Something was just sent: a menu, a follow-up dialogue (Claude's
 	 *  cache-invalidation confirm) or a reply is about to paint, and no
 	 *  event will announce it — look now and a few more times shortly after. */
-	function refreshSoon() {
+	function refreshSoon(immediate = true) {
 		for (const timer of burst) clearTimeout(timer);
-		refreshGate.call();
+		if (immediate) refreshGate.call();
 		burst = BURST_MS.map((ms) => setTimeout(() => refreshGate.call(), ms));
 	}
 
@@ -1885,6 +2046,69 @@
 		}
 	}
 
+	/** Arrow presses must reach the terminal in order, even on a fast repeat. */
+	let pickerKeyQueue: Promise<unknown> = Promise.resolve();
+
+	function ownsPickerKey(target: EventTarget | null, key: string): boolean {
+		if (!(target instanceof Element)) return false;
+		const editable = target.closest('input, textarea, select, [contenteditable="true"]');
+		if (editable) {
+			// Claude leaves focus in the composer when its picker appears. An empty
+			// composer must therefore behave like the terminal: arrows, digits and
+			// Enter drive the question. Once the user has typed anything it becomes
+			// text again, and none of those keys may steal or submit their draft.
+			return editable !== textarea || draft.length > 0;
+		}
+		// A focused button or link owns Enter, or the global handler and its native
+		// click both fire.
+		return key === 'Enter' && Boolean(target.closest('button, a'));
+	}
+
+	/**
+	 * A desktop already has a keyboard, so a visible picker should act like the
+	 * terminal it mirrors. Do not steal keys from the composer or from a sheet
+	 * over the conversation: digits there are text, not an answer.
+	 */
+	$effect(() => {
+		const picker = detail.picker;
+		if (
+			!wideScreen ||
+			!picker ||
+			askHidden ||
+			treeOpen ||
+			showNewAgent ||
+			controlling ||
+			worktrees ||
+			openSubAgent
+		)
+			return;
+
+		const onPickerKey = (event: KeyboardEvent) => {
+			if (
+				event.defaultPrevented ||
+				event.isComposing ||
+				event.metaKey ||
+				event.ctrlKey ||
+				event.altKey ||
+				ownsPickerKey(event.target, event.key) ||
+				busy
+			)
+				return;
+			const shortcut = pickerShortcut(event.key, picker);
+			if (!shortcut) return;
+			event.preventDefault();
+			if (shortcut.kind === 'answer') {
+				if (!event.repeat) void answer(shortcut.index);
+				return;
+			}
+			pickerKeyQueue = pickerKeyQueue.then(() => sendKeys([shortcut.key]));
+		};
+		// Capture first so Enter cannot be taken by the composer's normal send rule
+		// before a focused Claude picker sees it.
+		window.addEventListener('keydown', onPickerKey, true);
+		return () => window.removeEventListener('keydown', onPickerKey, true);
+	});
+
 	const KEY_STRIP: Array<{ k: string; l: string }> = [
 		{ k: 'esc', l: 'esc' },
 		{ k: 'tab', l: 'tab' },
@@ -1998,9 +2222,20 @@
 		// bubble appears on the tap; if the send is refused, both are put back
 		// exactly as they were.
 		const text = draft;
+		const hadAttachments = attachments.length > 0;
+		const command = hadAttachments ? null : slashCommandName(text);
 		const optimistic = text.trim() ? ++pendingSeq : 0;
 		if (optimistic) {
-			pendingSends = [...pendingSends, { id: optimistic, text, at: Date.now(), state: 'sending' }];
+			pendingSends = [
+				...pendingSends,
+				{
+					id: optimistic,
+					text,
+					at: Date.now(),
+					state: 'sending',
+					...(command && { command })
+				}
+			];
 			draftStore?.clear(paneId);
 			draft = '';
 			following = true;
@@ -2008,7 +2243,7 @@
 		}
 
 		try {
-			if (attachments.length > 0) {
+			if (hadAttachments) {
 				const form = new FormData();
 				for (const file of attachments) form.append('file', file);
 				form.append('text', text);
@@ -2039,10 +2274,24 @@
 					body: JSON.stringify({ text })
 				});
 				if (!sent.ok) throw await failure(sent, 'send');
+				const body = (await sent.json().catch(() => null)) as {
+					command?: { name?: string; message?: string } | null;
+				} | null;
+				if (optimistic && detail.paneId === paneId) {
+					pendingSends = pendingSends.map((p) =>
+						p.id === optimistic
+							? {
+									...p,
+									state: body?.command ? ('accepted' as const) : ('queued' as const),
+									deliveredAt: Date.now(),
+									...(body?.command?.message && { receipt: body.command.message })
+								}
+							: p
+					);
+				}
 			}
-			// Delivered: the bubble stops pulsing and becomes a queued prompt,
-			// which is what survives a reload.
-			if (optimistic && detail.paneId === paneId) {
+			// Image prompts have no command response but are still queued normally.
+			if (hadAttachments && optimistic && detail.paneId === paneId) {
 				pendingSends = pendingSends.map((p) =>
 					p.id === optimistic ? { ...p, state: 'queued' as const, deliveredAt: Date.now() } : p
 				);
@@ -2063,7 +2312,8 @@
 		busy = false;
 		await invalidateAll();
 		if (following) requestAnimationFrame(scrollBottom);
-		refreshSoon();
+		// The invalidate above is the immediate read; keep only the later burst.
+		refreshSoon(false);
 	}
 
 	/**
@@ -2072,6 +2322,24 @@
 	 * so losing the newline key to "send" would be the worse default.
 	 */
 	function onKeydown(event: KeyboardEvent) {
+		// A desktop picker handles its terminal keys during capture. Do not turn
+		// its Enter into an empty composer send as the event reaches the textarea.
+		if (event.defaultPrevented) return;
+		// Bordr owns the slash popup because a complete `agent.prompt` never
+		// exposes Pi's character-by-character completer. Match its useful keys.
+		if (slashQuery && suggestions.length > 0) {
+			if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
+				event.preventDefault();
+				moveCommand(event.key === 'ArrowDown' ? 1 : -1);
+				return;
+			}
+			if (event.key === 'Tab' && !event.shiftKey && selectedCommand) {
+				event.preventDefault();
+				pickCommand(selectedCommand);
+				return;
+			}
+		}
+
 		if (event.key !== 'Enter') return;
 		const modifier = event.metaKey || event.ctrlKey;
 		const shouldSend = prefs.value.enterSends ? !event.shiftKey && !modifier : modifier;
@@ -2486,22 +2754,22 @@
 
 {#snippet headerActions()}
 	<!--
-		The work switch, when it has been moved off the transcript. Up here it is
+		The tools switch, when it has been moved off the transcript. Up here it is
 		a state you set once, rather than a link you re-find at the bottom of a
 		growing conversation.
 	-->
 	{#if prefs.value.workControl === 'header' && toolCount > 0 && !layout.tight}
 		<button
-			class="flex h-9 shrink-0 items-center rounded-full border px-3 text-[12px] {showWork
+			class="flex h-9 shrink-0 items-center rounded-full border px-3 text-[12px] {showTools
 				? 'border-working-halo bg-working-bg text-working'
 				: 'border-edge text-muted'}"
-			aria-pressed={showWork}
+			aria-pressed={showTools}
 			onclick={() => {
-				showWork = !showWork;
-				prefs.set('showWork', showWork);
+				showTools = !showTools;
+				prefs.set('showWork', showTools);
 			}}
 		>
-			work {toolCount}
+			tools {toolCount}
 		</button>
 	{/if}
 	{#if detail.status === 'working'}
@@ -2795,7 +3063,7 @@
 						</div>
 					{/if}
 
-					<div class="flex flex-col gap-3 text-[14.5px] leading-[1.5]">
+					<div class="transcript-rows flex flex-col gap-3 text-[14.5px] leading-[1.5]">
 						{#if scrollback !== null}
 							<div
 								use:termGrid
@@ -2848,7 +3116,21 @@
 											? verdict === 'taken'
 											: onScreen(sent.text, detail.screenTail ?? ''))}
 									{@const tick = sent.state === 'sending' ? 'sending' : held ? 'read' : 'sent'}
-									{#if prefs.value.bubbles}
+									{#if sent.command}
+										<div class="flex justify-center">
+											<span
+												role="status"
+												class="rounded-full border border-hairline bg-card px-3 py-1 font-mono text-[11px] {sent.state ===
+												'sending'
+													? 'text-working'
+													: 'text-muted'}"
+											>
+												{sent.state === 'sending'
+													? `Running /${sent.command}…`
+													: (sent.receipt ?? `✓ /${sent.command} accepted`)}
+											</span>
+										</div>
+									{:else if prefs.value.bubbles}
 										<div class="flex justify-end {tight(row.run)}">
 											<Bubble
 												mine
@@ -2892,15 +3174,7 @@
 														>{sent.question}</span
 													>{/if}{sent.text.trimEnd()}
 											</span>
-											<!--
-												The same mark the bubble carries. Bubbles are off by default,
-												and this row showed no delivery status at all once the old
-												"queued behind this turn" / "sent" line went: a send could not
-												be told from one that never left.
-											-->
-											<span class="shrink-0 self-end">
-												<BubbleMeta at={sent.at} run={row.run} state={tick} />
-											</span>
+											<BubbleMeta at={sent.at} run={row.run} state={tick} row />
 										</div>
 									{/if}
 								{:else if row.kind === 'tools'}
@@ -2909,8 +3183,8 @@
 									the transcript keeps the shape of the conversation and the
 									work is still one tap away.
 
-									Guarded by showWork like every other tool row. Folding is about
-									how the work is PRESENTED; the toggle is about whether it is
+									Guarded by showTools like every other tool row. Folding is about
+									how the tools are PRESENTED; the toggle is about whether they are
 									shown at all, and a group that ignored it put tool rows back on
 									screen for anyone who had turned them off.
 								-->
@@ -2918,7 +3192,7 @@
 									The kind check stays pure so the {:else} below still narrows to
 									a message row; the toggle is checked inside it.
 								-->
-									{#if showWork}
+									{#if showTools}
 										<details class="group">
 											<summary
 												class="flex cursor-pointer items-baseline gap-2 rounded-lg px-2 py-1.5 font-mono text-[11.5px] text-muted transition-colors hover:bg-chip/60"
@@ -2934,7 +3208,7 @@
 												</span>
 											</summary>
 											<div class="pl-2">
-												<MessageBlocks blocks={row.blocks} mono={prefs.value.monoSize} showWork />
+												<MessageBlocks blocks={row.blocks} mono={prefs.value.monoSize} showTools />
 											</div>
 										</details>
 									{/if}
@@ -2985,12 +3259,10 @@
 														plain
 													/>
 												</span>
-												{#if prefs.value.messageTicks}
-													<span class="mt-[3px] shrink-0 text-faint"><Ticks state="read" /></span>
-												{/if}
+												<BubbleMeta at={message.at ?? 0} run={row.run} state="read" row />
 											</div>
 										{/if}
-									{:else if message.text || prose(message).length > 0 || hasTodoPlan(message.blocks) || (showWork && (message.blocks?.length ?? 0) > 0)}
+									{:else if message.text || prose(message).length > 0 || hasTodoPlan(message.blocks) || optionalWorkVisible(message)}
 										<!--
 										A turn that is only tool calls has nothing to show while the
 										work is hidden; rendering the prefix anyway left a column of
@@ -3002,7 +3274,7 @@
 										the picture went with it whenever the work was hidden. An
 										image is something the agent SAID, not work it did.
 									-->
-										<div class="flex gap-2 {tight(row.run)}">
+										<div class="flex gap-2 {tight(row.run)} {row.thinkingJoin ? '-mt-2' : ''}">
 											{#if !prefs.value.bubbles}
 												<span
 													class="shrink-0 font-mono text-[13px] leading-[1.7] {harnessText(
@@ -3046,7 +3318,8 @@
 															<MessageBlocks
 																blocks={segment.blocks}
 																mono={prefs.value.monoSize}
-																{showWork}
+																{showTools}
+																showThinking={prefs.value.showThinking}
 															/>
 														{/if}
 													{/each}
@@ -3059,11 +3332,15 @@
 														<MessageBlocks
 															blocks={message.blocks ?? []}
 															mono={prefs.value.monoSize}
-															{showWork}
+															{showTools}
+															showThinking={prefs.value.showThinking}
 														/>
 													</div>
 												{/if}
 											</div>
+											{#if !prefs.value.bubbles}
+												<BubbleMeta at={message.at ?? 0} run={row.run} row />
+											{/if}
 										</div>
 									{/if}
 								{/if}
@@ -3109,11 +3386,11 @@
 								<button
 									class="rounded-full px-3 py-1 text-[11.5px] text-working"
 									onclick={() => {
-										showWork = !showWork;
-										prefs.set('showWork', showWork);
+										showTools = !showTools;
+										prefs.set('showWork', showTools);
 									}}
 								>
-									{showWork ? 'Hide' : 'Show'} the work ({toolCount})
+									{showTools ? 'Hide' : 'Show'} tools ({toolCount})
 								</button>
 							</div>
 						{/if}
@@ -3273,6 +3550,7 @@
 
 					{#if slashQuery}
 						<div
+							bind:this={commandBox}
 							class="mb-2 max-h-[45vh] overflow-y-auto rounded-xl border border-edge bg-card"
 							role="listbox"
 							aria-label="Slash commands"
@@ -3282,12 +3560,16 @@
 							{:else if suggestions.length === 0}
 								<p class="px-3 py-2 text-[12.5px] text-muted">Nothing matches {draft}.</p>
 							{:else}
-								{#each suggestions as command (command.name)}
+								{#each suggestions as command, i (command.name)}
 									<button
 										type="button"
 										role="option"
-										aria-selected="false"
-										class="flex w-full items-baseline gap-2 border-b border-hairline px-3 py-2 text-left last:border-b-0"
+										aria-selected={i === commandIndex}
+										class="flex w-full items-baseline gap-2 border-b border-hairline px-3 py-2 text-left last:border-b-0 {i ===
+										commandIndex
+											? 'bg-working-bg'
+											: ''}"
+										onpointerenter={() => (commandIndex = i)}
 										onclick={() => pickCommand(command)}
 									>
 										<span class="shrink-0 font-mono text-[13px] text-working">/{command.name}</span>
@@ -3380,6 +3662,9 @@
 						<textarea
 							bind:this={textarea}
 							bind:value={draft}
+							onfocus={holdComposerRefresh}
+							oninput={holdComposerRefresh}
+							onblur={onComposerBlur}
 							onkeydown={onKeydown}
 							onpaste={onPaste}
 							rows="1"
@@ -3575,7 +3860,10 @@
 					</button>
 				{/if}
 				<p class="mt-2 text-[11px] text-faint">
-					{#if detail.picker.axis === 'horizontal'}
+					{#if wideScreen}
+						Desktop keyboard: {detail.picker.axis === 'horizontal' ? '←/→' : '↑/↓'} moves; 1–9 chooses;
+						Enter confirms the highlighted option.
+					{:else if detail.picker.axis === 'horizontal'}
 						Arrow keys move the slider and Enter confirms; verified against the screen.
 					{:else if detail.picker.numbered}
 						Digit is sent as a keystroke and verified against the screen.
@@ -3718,12 +4006,12 @@
 						...(prefs.value.workControl === 'header' && toolCount > 0
 							? [
 									{
-										label: `Show the work (${toolCount})`,
-										hint: 'Tool calls, results and thinking, inline in the transcript.',
-										on: showWork,
+										label: `Show tools (${toolCount})`,
+										hint: 'Tool calls and results, inline in the transcript.',
+										on: showTools,
 										onchange: () => {
-											showWork = !showWork;
-											prefs.set('showWork', showWork);
+											showTools = !showTools;
+											prefs.set('showWork', showTools);
 										}
 									}
 								]
@@ -3764,6 +4052,18 @@
 </div>
 
 <style>
+	/*
+	 * Desktop width changes used to reflow every off-screen tool result and code
+	 * block in the loaded transcript. Let Chromium skip those rows while keeping
+	 * their last measured height, so resizing works on what is actually visible.
+	 */
+	@media (min-width: 1024px) {
+		:global(.transcript-rows > *) {
+			content-visibility: auto;
+			contain-intrinsic-block-size: auto 5rem;
+		}
+	}
+
 	/*
 	 * The tail on the last bubble of a run.
 	 *

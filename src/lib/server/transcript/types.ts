@@ -29,6 +29,9 @@ export interface EditDiff {
 	file: string;
 	before: string;
 	after: string;
+	/** Exact source lines when the harness includes them in its diff. */
+	beforeLines?: number[];
+	afterLines?: number[];
 }
 
 /**

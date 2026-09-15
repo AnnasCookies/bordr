@@ -47,6 +47,12 @@ export function onlyToolWork(blocks: Block[] | undefined): boolean {
 	return hasTool;
 }
 
+/** A turn made entirely from thinking blocks, for joining adjacent rows. */
+export function onlyThinking(blocks: Block[] | undefined): boolean {
+	if (!blocks?.length) return false;
+	return blocks.every((block) => block.kind === 'thinking');
+}
+
 /**
  * Split a turn into adjacent prose/work runs without changing transcript order.
  * A final answer after thinking must stay after it, not jump above it merely

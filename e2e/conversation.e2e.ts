@@ -26,6 +26,106 @@ test('the key strip offers exactly the eight allowed keys, including enter', asy
 	}
 });
 
+test('desktop conversation uses all space beside the sidebar while resizing', async ({ page }) => {
+	await page.addInitScript(() => {
+		// An old saved cap must not keep winning after the choice was removed.
+		localStorage.setItem('bordr-prefs', JSON.stringify({ conversationWidth: 'comfortable' }));
+	});
+	await page.setViewportSize({ width: 1400, height: 900 });
+	const href = await firstPane(page);
+	if (!href) test.skip(true, 'no agents running');
+	await page.goto(href as string);
+
+	const row = page.locator('.transcript-rows > *').first();
+	await expect(row).toBeAttached();
+	expect(await row.evaluate((element) => getComputedStyle(element).contentVisibility)).toBe('auto');
+
+	const main = page.locator('.transcript-rows').locator('xpath=ancestor::main[1]');
+	const widths = await main.evaluate((element) => ({
+		main: element.getBoundingClientRect().width,
+		available: element.parentElement?.getBoundingClientRect().width ?? 0
+	}));
+	expect(Math.abs(widths.main - widths.available)).toBeLessThan(2);
+});
+
+test('desktop picker questions take arrow and number keys from an empty composer', async ({
+	page
+}) => {
+	await page.setViewportSize({ width: 1400, height: 900 });
+	const href = await firstPane(page);
+	if (!href) test.skip(true, 'no agents running');
+	const pane = decodeURIComponent((href as string).replace('/a/', ''));
+	const detailPath = `/api/agents/${encodeURIComponent(pane)}`;
+	const keys: string[][] = [];
+	const answers: number[] = [];
+
+	await page.route(
+		(url) => url.pathname === detailPath,
+		async (route) => {
+			const response = await route.fetch();
+			const detail = await response.json();
+			await route.fulfill({
+				response,
+				json: {
+					...detail,
+					status: 'blocked',
+					picker: {
+						question: 'Pick a test option:',
+						context: [],
+						options: [
+							{ index: 1, label: 'One', selected: true },
+							{ index: 2, label: 'Two', selected: false }
+						],
+						multi: false,
+						numbered: true
+					}
+				}
+			});
+		}
+	);
+	await page.route(`**/api/agents/${encodeURIComponent(pane)}/keys`, async (route) => {
+		keys.push(((await route.request().postDataJSON()) as { keys: string[] }).keys);
+		await route.fulfill({ json: { ok: true } });
+	});
+	await page.route(`**/api/agents/${encodeURIComponent(pane)}/answer`, async (route) => {
+		const index = ((await route.request().postDataJSON()) as { index: number }).index;
+		answers.push(index);
+		await route.fulfill({
+			json: {
+				ok: true,
+				chose: index === 1 ? 'One' : 'Two',
+				// Keep the mocked picker open after Enter so this one test can also
+				// prove arrow and number handling against the same dialog.
+				outcome: index === 1 ? 'unknown' : 'accepted'
+			}
+		});
+	});
+
+	await page.locator(`main a[href="${href}"]`).first().click();
+	await expect(page.getByText('Pick a test option:', { exact: true })).toBeVisible();
+
+	const composer = page.getByRole('textbox', { name: 'Message' });
+	// A real Claude picker appears while focus is still in this box. Empty means
+	// the picker owns its terminal shortcuts; typed text means the draft owns them.
+	await composer.fill('draft');
+	await composer.press('2');
+	expect(await composer.inputValue()).toBe('draft2');
+	expect(answers).toEqual([]);
+	await composer.fill('');
+
+	await composer.press('Enter');
+	await expect.poll(() => answers).toEqual([1]);
+	expect(await composer.inputValue()).toBe('');
+	await composer.press('ArrowDown');
+	await expect.poll(() => keys).toEqual([['down']]);
+	expect(await composer.inputValue()).toBe('');
+	await composer.press('2');
+	await expect.poll(() => answers).toEqual([1, 2]);
+	// The shortcut schedules the normal refresh burst; do not let a mocked
+	// detail fetch outlive the test that owns its route.
+	await page.unrouteAll({ behavior: 'ignoreErrors' });
+});
+
 test('Enter in the composer makes a newline instead of sending', async ({ page }) => {
 	const href = await firstPane(page);
 	if (!href) test.skip(true, 'no agents running');
@@ -36,6 +136,69 @@ test('Enter in the composer makes a newline instead of sending', async ({ page }
 	await box.press('Enter');
 	await box.type('second line');
 	expect(await box.inputValue()).toBe('first line\nsecond line');
+});
+
+test('Tab completes the highlighted slash command', async ({ page }) => {
+	const href = await firstPane(page);
+	if (!href) test.skip(true, 'no agents running');
+	await page.goto(href as string);
+
+	const box = page.getByRole('textbox', { name: 'Message' });
+	await box.fill('/mo');
+	const option = page.locator('[role="option"][aria-selected="true"]');
+	try {
+		await option.waitFor({ state: 'visible', timeout: 10_000 });
+	} catch {
+		test.skip(true, 'active harness has no matching slash command');
+	}
+	const command = ((await option.locator('span').first().textContent()) ?? '').trim();
+	await box.press('Tab');
+	expect(await box.inputValue()).toBe(`${command} `);
+	await expect(page.getByRole('listbox', { name: 'Slash commands' })).toBeHidden();
+});
+
+test('a successful slash command leaves a visible receipt', async ({ page }) => {
+	const href = await firstPane(page);
+	if (!href) test.skip(true, 'no agents running');
+	await page.goto(href as string);
+
+	const pane = decodeURIComponent((href as string).replace('/a/', ''));
+	await page.route(`**/api/agents/${encodeURIComponent(pane)}/prompt`, (route) =>
+		route.fulfill({
+			contentType: 'application/json',
+			body: JSON.stringify({
+				ok: true,
+				command: { name: 'reload', outcome: 'confirmed', message: '✓ Pi reloaded' }
+			})
+		})
+	);
+
+	await page.getByRole('textbox', { name: 'Message' }).fill('/reload');
+	await page.getByRole('button', { name: 'Send' }).click();
+	await expect(page.getByText('✓ Pi reloaded', { exact: true })).toBeVisible();
+});
+
+test('route refresh waits for a pause in typing', async ({ page }) => {
+	const href = await firstPane(page);
+	if (!href) test.skip(true, 'no agents running');
+	await page.goto(href as string);
+
+	const pane = decodeURIComponent((href as string).replace('/a/', ''));
+	const detailPath = `/api/agents/${encodeURIComponent(pane)}`;
+	let detailRequests = 0;
+	page.on('request', (request) => {
+		if (new URL(request.url()).pathname === detailPath) detailRequests += 1;
+	});
+
+	const box = page.getByRole('textbox', { name: 'Message' });
+	await box.fill('c');
+	detailRequests = 0;
+	await page.keyboard.type('ontinuous typing keeps expensive transcript refreshes off this path', {
+		delay: 45
+	});
+	expect(detailRequests).toBe(0);
+
+	await expect.poll(() => detailRequests, { timeout: 3_000 }).toBeGreaterThan(0);
 });
 
 test('the conversation never scrolls horizontally', async ({ page }) => {

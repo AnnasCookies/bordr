@@ -122,6 +122,92 @@ describe('piAdapter.parse', () => {
 		});
 	});
 
+	it('keeps native Pi edit changes when the result has no diff details', () => {
+		const jsonl = [
+			JSON.stringify({
+				type: 'message',
+				message: {
+					role: 'assistant',
+					content: [
+						{
+							type: 'toolCall',
+							id: 'edit-native',
+							name: 'edit',
+							arguments: {
+								path: '/repo/example.ts',
+								edits: [
+									{ oldText: 'const one = 1;', newText: 'const one = 2;' },
+									{ oldText: 'const two = 2;', newText: 'const two = 3;' }
+								]
+							}
+						}
+					]
+				}
+			}),
+			JSON.stringify({
+				type: 'message',
+				message: {
+					role: 'toolResult',
+					toolCallId: 'edit-native',
+					content: [{ type: 'text', text: 'Successfully replaced 2 blocks.' }]
+				}
+			})
+		].join('\n');
+		expect(piAdapter.parse(jsonl)[0].blocks?.[0]).toMatchObject({
+			kind: 'tool',
+			diffs: [
+				{ file: '/repo/example.ts', before: 'const one = 1;', after: 'const one = 2;' },
+				{ file: '/repo/example.ts', before: 'const two = 2;', after: 'const two = 3;' }
+			]
+		});
+	});
+
+	it('keeps native Pi line numbers from result details that omit the path', () => {
+		const jsonl = [
+			JSON.stringify({
+				type: 'message',
+				message: {
+					role: 'assistant',
+					content: [
+						{
+							type: 'toolCall',
+							id: 'edit-numbered',
+							name: 'edit',
+							arguments: {
+								path: '/repo/example.ts',
+								edits: [{ oldText: 'old one\nold two', newText: 'new one\nnew two' }]
+							}
+						}
+					]
+				}
+			}),
+			JSON.stringify({
+				type: 'message',
+				message: {
+					role: 'toolResult',
+					toolCallId: 'edit-numbered',
+					content: [{ type: 'text', text: 'Successfully replaced 2 blocks.' }],
+					details: {
+						diff: '-145 old one\n+145 new one\n     ...\n-219 \told two\n+219 \tnew two',
+						firstChangedLine: 145
+					}
+				}
+			})
+		].join('\n');
+		expect(piAdapter.parse(jsonl)[0].blocks?.[0]).toMatchObject({
+			kind: 'tool',
+			diffs: [
+				{
+					file: '/repo/example.ts',
+					before: 'old one\n\told two',
+					after: 'new one\n\tnew two',
+					beforeLines: [145, 219],
+					afterLines: [145, 219]
+				}
+			]
+		});
+	});
+
 	it('uses OMP diff lines instead of duplicating whole-file snapshots', () => {
 		const oldText = `${Array.from({ length: 500 }, (_, i) => `old ${i}`).join('\n')}\nconst value = 1;`;
 		const newText = oldText.replace('const value = 1;', 'const value = 2;');
@@ -225,6 +311,45 @@ describe('piAdapter.parse', () => {
 		expect(result.result?.text.split('\n')).toHaveLength(40);
 	});
 
+	it('puts a native Pi Read image on the matching tool result', () => {
+		const data = Buffer.from('inline image fixture').toString('base64');
+		const jsonl = [
+			JSON.stringify({
+				type: 'message',
+				message: {
+					role: 'assistant',
+					content: [
+						{
+							type: 'toolCall',
+							id: 'read-image',
+							name: 'read',
+							arguments: { path: '/tmp/screenshot.png' }
+						}
+					]
+				}
+			}),
+			JSON.stringify({
+				type: 'message',
+				message: {
+					role: 'toolResult',
+					toolCallId: 'read-image',
+					content: [
+						{ type: 'text', text: 'Read image file [image/png]' },
+						{ type: 'image', data, mimeType: 'image/png' }
+					]
+				}
+			})
+		].join('\n');
+		expect(piAdapter.parse(jsonl)[0].blocks?.[0]).toMatchObject({
+			kind: 'tool',
+			name: 'read',
+			result: {
+				text: 'Read image file [image/png]',
+				images: [`data:image/png;base64,${data}`]
+			}
+		});
+	});
+
 	it('offers an unanswered ask and clears it when its result arrives', () => {
 		const call = JSON.stringify({
 			type: 'message',
@@ -284,6 +409,19 @@ describe('ompResultImages', () => {
 		}
 	});
 
+	it('accepts native Pi inline base64 without a blob-store round trip', () => {
+		const bytes = Buffer.from('inline image fixture');
+		const data = bytes.toString('base64');
+		expect(ompResultImages([image(data, 'IMAGE/PNG')])).toEqual({
+			images: [`data:image/png;base64,${data}`],
+			dropped: 0
+		});
+		expect(ompResultImages([image(data)], undefined, { remaining: bytes.length - 1 })).toEqual({
+			images: [],
+			dropped: 1
+		});
+	});
+
 	it('shares one image byte budget across tool results', async () => {
 		const dir = await mkdtemp(join(tmpdir(), 'bordr-omp-blobs-'));
 		try {
@@ -300,7 +438,7 @@ describe('ompResultImages', () => {
 		}
 	});
 
-	it('rejects traversal, unsafe media and linked blobs', async () => {
+	it('rejects traversal, unsafe media, bad inline data and linked blobs', async () => {
 		const dir = await mkdtemp(join(tmpdir(), 'bordr-omp-blobs-'));
 		try {
 			await symlink('/etc/passwd', join(dir, hash));
@@ -309,6 +447,8 @@ describe('ompResultImages', () => {
 					[
 						image('blob:sha256:../../etc/passwd'),
 						image(`blob:sha256:${hash}`, 'text/html'),
+						image('data:image/png;base64,AAAA', 'image/png'),
+						image('not base64!', 'image/png'),
 						image(`blob:sha256:${hash}`)
 					],
 					dir

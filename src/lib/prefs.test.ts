@@ -71,6 +71,33 @@ describe('normalisePrefs', () => {
 		expect(normalisePrefs({ showGrouping: false }).showGrouping).toBe(false);
 		expect(normalisePrefs({ showGrouping: 'no' }).showGrouping).toBe(true);
 	});
+
+	it('splits thinking from tools without losing the old combined choice', () => {
+		expect(DEFAULTS.showThinking).toBe(true);
+		expect(normalisePrefs({ showWork: false }).showThinking).toBe(false);
+		expect(normalisePrefs({ showWork: false, showThinking: true })).toMatchObject({
+			showWork: false,
+			showThinking: true
+		});
+	});
+
+	it('accepts Herdr’s agent orders and migrates the old workspace name', () => {
+		expect(normalisePrefs({ agentOrder: 'priority' }).agentOrder).toBe('priority');
+		expect(normalisePrefs({ agentOrder: 'grouped' }).agentOrder).toBe('grouped');
+		expect(normalisePrefs({ agentOrder: 'workspace' }).agentOrder).toBe('grouped');
+		expect(normalisePrefs({ agentOrder: 'alphabetical' }).agentOrder).toBe(DEFAULTS.agentOrder);
+	});
+
+	it('accepts the collapsible JSON tree tool view', () => {
+		expect(normalisePrefs({ toolDetail: 'tree' }).toolDetail).toBe('tree');
+		expect(normalisePrefs({ toolDetail: 'xml' }).toolDetail).toBe(DEFAULTS.toolDetail);
+	});
+
+	it('drops the old conversation width cap', () => {
+		expect(normalisePrefs({ conversationWidth: 'comfortable' })).not.toHaveProperty(
+			'conversationWidth'
+		);
+	});
 });
 
 describe('resolveTheme', () => {

@@ -20,6 +20,7 @@ import { piSessionEnded } from '$lib/server/transcript/pi';
 import { resolveLocalTranscript } from '$lib/server/transcript/resolve';
 import { extractStatusLines } from '$lib/server/status';
 import { extractActivity } from '$lib/server/activity';
+import { piScreenWorking, piTranscriptSettled, reconcilePiStatus } from '$lib/server/pi-status';
 import { stripAnsi } from '$lib/ansi';
 import { cleanSnapshot } from '$lib/server/snapshot';
 import type { AgentDetail, Message } from '$lib/types';
@@ -151,9 +152,6 @@ export const GET: RequestHandler = async ({ params, url }) => {
 	// is waiting for input and nothing else is on screen: a busy pane repaints
 	// constantly and has no input box to read anyway.
 	let suggestion: string | null = null;
-	if (!picker && (summary.status === 'idle' || summary.status === 'done')) {
-		suggestion = suggestionFrom(ansiVisible);
-	}
 
 	const sessionId = (raw.agent_session as { value?: string } | undefined)?.value;
 	// A remote pane's transcript names files on its own machine, never this one.
@@ -320,6 +318,22 @@ export const GET: RequestHandler = async ({ params, url }) => {
 			? undefined // unreachable machine: no branch is honest, a stale one is not
 			: (await branchesFor(gitMachine, [cwd])).get(cwd);
 
+	const transcriptPicker = summary.agent === 'omp' ? null : pendingAsk(messages);
+	const effectivePicker = picker ?? transcriptPicker;
+	const reportedStatus =
+		effectivePicker && summary.status !== 'blocked' ? 'blocked' : summary.status;
+	const effectiveStatus = effectivePicker
+		? reportedStatus
+		: reconcilePiStatus(
+				summary.agent,
+				reportedStatus,
+				piScreenWorking(visible),
+				piTranscriptSettled(messages)
+			);
+	if (!effectivePicker && (effectiveStatus === 'idle' || effectiveStatus === 'done')) {
+		suggestion = suggestionFrom(ansiVisible);
+	}
+
 	return json({
 		...summary,
 		// The agent's directory wins over the pane's for everything the detail
@@ -338,12 +352,13 @@ export const GET: RequestHandler = async ({ params, url }) => {
 		subagents,
 		queue,
 		model,
+		status: effectiveStatus,
 		// OMP options are relative-key modals: without the live highlight,
 		// transcript labels cannot be answered safely. Other harnesses here
 		// accept an absolute text label and may use the transcript fallback.
-		picker: picker ?? (summary.agent === 'omp' ? null : pendingAsk(messages)),
+		picker: effectivePicker,
 		// No picker, but a menu is open: say so, and where to drive it.
-		menu: picker || summary.status === 'working' ? null : menuFooter(visible),
+		menu: effectivePicker || effectiveStatus === 'working' ? null : menuFooter(visible),
 		degraded,
 		degradedMessage: explain(degraded, summary.agent, reason),
 		activity,

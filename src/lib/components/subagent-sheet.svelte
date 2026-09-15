@@ -107,7 +107,12 @@
 								aria-hidden="true">{message.role === 'user' ? '›' : '·'}</span
 							>
 							<div class="min-w-0 flex-1">
-								<MessageBlocks blocks={message.blocks ?? []} mono={prefs.value.monoSize} showWork />
+								<MessageBlocks
+									blocks={message.blocks ?? []}
+									mono={prefs.value.monoSize}
+									showTools={prefs.value.showWork}
+									showThinking={prefs.value.showThinking}
+								/>
 							</div>
 						</div>
 					{/each}

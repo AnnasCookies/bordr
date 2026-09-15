@@ -3,6 +3,7 @@ import type { Block } from '$lib/server/transcript/types';
 import {
 	hasTodoPlan,
 	messageSegments,
+	onlyThinking,
 	onlyToolWork,
 	proseBlocks,
 	todoPlanForBlock,
@@ -59,5 +60,13 @@ describe('message segments', () => {
 		expect(onlyToolWork([todo])).toBe(false);
 		expect(hasTodoPlan([todo])).toBe(true);
 		expect(todoPlanForBlock(todo)?.phases[0].items[0].content).toBe('Keep visible');
+	});
+
+	it('joins only turns made entirely from thinking', () => {
+		expect(onlyThinking([thinking])).toBe(true);
+		expect(onlyThinking([thinking, { ...thinking, text: 'again' }])).toBe(true);
+		expect(onlyThinking([thinking, tool])).toBe(false);
+		expect(onlyThinking([])).toBe(false);
+		expect(onlyThinking(undefined)).toBe(false);
 	});
 });
