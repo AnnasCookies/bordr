@@ -44,10 +44,21 @@ test('tapping where the menu button is closes the drawer rather than navigating'
 	await menu.click();
 	await expect(page.getByRole('link', { name: 'Home — all agents' })).toBeVisible();
 
+	const x = box!.x + box!.width / 2;
+	const y = box!.y + box!.height / 2;
+	// See the touch variant below for why the element is asked for directly.
+	const under = await page.evaluate(
+		([px, py]) =>
+			document.elementFromPoint(px, py)?.closest('a, button')?.getAttribute('aria-label') ?? null,
+		[x, y] as const
+	);
+	expect(under, 'the drawer control under the header menu').toBe('Close the session list');
+
 	const url = page.url();
-	await page.mouse.click(box!.x + box!.width / 2, box!.y + box!.height / 2);
+	await page.mouse.click(x, y);
 
 	await expect(page.getByRole('link', { name: 'Home — all agents' })).toBeHidden();
+	await page.waitForTimeout(600);
 	expect(page.url(), 'that corner must not navigate').toBe(url);
 });
 
@@ -107,9 +118,23 @@ test.describe('on a touch screen', () => {
 		const close = page.getByRole('button', { name: 'Close the session list' });
 		await expect(close).toBeVisible();
 
+		const x = box.x + box.width / 2;
+		const y = box.y + box.height / 2;
+		// Asked directly, because the tap alone cannot tell: the drawer's Home
+		// link closes the drawer before it navigates, so "closed" held either
+		// way, and the URL was read before the navigation landed.
+		const under = await page.evaluate(
+			([px, py]) =>
+				document.elementFromPoint(px, py)?.closest('a, button')?.getAttribute('aria-label') ?? null,
+			[x, y] as const
+		);
+		expect(under, 'the drawer control under the header menu').toBe('Close the session list');
+
 		const url = page.url();
-		await page.touchscreen.tap(box.x + box.width / 2, box.y + box.height / 2);
+		await page.touchscreen.tap(x, y);
 		await expect(close).toBeHidden();
+		// Long enough for a client-side navigation to land, had the tap started one.
+		await page.waitForTimeout(600);
 		expect(page.url(), 'that corner must not navigate').toBe(url);
 	});
 
