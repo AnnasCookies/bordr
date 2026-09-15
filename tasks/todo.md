@@ -56,7 +56,7 @@ Independent targeted acceptance also passed 39 handler/helper tests, a fresh bui
 
 Seven individually applied unit mutations and four separately built browser mutations failed for their expected behavioural assertions, then restored positive checks passed. Mutation work was confined to disposable archives, never the source checkout.
 
-Reproducible browser checks use `playwright.cold.config.ts` after building into `.e2e-build`. They use invented payloads and invalid Herdr endpoints; they do not drive live panes. Server tests separately exercise actual handlers and parsers with synthetic transport.
+Reproducible browser checks use `playwright.cold.config.ts` after building into `.e2e-build`. They use invented payloads and invalid Herdr endpoints; they do not drive live panes. The live-browser configuration excludes these fixtures because its base URL and viewport differ. Independent `--list` checks confirm the live and offline selections do not overlap. Server tests separately exercise actual handlers and parsers with synthetic transport.
 
 ## Publication and merge plan
 
