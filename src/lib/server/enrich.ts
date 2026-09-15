@@ -6,7 +6,7 @@ import { menuFooter, parsePicker, pendingAsk } from './picker';
 import { rawAgents, readVisible } from './herdr';
 import { parsePane } from './herdr/address';
 import { branchesFor, type BranchInfo } from './herdr/branches';
-import { connectionFor } from './herdr/connections';
+import { connectionFor, connectionKey } from './herdr/connections';
 import { extractStatusLines } from './status';
 import { piScreenWorking, piTranscriptSettled, piStatusDiagnostic } from './pi-status';
 import type { AgentSummary } from '$lib/types';
@@ -61,9 +61,17 @@ export function resetScreenCache(): void {
 	screens.clear();
 }
 
-function dueForRead(summary: AgentSummary, now: number): boolean {
+/** Actionable readings belong to a currently permitted target/session, not its editable id. */
+function enrichmentKey(paneId: string): string | null {
+	const { machineId } = parsePane(paneId);
+	if (!machineId) return paneId;
+	const connection = connectionFor(machineId);
+	return connection ? `${connectionKey(connection.machine)}\0${paneId}` : null;
+}
+
+function dueForRead(summary: AgentSummary, now: number, key: string): boolean {
 	if (summary.status === 'blocked') return true;
-	const last = screens.get(summary.paneId);
+	const last = screens.get(key);
 	if (!last) return true;
 	// The fast beat is a floor for everyone: a chatty pane flips state
 	// several times a second and must not be read for each flip.
@@ -89,7 +97,7 @@ interface Cached {
 	ask: AgentSummary['picker'];
 }
 /**
- * Keyed by pane, invalidated by `seq`.
+ * Keyed by pane and connection identity, invalidated by `seq`.
  *
  * The projector runs on every herdr event, and re-reading every transcript
  * each time costs ~220ms across a real fleet (measured). `seq` is herdr's
@@ -118,8 +126,12 @@ export function previewFrom(messages: Message[], status: string): string {
 	return status === 'done' ? clip(`✓ ${lastAssistant.text}`) : clip(lastAssistant.text);
 }
 
-async function previewFor(summary: AgentSummary, sessionId: string | undefined): Promise<Cached> {
-	const hit = cache.get(summary.paneId);
+async function previewFor(
+	summary: AgentSummary,
+	sessionId: string | undefined,
+	key: string
+): Promise<Cached> {
+	const hit = cache.get(key);
 	// seq moves on state changes, not on transcript writes, so a working
 	// pane's tail is re-read on the same interval as its screen: that is
 	// how a question codex asks mid-turn reaches the list. A pending
@@ -156,7 +168,7 @@ async function previewFor(summary: AgentSummary, sessionId: string | undefined):
 		}
 	}
 	const entry = { seq: summary.seq, at: now, preview, idlePreview, settled, ask };
-	cache.set(summary.paneId, entry);
+	if (enrichmentKey(summary.paneId) === key) cache.set(key, entry);
 	// Bounded by the pane count in practice; trim if panes churn a lot.
 	if (cache.size > 128) cache.delete(cache.keys().next().value as string);
 	return entry;
@@ -219,11 +231,20 @@ async function gitFor(agents: AgentSummary[]): Promise<Map<string, BranchInfo>> 
  * itself, which is the thing the screen cannot do without.
  */
 export async function enrichAgents(agents: AgentSummary[]): Promise<AgentSummary[]> {
+	const identities = new Map(agents.map((a) => [a.paneId, enrichmentKey(a.paneId)]));
+	const current = (a: AgentSummary) => {
+		const key = identities.get(a.paneId);
+		return key != null && key === enrichmentKey(a.paneId);
+	};
+	const live = new Set(identities.values());
+	for (const entries of [screens, cache])
+		for (const key of entries.keys()) if (!live.has(key)) entries.delete(key);
+	agents = agents.filter(current);
 	let raws: Record<string, unknown>[];
 	try {
 		raws = await rawAgents();
 	} catch {
-		return agents;
+		return agents.filter(current);
 	}
 	const sessions = new Map(
 		raws.map((a) => [
@@ -235,18 +256,23 @@ export async function enrichAgents(agents: AgentSummary[]): Promise<AgentSummary
 	const focused = new Set(raws.filter((a) => a.focused === true).map((a) => a.pane_id as string));
 
 	const [transcripts, git] = await Promise.all([
-		Promise.all(agents.map((summary) => previewFor(summary, sessions.get(summary.paneId)))),
+		Promise.all(
+			agents.map((summary) =>
+				previewFor(summary, sessions.get(summary.paneId), identities.get(summary.paneId)!)
+			)
+		),
 		gitFor(agents)
 	]);
 
 	const now = Date.now();
 	const due = agents
-		.filter((a) => dueForRead(a, now))
+		.filter((a) => current(a) && dueForRead(a, now, identities.get(a.paneId)!))
 		// herdr-blocked panes first, then whichever reading is oldest.
 		.sort(
 			(a, b) =>
 				Number(b.status === 'blocked') - Number(a.status === 'blocked') ||
-				(screens.get(a.paneId)?.at ?? 0) - (screens.get(b.paneId)?.at ?? 0)
+				(screens.get(identities.get(a.paneId)!)?.at ?? 0) -
+					(screens.get(identities.get(b.paneId)!)?.at ?? 0)
 		)
 		.slice(0, MAX_READS);
 	await Promise.all(
@@ -254,7 +280,8 @@ export async function enrichAgents(agents: AgentSummary[]): Promise<AgentSummary
 			try {
 				const visible = await readVisible(summary.paneId);
 				const picker = parsePicker(visible);
-				screens.set(summary.paneId, {
+				if (!current(summary)) return;
+				screens.set(identities.get(summary.paneId)!, {
 					seq: summary.seq,
 					at: now,
 					picker: picker
@@ -282,12 +309,10 @@ export async function enrichAgents(agents: AgentSummary[]): Promise<AgentSummary
 			}
 		})
 	);
-	for (const paneId of screens.keys()) {
-		if (!agents.some((a) => a.paneId === paneId)) screens.delete(paneId);
-	}
-
-	return agents.map((summary, i) => {
-		const reading = screens.get(summary.paneId);
+	return agents.flatMap((summary, i) => {
+		// Never publish an old-host result, even if policy changed while another read awaited.
+		if (!current(summary)) return [];
+		const reading = screens.get(identities.get(summary.paneId)!);
 		const transcript = transcripts[i];
 		const picker = reading?.picker ?? transcript.ask;
 		const repo = git.get(`${parsePane(summary.paneId).machineId ?? ''}\0${summary.cwd}`);
