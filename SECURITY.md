@@ -7,7 +7,7 @@ point.
 
 bordr is a remote control for coding agents. Through it you can type a prompt
 into any agent on the host, press keys into its terminal, answer its permission
-prompts, start new agents in any directory under `$HOME`, upload images, and
+prompts, start new agents in any directory under `$HOME`, upload files, and
 browse and download files under the roots you configure.
 
 The agents themselves can run arbitrary commands. So:
@@ -144,7 +144,7 @@ network, mostly because an _agent_ can be induced to write a hostile file.
 | **Transcript escaping**      | Terminal output is HTML-escaped before rendering; the ANSI renderer emits only colour spans                                                                                                                                                                                                                                                                                                                                                                   |
 | **Markdown**                 | The file viewer renders with `marked`, then sanitises with DOMPurify with `style`, `form` and `iframe` forbidden                                                                                                                                                                                                                                                                                                                                              |
 | **Transcript markdown**      | Agent messages render in bordr's own origin through a stricter allow-list: tags and attributes named explicitly, `javascript:` and `data:` URLs refused, and `class` kept only as `language-*` on a code element so agent output cannot borrow bordr's own layout utilities to paint over the app                                                                                                                                                             |
-| **Upload limits**            | The browser-declared MIME type is allow-listed and the payload size-capped, at most six per message. The file's own bytes are not inspected, so a caller who lies about the type is only limited by the allow-list                                                                                                                                                                                                                                            |
+| **Upload limits**            | Any file can be attached from the phone, each size-capped at 15MB and at most six per message, written 0600 under the data directory with a generated name that keeps only a cleaned copy of the original. The declared type is not trusted: only PNG, JPEG, WebP and GIF uploads are ever served back, so an uploaded SVG or HTML file cannot run in bordr's origin                                                                                          |
 | **Frame protection**         | Every app response sends `x-frame-options: DENY` and `frame-ancestors 'none'`; only the raw artifact route is exempt, because the viewer frames it                                                                                                                                                                                                                                                                                                            |
 
 ## What it does not defend against

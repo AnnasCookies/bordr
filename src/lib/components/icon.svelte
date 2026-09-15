@@ -15,6 +15,7 @@
 		| 'bell'
 		| 'keyboard'
 		| 'camera'
+		| 'paperclip'
 		| 'mic'
 		| 'arrow-up'
 		| 'arrow-up-right'
@@ -86,6 +87,18 @@
 	{:else if name === 'camera'}
 		<path d="M4 8h3l2-3h6l2 3h3v11H4z" />
 		<circle cx="12" cy="13" r="3.5" />
+	{:else if name === 'paperclip'}
+		<!--
+			Three nested runs of a wire, each turning through a semicircle: the
+			outer loop's radius 3.5, the top 2.5, the inner 1.5, so the runs sit
+			one stroke apart. Drawn upright about the centre and turned 45°, the
+			way an attach button leans, and no point sits more than 9.5 from the
+			centre, so the turn cannot push it out of the box.
+		-->
+		<path
+			d="M15.5 6.5v9a3.5 3.5 0 0 1-7 0V5a2.5 2.5 0 0 1 5 0v10a1.5 1.5 0 0 1-3 0V7"
+			transform="rotate(45 12 12)"
+		/>
 	{:else if name === 'mic'}
 		<rect x="9" y="3" width="6" height="12" rx="3" />
 		<path d="M5 11a7 7 0 0 0 14 0M12 18v3" />

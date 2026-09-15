@@ -1,6 +1,7 @@
 import { readFileSync, statSync } from 'node:fs';
 import { extname } from 'node:path';
 import { error } from '@sveltejs/kit';
+import { PHOTO_TYPES } from '$lib/server/attachments';
 import { MIME, resolveUpload } from '$lib/server/files';
 import type { RequestHandler } from './$types';
 
@@ -11,16 +12,16 @@ const MAX_BYTES = 25 * 1024 * 1024;
  * Serve one photo sent from the phone, so it renders in the transcript as the
  * photo it was rather than the words "📷 photo".
  *
- * Images only. The uploads directory holds nothing else today, but it is
- * written by a request handler and read by a path out of a transcript, so the
- * type is checked here rather than assumed.
+ * Raster photos only. The uploads directory now holds any file the phone
+ * attached, and this is bordr's own origin: an SVG is an image by MIME type
+ * and can still carry script, and so can HTML. Neither is ever served here.
  */
 export const GET: RequestHandler = async ({ params }) => {
 	const absolute = resolveUpload(params.name);
 	if (!absolute) throw error(404, 'not found');
 
 	const type = MIME[extname(absolute).slice(1).toLowerCase()] ?? '';
-	if (!type.startsWith('image/')) throw error(415, 'not an image');
+	if (!(type in PHOTO_TYPES)) throw error(415, 'not a photo');
 
 	let stat;
 	try {

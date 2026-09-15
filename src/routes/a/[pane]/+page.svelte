@@ -6,6 +6,9 @@
 	import { agentStore } from '$lib/agents.svelte';
 	import { mergeResults } from '$lib/dictation';
 	import { shrinkImage } from '$lib/shrink-image';
+
+	/** The upload route's per-file cap (`$lib/server/attachments`), which the page cannot import. */
+	const MAX_ATTACH_BYTES = 15 * 1024 * 1024;
 	import { prefs } from '$lib/prefs.svelte';
 	import { agentTitle, collapseHome, flatOrder } from '$lib/grouping';
 	import {
@@ -1188,11 +1191,24 @@
 		preparing += picked.length;
 		for (const file of picked) {
 			try {
-				const shrunk = await shrinkImage(file);
+				const image = file.type.startsWith('image/');
+				// Photos are shrunk below the cap; anything else goes as it is, so
+				// the server's per-file cap is checked here rather than after the
+				// whole upload has crossed the tailnet.
+				if (!image && file.size > MAX_ATTACH_BYTES) {
+					sendError = `${file.name || 'That file'} is over 15 MB, the most one attachment can be.`;
+					continue;
+				}
+				const shrunk = image ? await shrinkImage(file) : file;
 				attachments = [...attachments, shrunk];
-				previews = [...previews, URL.createObjectURL(shrunk)];
+				// A preview key that is unique per attachment: a blob URL for a
+				// picture, which the row renders, and a plain token for a file.
+				previews = [
+					...previews,
+					image ? URL.createObjectURL(shrunk) : `file:${crypto.randomUUID()}`
+				];
 			} catch (e) {
-				sendError = `Could not read ${file.name || 'that image'}: ${(e as Error).message}`;
+				sendError = `Could not read ${file.name || 'that file'}: ${(e as Error).message}`;
 			} finally {
 				preparing -= 1;
 			}
@@ -1894,7 +1910,7 @@
 	}
 
 	const TOO_LARGE =
-		"Too large for the server's request limit. Raise BODY_SIZE_LIMIT in .env (README) or send fewer photos.";
+		"Too large for the server's request limit. Raise BODY_SIZE_LIMIT in .env (README) or send fewer or smaller files.";
 
 	/**
 	 * What the composer just typed into a question, so the hint can say so.
@@ -3212,15 +3228,31 @@
 					{#if previews.length > 0 || preparing > 0}
 						<div class="mb-2 flex items-center gap-2 overflow-x-auto">
 							{#each previews as src, i (src)}
+								{@const file = attachments[i]}
 								<span class="relative shrink-0">
-									<img
-										{src}
-										alt=""
-										class="h-16 w-16 rounded-[10px] border border-hairline object-cover"
-									/>
+									{#if src.startsWith('blob:')}
+										<img
+											{src}
+											alt=""
+											class="h-16 w-16 rounded-[10px] border border-hairline object-cover"
+										/>
+									{:else}
+										<!-- A file has nothing to preview; its name and size say which one it is. -->
+										<span
+											class="flex h-16 w-28 flex-col justify-center gap-0.5 rounded-[10px] border border-hairline bg-card px-2 text-[11px]"
+										>
+											<Icon name="paperclip" size={14} class="text-muted" />
+											<span class="truncate text-ink">{file?.name || 'file'}</span>
+											<span class="font-mono text-faint"
+												>{file && file.size >= 1024 * 1024
+													? `${(file.size / (1024 * 1024)).toFixed(1)} MB`
+													: `${Math.max(1, Math.round((file?.size ?? 0) / 1024))} KB`}</span
+											>
+										</span>
+									{/if}
 									<button
 										class="absolute -top-1.5 -right-1.5 flex h-[22px] w-[22px] items-center justify-center rounded-full bg-ink text-[11px] text-card"
-										aria-label="Remove image"
+										aria-label="Remove {file?.name || 'attachment'}"
 										onclick={() => removeAt(i)}>✕</button
 									>
 								</span>
@@ -3314,15 +3346,19 @@
 						</button>
 						<button
 							class="tap-44 flex h-[34px] w-[34px] shrink-0 items-center justify-center rounded-lg text-muted"
-							aria-label="Attach a photo"
+							aria-label="Attach files"
 							onclick={() => fileInput?.click()}
 						>
-							<Icon name="camera" size={19} />
+							<Icon name="paperclip" size={19} />
 						</button>
+						<!--
+							No `accept`. With `image/*` Android offers the camera and the
+							gallery only; with nothing it offers its whole chooser — camera,
+							photos and files, the one Teams and WhatsApp open.
+						-->
 						<input
 							bind:this={fileInput}
 							type="file"
-							accept="image/*"
 							multiple
 							class="hidden"
 							onchange={(e) => void addFiles(e.currentTarget)}

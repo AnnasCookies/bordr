@@ -49,7 +49,7 @@ All you need is Tailscale, Herdr and a PC to run it on.
 - A tab's real split, dividers and all, not a row of chips.
 - An on-screen key strip for anything the TUI insists on handling itself.
 - Type `/` for the harness's commands and your own skills, with descriptions.
-- Type, dictate, or share a photo straight in from another app.
+- Type, dictate, attach any file from the camera, gallery or files, or share a photo in from another app.
 
 **Your whole estate**
 
