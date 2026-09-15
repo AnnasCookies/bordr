@@ -54,6 +54,8 @@ async function fixture(
 	fleet: typeof agents = agents
 ) {
 	const state = {
+		details: 0,
+		operations: [] as string[],
 		agentData: fleet,
 		treeData: workspaces,
 		multi: false,
@@ -77,7 +79,7 @@ async function fixture(
 		picker: true,
 		question: 'Choose a fixture',
 		keys: [] as string[][],
-		answers: [] as { index: number; text?: string }[],
+		answers: [] as { index: number; text?: string; dialog?: string }[],
 		keyDelay: null as Promise<void> | null,
 		answerDelay: null as Promise<void> | null,
 		answerStatus: 200,
@@ -148,20 +150,26 @@ async function fixture(
 			return respond({ ok: true });
 		}
 		if (path.endsWith('/keys')) {
+			state.operations.push('keys:start');
 			state.keyPanes.push(path.split('/')[3]);
 			state.keys.push(route.request().postDataJSON().keys);
 			await state.keyDelay;
+			state.operations.push('keys:end');
 			state.selected = 2;
 			return respond({ ok: true });
 		}
 		if (path.endsWith('/answer')) {
+			state.operations.push('answer:start');
 			state.answers.push(route.request().postDataJSON());
 			await state.answerDelay;
+			state.operations.push('answer:end');
 			return respond({ outcome: 'accepted', message: 'fixture refusal' }, state.answerStatus);
 		}
 		if (path.endsWith('/type')) {
+			state.operations.push('type:start');
 			state.typeCalls.push({ pane: path.split('/')[3], text: route.request().postDataJSON().text });
 			await state.typeDelay;
+			state.operations.push('type:end');
 			return respond({ message: 'fixture type refusal' }, state.typeStatus);
 		}
 		if (path.endsWith('/prompt') || path.endsWith('/image')) {
@@ -172,6 +180,7 @@ async function fixture(
 		if (path.endsWith('/watch')) return respond({ watched: false });
 		if (path.endsWith('/read')) return respond({ text: 'fixture terminal\nline two' });
 		if (/\/api\/agents\/[^/]+$/.test(path)) {
+			state.details++;
 			const paneId = path.split('/').at(-1)!;
 			return respond({
 				...(agents.find((a) => a.paneId === paneId) ?? agents[0]),
@@ -607,7 +616,9 @@ test('terminal write-in focuses its input and submits the selected row via answe
 	await expect(input).toBeFocused();
 	await input.fill('terminal write-in');
 	await input.press('Enter');
-	await expect.poll(() => state.answers).toEqual([{ index: 3, text: 'terminal write-in' }]);
+	await expect
+		.poll(() => state.answers)
+		.toEqual([{ index: 3, text: 'terminal write-in', dialog: expect.any(String) }]);
 	expect(state.typeCalls).toEqual([]);
 	expect(state.keys).toEqual([]);
 });
@@ -807,4 +818,128 @@ test.describe('filtered mobile navigation', () => {
 			await page.waitForTimeout(350);
 		}
 	});
+});
+
+test('terminal write-in shares the full type/Tab queue and captures its row, dialog and text', async ({
+	page
+}) => {
+	const state = await fixture(page, { paneView: 'terminal' });
+	state.options.push({ index: 4, label: 'Another write-in', writeIn: true });
+	await openPane(page);
+	const input = page.getByRole('textbox', { name: 'Send to this pane' });
+	let typed!: () => void;
+	let keyed!: () => void;
+	state.typeDelay = new Promise((r) => {
+		typed = r;
+	});
+	state.keyDelay = new Promise((r) => {
+		keyed = r;
+	});
+	await input.fill('earlier terminal text');
+	await input.press('Tab');
+	await expect.poll(() => state.typeCalls.length).toBe(1);
+	await page.getByRole('button', { name: /3 Other/ }).click();
+	await input.fill('captured write-in');
+	await input.press('Enter');
+	await page.waitForTimeout(100);
+	expect(state.answers).toEqual([]);
+	// A later selection/draft must not be read when the queued callback finally runs.
+	await page.getByRole('button', { name: /4 Another write-in/ }).click();
+	await input.fill('newer unsent draft');
+	await input.press('Escape');
+	const details = state.details;
+	// An unchanged-dialog poll must not invalidate work queued on this same pane.
+	await expect.poll(() => state.details).toBeGreaterThan(details);
+	await page.waitForTimeout(100);
+	expect(state.answers).toEqual([]);
+	expect(state.keys).toEqual([]);
+	typed();
+	await expect.poll(() => state.keys).toEqual([['tab']]);
+	expect(state.answers).toEqual([]);
+	keyed();
+	await expect
+		.poll(() => state.answers)
+		.toEqual([
+			{ index: 3, text: 'captured write-in', dialog: expect.stringContaining('Choose a fixture') }
+		]);
+	await expect(input).toHaveValue('newer unsent draft');
+	expect(state.operations).toEqual([
+		'type:start',
+		'type:end',
+		'keys:start',
+		'keys:end',
+		'answer:start',
+		'answer:end'
+	]);
+	// Even if polling has not seen the answer replace the dialog, queued old keys are cancelled.
+	await page.waitForTimeout(100);
+	expect(state.keys).toEqual([['tab']]);
+});
+
+for (const replacement of ['pane', 'dialog', 'failed type']) {
+	test(`terminal queued write-in cancels on ${replacement} and restores original text`, async ({
+		page
+	}) => {
+		const state = await fixture(page, { paneView: 'terminal' });
+		await openPane(page);
+		const input = page.getByRole('textbox', { name: 'Send to this pane' });
+		let release!: () => void;
+		state.typeDelay = new Promise((r) => {
+			release = r;
+		});
+		if (replacement === 'failed type') state.typeStatus = 409;
+		await input.fill('earlier text');
+		await input.press('Tab');
+		await expect.poll(() => state.typeCalls.length).toBe(1);
+		await page.getByRole('button', { name: /3 Other/ }).click();
+		await input.fill('captured pending answer');
+		await input.press('Enter');
+		if (replacement === 'pane') {
+			await openPane(page, 'b');
+			await input.fill('B draft');
+		} else if (replacement === 'dialog') {
+			state.question = 'Replacement dialog';
+			await expect(page.getByText('Replacement dialog', { exact: true })).toBeVisible({
+				timeout: 10000
+			});
+		}
+		release();
+		await expect
+			.poll(() => page.evaluate(() => localStorage.getItem('bordr-draft:a')))
+			.toContain('captured pending answer');
+		expect(state.answers).toEqual([]);
+		expect(state.keys).toEqual([]);
+		if (replacement === 'pane') await expect(input).toHaveValue('B draft');
+		if (replacement === 'failed type')
+			await expect
+				.poll(() => page.evaluate(() => localStorage.getItem('bordr-draft:a')))
+				.toBe('earlier text\ncaptured pending answer');
+	});
+}
+
+test('refused queued terminal write-in retains its row and draft for an explicit retry', async ({
+	page
+}) => {
+	const state = await fixture(page, { paneView: 'terminal' });
+	await openPane(page);
+	const input = page.getByRole('textbox', { name: 'Send to this pane' });
+	await page.getByRole('button', { name: /3 Other/ }).click();
+	state.answerStatus = 409;
+	await input.fill('retry this write-in');
+	await input.press('Enter');
+	await expect.poll(() => state.answers.length).toBe(1);
+	await expect(input).toHaveValue('retry this write-in');
+	await expect(page.getByRole('button', { name: /3 Other/ })).toHaveAttribute(
+		'aria-pressed',
+		'true'
+	);
+	state.answerStatus = 200;
+	await input.press('Enter');
+	await expect.poll(() => state.answers.length).toBe(2);
+	expect(state.answers.map(({ index, text }) => ({ index, text }))).toEqual([
+		{ index: 3, text: 'retry this write-in' },
+		{ index: 3, text: 'retry this write-in' }
+	]);
+	expect(state.typeCalls).toEqual([]);
+	expect(state.keys).toEqual([]);
 });

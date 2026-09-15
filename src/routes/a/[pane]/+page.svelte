@@ -47,7 +47,7 @@
 	import StatusMark from '$lib/components/status-mark.svelte';
 	import Bubble from '$lib/components/bubble.svelte';
 	import AppHeader from '$lib/components/app-header.svelte';
-	import PaneTerminal from '$lib/components/pane-terminal.svelte';
+	import PaneTerminal, { type TerminalAnswerTarget } from '$lib/components/pane-terminal.svelte';
 	import PaneScreen from '$lib/components/pane-screen.svelte';
 	import PaneSplit from '$lib/components/pane-split.svelte';
 	import Icon from '$lib/components/icon.svelte';
@@ -1953,9 +1953,14 @@
 	}
 
 	/** Resolves to whether the answer left, so a write-in draft survives one that did not. */
-	async function answer(index: number, text?: string, submit = false): Promise<boolean> {
-		const paneId = detail.paneId;
-		if (busy) return false;
+	async function answer(
+		index: number,
+		text?: string,
+		submit = false,
+		target?: TerminalAnswerTarget
+	): Promise<boolean> {
+		const paneId = target?.paneId ?? detail.paneId;
+		if (busy || paneId !== detail.paneId || (target && target.dialog !== pickerKey)) return false;
 		busy = true;
 		sendingIndex = index;
 		uncertain = null;
@@ -2001,7 +2006,9 @@
 				fetch(`/api/agents/${encodeURIComponent(paneId)}/answer`, {
 					method: 'POST',
 					headers: { 'content-type': 'application/json' },
-					body: JSON.stringify(submit ? { submit: true } : { index, text })
+					body: JSON.stringify(
+						submit ? { submit: true } : { index, text, ...(target && { dialog: target.dialog }) }
+					)
 				})
 			);
 			const body = (await r.json().catch(() => null)) as {
@@ -2237,6 +2244,19 @@
 			sendError = (e as Error).message;
 			return false;
 		}
+	}
+
+	async function sendTerminalAnswer(target: TerminalAnswerTarget, text: string): Promise<boolean> {
+		if (dictating) stopDictation();
+		const ok = await answer(target.index, text, false, target);
+		if (
+			ok &&
+			writeIn?.paneId === target.paneId &&
+			writeIn.dialog === target.dialog &&
+			writeIn.index === target.index
+		)
+			writeIn = null;
+		return ok;
 	}
 
 	async function send() {
@@ -3000,7 +3020,9 @@
 				{dictating}
 				{busy}
 				onkeys={sendKeys}
-				onsubmit={writeIn ? send : undefined}
+				dialog={pickerKey}
+				{writeIn}
+				onsubmit={sendTerminalAnswer}
 				onrestore={restoreTerminalDraft}
 				bind:input={terminalInput}
 				onmic={speechSupported ? toggleDictation : undefined}

@@ -1,3 +1,11 @@
+<script module lang="ts">
+	export interface TerminalAnswerTarget {
+		paneId: string;
+		dialog: string;
+		index: number;
+	}
+</script>
+
 <script lang="ts">
 	import { onMount, type Snippet } from 'svelte';
 	import { SvelteSet } from 'svelte/reactivity';
@@ -19,6 +27,8 @@
 	 */
 	let {
 		paneId,
+		dialog = '',
+		writeIn = null,
 		agent = '',
 		draft = $bindable(''),
 		ask,
@@ -34,6 +44,8 @@
 		busy = false
 	}: {
 		paneId: string;
+		dialog?: string;
+		writeIn?: TerminalAnswerTarget | null;
 		/** Which harness, so the status block remembers the row per harness. */
 		agent?: string;
 		/** Bound, so dictation writes into this line the way it does the composer. */
@@ -46,7 +58,7 @@
 		mono?: number;
 		dictating?: boolean;
 		onkeys: (keys: string[], paneId: string) => Promise<boolean>;
-		onsubmit?: () => Promise<void>;
+		onsubmit?: (target: TerminalAnswerTarget, text: string) => Promise<boolean>;
 		onrestore: (paneId: string, text: string) => void;
 		input?: HTMLInputElement;
 		onmic?: () => void;
@@ -196,10 +208,11 @@
 	let queue: Promise<void> = Promise.resolve();
 	let failed = $state(false);
 
-	// Pane changes invalidate every queued continuation, including an A → B → A trip.
+	// Pane/dialog changes invalidate every queued continuation, including an A → B → A trip.
 	let generation = 0;
+	const owner = $derived(`${paneId}\0${dialog}`);
 	$effect(() => {
-		void paneId;
+		void owner;
 		generation++;
 		return () => {
 			generation++;
@@ -217,21 +230,33 @@
 		if (text) onrestore(paneId, text);
 	}
 
-	function dispatch(keys: string[], flush = false) {
+	function dispatch(keys: string[], flush = false, answer?: TerminalAnswerTarget) {
 		if (composing || busy) return;
 		const origin = paneId;
 		const epoch = generation;
+		const originDialog = dialog;
+		const submitAnswer = onsubmit;
 		const chunk = flush ? draft : '';
+		if (answer && !chunk.trim()) return;
 		const item = { paneId: origin, epoch, text: chunk };
 		unsent.add(item);
 		if (flush) draft = '';
-		const valid = () => generation === epoch && paneId === origin;
+		const valid = () => generation === epoch && paneId === origin && dialog === originDialog;
 		queue = queue.then(async () => {
 			if (!valid()) {
 				recover(origin, epoch);
 				return;
 			}
 			try {
+				if (answer) {
+					if (!submitAnswer || !(await submitAnswer(answer, chunk.trim())))
+						throw new Error('answer refused');
+					unsent.delete(item);
+					// An answer can replace the dialog before polling sees it. Retire its queue now.
+					recover(origin, epoch);
+					if (generation === epoch) generation++;
+					return;
+				}
 				if (chunk) {
 					const res = await fetch(`/api/agents/${encodeURIComponent(origin)}/type`, {
 						method: 'POST',
@@ -261,10 +286,9 @@
 		});
 	}
 
-	async function submit() {
-		if (composing || busy) return;
-		if (onsubmit) await onsubmit();
-		else dispatch(['enter'], true);
+	function submit() {
+		// Snapshot the selected row and text at enqueue time, not when earlier I/O finishes.
+		dispatch(['enter'], true, writeIn && onsubmit ? { ...writeIn } : undefined);
 		input?.focus();
 	}
 
