@@ -6,6 +6,8 @@ import { grokAdapter } from './grok';
 import { piAdapter } from './pi';
 import { withLocalFiles } from './local-files';
 import { withPhotoPrompts } from './photo';
+import { withSentFiles } from './sent-files';
+import { withSecretRedaction } from './redact';
 import { backfillBlocks, type Adapter } from './types';
 
 /**
@@ -33,10 +35,29 @@ const ADAPTERS: Record<string, Adapter> = {
 	omp: piAdapter
 };
 
-export function adapterFor(agentKind: string): Adapter | null {
-	const adapter = ADAPTERS[agentKind];
-	// withBlocks first so withLocalFiles always has blocks to walk.
-	return adapter ? withLocalFiles(withBlocks(withPhotoPrompts(adapter))) : null;
+export interface AdapterOptions {
+	/**
+	 * The transcript was fetched from another machine.
+	 *
+	 * Its SendUserFile paths name files on THAT machine, but `withSentFiles`
+	 * reads this host's disk — so a remote transcript could have bordr inline
+	 * whatever local image sits at a path it chose. It is left out entirely.
+	 */
+	remote?: boolean;
+	child?: boolean;
+}
+
+export function adapterFor(agentKind: string, options: AdapterOptions = {}): Adapter | null {
+	const adapter =
+		agentKind === 'claude' && options.child
+			? { ...claudeAdapter, parse: (text: string) => claudeAdapter.parse(text, true) }
+			: ADAPTERS[agentKind];
+	if (!adapter) return null;
+	// withBlocks first so the decorators above it always have blocks to walk.
+	// withSentFiles reads a tool call's own input, so it has to sit outside
+	// withBlocks too — a flat `{text, tools}` message has no input to read.
+	const local = withLocalFiles(withBlocks(withPhotoPrompts(adapter)));
+	return withSecretRedaction(options.remote ? local : withSentFiles(local));
 }
 
 export type { Adapter, Block, Message, ToolCall, ToolResult } from './types';

@@ -1,8 +1,14 @@
 import { adapterFor } from './transcript';
+import { piSessionEnded } from './transcript/pi';
+import { resolveLocalTranscript } from './transcript/resolve';
 import { readTranscriptTail } from './transcript/tail';
 import { menuFooter, parsePicker, pendingAsk } from './picker';
 import { rawAgents, readVisible } from './herdr';
+import { parsePane } from './herdr/address';
+import { branchesFor, type BranchInfo } from './herdr/branches';
+import { connectionFor, connectionKey } from './herdr/connections';
 import { extractStatusLines } from './status';
+import { piScreenWorking, piTranscriptSettled, piStatusDiagnostic } from './pi-status';
 import type { AgentSummary } from '$lib/types';
 import type { Message } from './transcript/types';
 
@@ -43,6 +49,8 @@ interface ScreenReading {
 	at: number;
 	picker: AgentSummary['picker'];
 	menu: string | null;
+	/** Whether Pi's live turn row is still on screen. */
+	piWorking: boolean;
 	/** The harness's status footer, from the same read. */
 	status: string[];
 }
@@ -53,9 +61,17 @@ export function resetScreenCache(): void {
 	screens.clear();
 }
 
-function dueForRead(summary: AgentSummary, now: number): boolean {
+/** Actionable readings belong to a currently permitted target/session, not its editable id. */
+function enrichmentKey(paneId: string): string | null {
+	const { machineId } = parsePane(paneId);
+	if (!machineId) return paneId;
+	const connection = connectionFor(machineId);
+	return connection ? `${connectionKey(connection.machine)}\0${paneId}` : null;
+}
+
+function dueForRead(summary: AgentSummary, now: number, key: string): boolean {
 	if (summary.status === 'blocked') return true;
-	const last = screens.get(summary.paneId);
+	const last = screens.get(key);
 	if (!last) return true;
 	// The fast beat is a floor for everyone: a chatty pane flips state
 	// several times a second and must not be read for each flip.
@@ -75,11 +91,13 @@ interface Cached {
 	seq: number;
 	at: number;
 	preview: string;
+	idlePreview: string;
+	settled: boolean;
 	/** A tool-asked question still waiting on the person (codex). */
 	ask: AgentSummary['picker'];
 }
 /**
- * Keyed by pane, invalidated by `seq`.
+ * Keyed by pane and connection identity, invalidated by `seq`.
  *
  * The projector runs on every herdr event, and re-reading every transcript
  * each time costs ~220ms across a real fleet (measured). `seq` is herdr's
@@ -108,8 +126,12 @@ export function previewFrom(messages: Message[], status: string): string {
 	return status === 'done' ? clip(`✓ ${lastAssistant.text}`) : clip(lastAssistant.text);
 }
 
-async function previewFor(summary: AgentSummary, sessionId: string | undefined): Promise<Cached> {
-	const hit = cache.get(summary.paneId);
+async function previewFor(
+	summary: AgentSummary,
+	sessionId: string | undefined,
+	key: string
+): Promise<Cached> {
+	const hit = cache.get(key);
 	// seq moves on state changes, not on transcript writes, so a working
 	// pane's tail is re-read on the same interval as its screen: that is
 	// how a question codex asks mid-turn reaches the list. A pending
@@ -123,43 +145,106 @@ async function previewFor(summary: AgentSummary, sessionId: string | undefined):
 	if (fresh) return hit;
 
 	let preview = '';
+	let idlePreview = '';
+	let settled = false;
 	let ask: AgentSummary['picker'] = null;
 	const adapter = sessionId ? adapterFor(summary.agent) : null;
 	if (adapter && sessionId) {
 		try {
-			const path = await adapter.resolve(sessionId);
+			const path = await resolveLocalTranscript(adapter, summary.paneId, summary.agent, sessionId);
 			if (path) {
-				const messages = adapter.parse((await readTranscriptTail(path)).text);
-				preview = previewFrom(messages, summary.status);
-				const pending = pendingAsk(messages);
-				if (pending) ask = { question: pending.question, options: pending.options, multi: false };
+				const tail = (await readTranscriptTail(path)).text;
+				if (summary.agent !== 'omp' || !piSessionEnded(tail)) {
+					const messages = adapter.parse(tail);
+					preview = previewFrom(messages, summary.status);
+					idlePreview = previewFrom(messages, 'idle');
+					settled = piTranscriptSettled(messages);
+					const pending = pendingAsk(messages);
+					if (pending && summary.agent !== 'omp') ask = pending;
+				}
 			}
 		} catch {
 			// No transcript is not an error — the row falls back to the cwd.
 		}
 	}
-	const entry = { seq: summary.seq, at: now, preview, ask };
-	cache.set(summary.paneId, entry);
+	const entry = { seq: summary.seq, at: now, preview, idlePreview, settled, ask };
+	if (enrichmentKey(summary.paneId) === key) cache.set(key, entry);
 	// Bounded by the pane count in practice; trim if panes churn a lot.
 	if (cache.size > 128) cache.delete(cache.keys().next().value as string);
 	return entry;
 }
 
 /**
- * Add the list-only fields: a one-line preview for every pane, and the picker
- * for any pane with a dialog on screen so `/` can answer without opening the
- * conversation. A pane showing a dialog is reported as `blocked` whatever
- * herdr said, which is what keeps "needs you" consistent across harnesses.
+ * Branch and drift for every pane's directory, one call per machine.
+ *
+ * The list used to skip git entirely, on the grounds that a call per row was
+ * too much for a view that repaints every two seconds. It is not a call per
+ * row: `branchesFor` takes the whole set at once — a file read plus one git
+ * per directory locally, a single ssh for a remote machine — and caches each
+ * answer for a minute, so a two-second poll costs nothing between checkouts.
+ * The workspace tree already warms the same cache with the same directories.
+ *
+ * Keyed by machine AND directory: two machines can both have `~/bordr`, and
+ * they are not the same repository.
+ */
+async function gitFor(agents: AgentSummary[]): Promise<Map<string, BranchInfo>> {
+	const byMachine = new Map<string, Set<string>>();
+	for (const agent of agents) {
+		if (!agent.cwd) continue;
+		const { machineId } = parsePane(agent.paneId);
+		const key = machineId ?? '';
+		const dirs = byMachine.get(key) ?? new Set<string>();
+		dirs.add(agent.cwd);
+		byMachine.set(key, dirs);
+	}
+
+	const out = new Map<string, BranchInfo>();
+	await Promise.all(
+		[...byMachine].map(async ([machineId, dirs]) => {
+			// `connectionFor`, NOT `ensureConnection`: this runs on every
+			// projection, about every two seconds, and a machine that is down
+			// would then be re-dialled on that beat for as long as bordr is
+			// open. Listing agents already opens the connection it needs; the
+			// branch rides whatever is there and reports nothing otherwise.
+			//
+			// Nothing is the right answer anyway. A stale branch is worse than
+			// no branch: it would say you are on one you have since left, on a
+			// box you currently cannot see.
+			const machine = machineId ? (connectionFor(machineId)?.machine ?? null) : null;
+			if (machineId && !machine) return;
+			for (const [cwd, info] of await branchesFor(machine, [...dirs])) {
+				out.set(`${machineId}\0${cwd}`, info);
+			}
+		})
+	);
+	return out;
+}
+
+/**
+ * Add the list-only fields: a one-line preview for every pane, the picker for
+ * any pane with a dialog on screen so `/` can answer without opening the
+ * conversation, and the git state of its directory. A pane showing a dialog is
+ * reported as `blocked` whatever herdr said, which is what keeps "needs you"
+ * consistent across harnesses.
  *
  * Never throws: an enrichment failure must not cost the caller the agent list
  * itself, which is the thing the screen cannot do without.
  */
 export async function enrichAgents(agents: AgentSummary[]): Promise<AgentSummary[]> {
+	const identities = new Map(agents.map((a) => [a.paneId, enrichmentKey(a.paneId)]));
+	const current = (a: AgentSummary) => {
+		const key = identities.get(a.paneId);
+		return key != null && key === enrichmentKey(a.paneId);
+	};
+	const live = new Set(identities.values());
+	for (const entries of [screens, cache])
+		for (const key of entries.keys()) if (!live.has(key)) entries.delete(key);
+	agents = agents.filter(current);
 	let raws: Record<string, unknown>[];
 	try {
 		raws = await rawAgents();
 	} catch {
-		return agents;
+		return agents.filter(current);
 	}
 	const sessions = new Map(
 		raws.map((a) => [
@@ -170,18 +255,24 @@ export async function enrichAgents(agents: AgentSummary[]): Promise<AgentSummary
 	// Which pane the terminal itself is on — herdr says so in the same list.
 	const focused = new Set(raws.filter((a) => a.focused === true).map((a) => a.pane_id as string));
 
-	const transcripts = await Promise.all(
-		agents.map((summary) => previewFor(summary, sessions.get(summary.paneId)))
-	);
+	const [transcripts, git] = await Promise.all([
+		Promise.all(
+			agents.map((summary) =>
+				previewFor(summary, sessions.get(summary.paneId), identities.get(summary.paneId)!)
+			)
+		),
+		gitFor(agents)
+	]);
 
 	const now = Date.now();
 	const due = agents
-		.filter((a) => dueForRead(a, now))
+		.filter((a) => current(a) && dueForRead(a, now, identities.get(a.paneId)!))
 		// herdr-blocked panes first, then whichever reading is oldest.
 		.sort(
 			(a, b) =>
 				Number(b.status === 'blocked') - Number(a.status === 'blocked') ||
-				(screens.get(a.paneId)?.at ?? 0) - (screens.get(b.paneId)?.at ?? 0)
+				(screens.get(identities.get(a.paneId)!)?.at ?? 0) -
+					(screens.get(identities.get(b.paneId)!)?.at ?? 0)
 		)
 		.slice(0, MAX_READS);
 	await Promise.all(
@@ -189,15 +280,24 @@ export async function enrichAgents(agents: AgentSummary[]): Promise<AgentSummary
 			try {
 				const visible = await readVisible(summary.paneId);
 				const picker = parsePicker(visible);
-				screens.set(summary.paneId, {
+				if (!current(summary)) return;
+				screens.set(identities.get(summary.paneId)!, {
 					seq: summary.seq,
 					at: now,
 					picker: picker
-						? { question: picker.question, options: picker.options, multi: picker.multi }
+						? {
+								question: picker.question,
+								options: picker.options,
+								multi: picker.multi,
+								context: picker.context,
+								axis: picker.axis,
+								answer: picker.answer
+							}
 						: null,
 					// A menu the person opened is not a blocked agent, so the
 					// status stands; the row just says where to drive it.
 					menu: picker || summary.status === 'working' ? null : menuFooter(visible),
+					piWorking: piScreenWorking(visible),
 					// The footer is already on the screen this read fetched, so
 					// carrying it costs nothing — model, context and spend on the
 					// list without a call per row.
@@ -209,21 +309,33 @@ export async function enrichAgents(agents: AgentSummary[]): Promise<AgentSummary
 			}
 		})
 	);
-	for (const paneId of screens.keys()) {
-		if (!agents.some((a) => a.paneId === paneId)) screens.delete(paneId);
-	}
-
-	return agents.map((summary, i) => {
-		const reading = screens.get(summary.paneId);
-		const picker = reading?.picker ?? transcripts[i].ask;
+	return agents.flatMap((summary, i) => {
+		// Never publish an old-host result, even if policy changed while another read awaited.
+		if (!current(summary)) return [];
+		const reading = screens.get(identities.get(summary.paneId)!);
+		const transcript = transcripts[i];
+		const picker = reading?.picker ?? transcript.ask;
+		const repo = git.get(`${parsePane(summary.paneId).machineId ?? ''}\0${summary.cwd}`);
+		const reported = picker && summary.status !== 'blocked' ? 'blocked' : summary.status;
+		const status = reported;
 		return {
 			...summary,
-			preview: transcripts[i].preview,
+			branch: repo?.branch ?? '',
+			ahead: repo?.ahead ?? 0,
+			behind: repo?.behind ?? 0,
+			preview:
+				status === 'idle' && transcript.settled ? transcript.idlePreview : transcript.preview,
+			statusDiagnostic: piStatusDiagnostic(
+				summary.agent,
+				status,
+				reading?.piWorking ?? true,
+				transcript.settled
+			),
 			statusRows: reading?.status ?? [],
 			focused: focused.has(summary.paneId),
 			picker,
 			menu: picker ? null : (reading?.menu ?? null),
-			status: picker && summary.status !== 'blocked' ? 'blocked' : summary.status
+			status
 		};
 	});
 }

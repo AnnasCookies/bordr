@@ -24,7 +24,11 @@ Environment=IDLE_TIMEOUT=120
 # the working tree would otherwise delete push subscriptions and watches.
 Environment=BORDR_DATA_DIR=%h/.local/state/bordr
 # The official installer's path; `which bun` if yours lives elsewhere.
-ExecStart=%h/.bun/bin/bun ./build/index.js
+# The copy `bun run deploy` publishes, not ./build: every gate build rewrites
+# build/, and serving it directly swapped assets under the running app. The
+# working directory stays the checkout, which .env and the omp startup
+# extension are resolved against.
+ExecStart=%h/.bun/bin/bun %h/.local/lib/bordr/index.js
 # always, not on-failure: a clean SIGTERM (stray stop, session churn,
 # OOM reaper) otherwise leaves bordr down silently until someone notices
 # the phone 500ing. The app holds no state that a restart harms.

@@ -10,7 +10,7 @@ const CHROME = /^[\s─═━┄┈╌╍_=-]{4,}$|^[╭╰│┌└├┤┬┴
  * tidy-up, not a parser.
  */
 export function cleanSnapshot(visible: string): string {
-	const status = new Set(extractStatusLines(visible, 8));
+	const status = new Set(extractStatusLines(visible, 32));
 	const kept: string[] = [];
 	let blanks = 0;
 	for (const line of visible.split('\n')) {

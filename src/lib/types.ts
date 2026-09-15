@@ -3,6 +3,9 @@ import type { Machine } from './server/herdr/machines';
 
 import type { Message } from './server/transcript/types';
 import type { Picker } from './server/picker';
+import type { SubagentSummary } from './server/transcript/subagents';
+import type { QueuedPrompt } from './queue';
+import type { Pull } from './server/herdr/pulls';
 
 export type AgentStatus = 'idle' | 'working' | 'blocked' | 'done' | 'unknown';
 
@@ -11,11 +14,23 @@ export interface AgentSummary {
 	agent: string;
 	title: string;
 	status: AgentStatus;
+	statusDiagnostic?: string;
 	cwd: string;
 	/** herdr state_change_seq — monotonic per pane; drives unread badges. */
 	seq: number;
 	workspaceId: string;
 	workspaceLabel: string;
+	tabId: string;
+	/**
+	 * The name on the pane's tab in herdr, with the spinner frame herdr
+	 * animates stripped off the front.
+	 *
+	 * Usually the most recognisable thing about a pane: it is the name you
+	 * gave the work, where the title is whatever the harness last wrote for
+	 * itself. Empty for a tab still carrying its default number, which says
+	 * nothing the pane address does not.
+	 */
+	tabLabel: string;
 	/**
 	 * One line of "what is this pane doing" for the list row. Filled by the
 	 * projector; the list falls back to the cwd when no adapter matched.
@@ -26,7 +41,10 @@ export interface AgentSummary {
 	 * buttons without a per-pane fetch. Nullable because `AgentDetail`
 	 * narrows this to a full `Picker | null` and must stay assignable.
 	 */
-	picker?: Pick<Picker, 'question' | 'options' | 'multi'> | null;
+	picker?:
+		| (Pick<Picker, 'question' | 'options' | 'multi'> &
+				Partial<Pick<Picker, 'context' | 'axis' | 'answer'>>)
+		| null;
 	/**
 	 * A menu or panel is open on the terminal that bordr could not turn into
 	 * a picker (omp's model browser, Claude Code's /config): its footer, so
@@ -44,10 +62,71 @@ export interface AgentSummary {
 	statusRows?: string[];
 	/** The pane the terminal itself is looking at. */
 	focused?: boolean;
+	/**
+	 * The git state of `cwd`, for the row and the list's filters.
+	 *
+	 * Optional because `AgentDetail` narrows these to required — the detail
+	 * reads the AGENT's directory, which is a better answer than the pane's,
+	 * and must stay assignable to this.
+	 */
+	branch?: string;
+	ahead?: number;
+	behind?: number;
 }
 
 export interface AgentDetail extends AgentSummary {
+	/**
+	 * The pane's own cwd, as herdr reports it — where a key sent to the
+	 * terminal would actually run.
+	 *
+	 * It is the inherited `cwd` that changes meaning here: on a detail it is
+	 * the AGENT's working directory, read from its transcript. An agent that
+	 * `cd`s in a tool call moves independently of the shell it was launched
+	 * from, and the header should say where the work is. `cwd` falls back to
+	 * this field when the transcript never said.
+	 */
+	paneCwd: string;
+	/**
+	 * The git state of `cwd` above — branch plus drift from its upstream.
+	 * Detail only: the list would pay a git call per row for it, and a row
+	 * already has the cwd it would be describing.
+	 */
+	branch: string;
+	ahead: number;
+	behind: number;
+	/** That branch on GitHub, for the header to link to. Empty when unknown. */
+	branchUrl: string;
+	/**
+	 * The pull request that branch is on, and how its checks are doing.
+	 *
+	 * Null for a branch with no pull request, for a repository `gh` cannot
+	 * speak for, and on the first read of a directory — the answer is fetched
+	 * in the background rather than made the header's problem.
+	 */
+	pull: Pull | null;
 	messages: Message[];
+	/**
+	 * Sub-agents this session has spawned, newest activity first.
+	 *
+	 * Each has its own transcript, so a Task row can point at one and the
+	 * phone can open it. Empty for a session that has never spawned one, and
+	 * for every harness other than Claude Code.
+	 */
+	subagents: SubagentSummary[];
+	/**
+	 * The harness's own record of prompts it has queued, and which of them it
+	 * has taken. Empty for a harness that reports no queue — which is not the
+	 * same as an empty queue, so the view falls back rather than claiming
+	 * every message is stuck.
+	 */
+	queue: QueuedPrompt[];
+	/**
+	 * The model this session is running, as the HARNESS recorded it —
+	 * `message.model` on a Claude Code turn, a `model_change` entry in omp.
+	 * Empty when the transcript never said, which is when the status line is
+	 * worth falling back to.
+	 */
+	model: string;
 	picker: Picker | null;
 	/**
 	 * Why `messages` is scraped pane text rather than a parsed transcript;
@@ -55,7 +134,7 @@ export interface AgentDetail extends AgentSummary {
 	 * (install an adapter, run `herdr integration install`, fix permissions,
 	 * update bordr), so the reason must reach the operator, not just the fact.
 	 */
-	degraded: 'none' | 'no-adapter' | 'no-session' | 'unreadable' | 'empty';
+	degraded: 'none' | 'no-adapter' | 'no-session' | 'stale-session' | 'unreadable' | 'empty';
 	/** Operator-facing explanation of `degraded`, composed server-side; null when 'none'. */
 	degradedMessage: string | null;
 	/**
@@ -141,6 +220,10 @@ export interface WorkspaceNode {
 	focused: boolean;
 	/** The git branch of the workspace's directory, as herdr shows it. Empty outside a repo. */
 	branch: string;
+	/** Commits ahead of the branch's upstream. Zero outside a repo or with no upstream. */
+	ahead: number;
+	/** Commits behind the branch's upstream. Zero outside a repo or with no upstream. */
+	behind: number;
 	tabs: TabNode[];
 }
 

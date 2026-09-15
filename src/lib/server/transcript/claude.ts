@@ -133,14 +133,80 @@ function resultText(content: unknown): string {
 		.join('\n');
 }
 
+/**
+ * The biggest single image worth inlining, in base64 characters.
+ *
+ * ponytail: a flat cap, and the picture travels in the JSON payload as a
+ * `data:` URL. That is the whole feature in one field — no cache directory, no
+ * route, no id scheme to keep in step with the transcript. A screenshot off a
+ * phone is comfortably inside it. If these ever need to be bigger or lazier,
+ * the upgrade is to write them under BORDR_DATA_DIR and serve by content hash,
+ * the way uploads already work.
+ */
+const MAX_IMAGE_B64 = 1_500_000;
+
+/** Total base64 across one result, so a tool returning twenty stays bounded. */
+const MAX_IMAGES_B64 = 6_000_000;
+
+/**
+ * A media type safe to interpolate into a `data:` URL, and actually an image.
+ *
+ * `media_type` is transcript content, and it lands in the DOM inside an
+ * `<img src>`. A value carrying a `,` or a `;` would change what the URL
+ * parses as rather than being read as a type, so it is matched rather than
+ * trusted. Anchored to `image/` on top: nothing else belongs in an <img>, and
+ * a data: URL announcing some other type is a broken image at best.
+ */
+const IMAGE_MEDIA = /^image\/[a-z0-9][a-z0-9.+-]*$/i;
+
+/**
+ * The images in a tool_result, as `data:` URLs.
+ *
+ * Claude Code stores them inline and base64 already, so this is a re-wrapping
+ * rather than a read: `{type:'image', source:{type:'base64', media_type, data}}`.
+ * A source that is not base64 (a URL form exists) is left alone — there is no
+ * bytes to wrap.
+ */
+function resultImages(content: unknown): { images: string[]; dropped: number } {
+	if (!Array.isArray(content)) return { images: [], dropped: 0 };
+	const images: string[] = [];
+	let dropped = 0;
+	let budget = MAX_IMAGES_B64;
+	for (const part of content) {
+		if (!part || typeof part !== 'object') continue;
+		const block = part as {
+			type?: unknown;
+			source?: { type?: unknown; media_type?: unknown; data?: unknown };
+		};
+		if (block.type !== 'image') continue;
+		const source = block.source;
+		if (!source || source.type !== 'base64') continue;
+		const { media_type: media, data } = source;
+		if (typeof media !== 'string' || !IMAGE_MEDIA.test(media)) continue;
+		if (typeof data !== 'string' || !data) continue;
+		if (data.length > MAX_IMAGE_B64 || data.length > budget) {
+			dropped++;
+			continue;
+		}
+		budget -= data.length;
+		images.push(`data:${media};base64,${data}`);
+	}
+	return { images, dropped };
+}
+
 function toResult(block: ContentBlock): ToolResult {
 	const full = resultText(block.content).replace(/\s+$/, '');
 	const lines = full.split('\n');
 	const kept = lines.slice(0, MAX_RESULT_LINES);
+	const { images, dropped } = resultImages(block.content);
 	return {
 		text: kept.join('\n'),
 		isError: block.is_error === true,
-		truncatedLines: Math.max(0, lines.length - kept.length)
+		truncatedLines: Math.max(0, lines.length - kept.length),
+		// Omitted rather than empty: every result carries this shape, and an
+		// empty array on each is bytes down the wire for nothing.
+		...(images.length > 0 && { images }),
+		...(dropped > 0 && { imagesDropped: dropped })
 	};
 }
 
@@ -284,7 +350,7 @@ async function exists(path: string): Promise<boolean> {
 	}
 }
 
-export const claudeAdapter: Adapter = {
+export const claudeAdapter = {
 	/**
 	 * herdr reports agent_session.value as the transcript's basename, but the
 	 * project sub-directory depends on the pane's cwd — so search for it. An
@@ -307,7 +373,7 @@ export const claudeAdapter: Adapter = {
 		return null;
 	},
 
-	parse(jsonl: string): Message[] {
+	parse(jsonl: string, child = false): Message[] {
 		const messages: Message[] = [];
 		/** tool_use id -> the block awaiting its result, which lands later. */
 		const pending = new Map<string, Block>();
@@ -343,8 +409,9 @@ export const claudeAdapter: Adapter = {
 			// Epoch ms, so the view can interleave a prompt that has been sent
 			// but not yet written here. 0 when the harness omitted it.
 			const at = entry.timestamp ? Date.parse(entry.timestamp) || 0 : 0;
-			// Sub-agent turns share the file but are not this conversation.
-			if (entry.isSidechain === true) continue;
+			// Sub-agent turns share the file but are not this conversation —
+			// unless the file IS the sub-agent's, where they are all there is.
+			if (entry.isSidechain === true && !child) continue;
 			const content = entry.message?.content;
 			const isMeta = entry.isMeta === true;
 
@@ -368,7 +435,7 @@ export const claudeAdapter: Adapter = {
 						summary: clip(command[1]),
 						input: { command: command[1] },
 						result: null,
-						diff: null
+						diffs: []
 					};
 					lastBash = tool;
 					messages.push(fromBlocks('user', [tool], undefined, at));
@@ -419,14 +486,16 @@ export const claudeAdapter: Adapter = {
 						summary: toolSummary(block.name, block.input ?? {}),
 						input: block.input ?? null,
 						result: null,
-						diff:
+						diffs:
 							block.name === 'Edit' && typeof block.input?.old_string === 'string'
-								? {
-										file: str(block.input.file_path),
-										before: str(block.input.old_string),
-										after: str(block.input.new_string)
-									}
-								: null
+								? [
+										{
+											file: str(block.input.file_path),
+											before: str(block.input.old_string),
+											after: str(block.input.new_string)
+										}
+									]
+								: []
 					};
 					blocks.push(tool);
 					// The result arrives in a LATER entry, keyed by this id, so
@@ -465,7 +534,11 @@ export const claudeAdapter: Adapter = {
 				continue;
 			}
 
-			messages.push(fromBlocks(entry.type, blocks, ask));
+			// `at` matters: it is what lets the view slot a prompt that has been
+			// sent but not yet written into its real place. Omitting it here —
+			// the path nearly every turn takes — left every message timestampless
+			// and every queued prompt piled at the bottom of the transcript.
+			messages.push(fromBlocks(entry.type, blocks, ask, at));
 		}
 		// A question that has been answered is no longer pending. The result
 		// arrives in an entry that renders no message of its own, so nothing
@@ -475,4 +548,4 @@ export const claudeAdapter: Adapter = {
 		}
 		return messages;
 	}
-};
+} satisfies Adapter;

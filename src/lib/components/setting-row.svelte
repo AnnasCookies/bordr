@@ -1,11 +1,11 @@
 <script lang="ts" module>
-	export interface Segment<T extends string> {
+	export interface Segment<T extends string | number> {
 		v: T;
 		l: string;
 	}
 </script>
 
-<script lang="ts" generics="T extends string">
+<script lang="ts" generics="T extends string | number">
 	import type { Snippet } from 'svelte';
 
 	let {

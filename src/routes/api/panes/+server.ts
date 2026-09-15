@@ -1,6 +1,7 @@
 import { json } from '@sveltejs/kit';
 import { paneTree } from '$lib/server/herdr/tree';
 import { machineStates } from '$lib/server/herdr/connections';
+import { knownMachineLabels } from '$lib/server/herdr/machines';
 import type { RequestHandler } from './$types';
 
 /**
@@ -13,5 +14,10 @@ import type { RequestHandler } from './$types';
 export const GET: RequestHandler = async () => {
 	// Machines are informational: herdr's socket has no machine concept, so
 	// bordr serves this host's panes and can only name the others.
-	return json({ workspaces: await paneTree(), machines: machineStates() });
+	const machines = machineStates();
+	// herdr knows hosts bordr has not been allowed to reach: say so, rather
+	// than leaving a sidebar that quietly omits the machines you use daily.
+	// Names only — nothing here is connected to.
+	const offered = machines.length === 0 ? knownMachineLabels() : [];
+	return json({ workspaces: await paneTree(), machines, offered });
 };

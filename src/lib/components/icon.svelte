@@ -15,6 +15,7 @@
 		| 'bell'
 		| 'keyboard'
 		| 'camera'
+		| 'paperclip'
 		| 'mic'
 		| 'arrow-up'
 		| 'arrow-up-right'
@@ -55,10 +56,27 @@
 	{:else if name === 'folder'}
 		<path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z" />
 	{:else if name === 'settings'}
-		<circle cx="12" cy="12" r="3" />
+		<!--
+			A cog, not a sun. The glyph before this was a circle with eight
+			free-standing spokes, and with no outer ring joining their tips that
+			is what it read as.
+
+			Generated on a circle rather than typed out by hand: the hand-written
+			version put the teeth's centre 1.55 units above the hole, which is
+			most of a pixel at this size and exactly the wobble you notice
+			without being able to name.
+
+			Four points per tooth, not two. Alternating between an outer and an
+			inner radius gives SPIKES, and six of those read as a star — it is
+			the flat top and the flat valley that make a tooth a tooth. So each
+			of the six is 20° of flat at r=10, a sloped flank, then 22° of flat
+			at r=7.2. Six and not eight: at 14px the gaps between eight close up
+			into a solid band and the shape goes back to being a disc.
+		-->
 		<path
-			d="M12 2v3M12 19v3M2 12h3M19 12h3M4.9 4.9l2.1 2.1M17 17l2.1 2.1M4.9 19.1L7 17M17 7l2.1-2.1"
+			d="M10.26 2.15 L13.74 2.15 L14.46 5.23 L16.63 6.48 L19.66 5.57 L21.40 8.58 L19.09 10.75 L19.09 13.25 L21.40 15.42 L19.66 18.43 L16.63 17.52 L14.46 18.77 L13.74 21.85 L10.26 21.85 L9.54 18.77 L7.37 17.52 L4.34 18.43 L2.60 15.42 L4.91 13.25 L4.91 10.75 L2.60 8.58 L4.34 5.57 L7.37 6.48 L9.54 5.23 Z"
 		/>
+		<circle cx="12" cy="12" r="3.2" />
 	{:else if name === 'plus'}
 		<path d="M12 5v14M5 12h14" />
 	{:else if name === 'bell'}
@@ -69,6 +87,18 @@
 	{:else if name === 'camera'}
 		<path d="M4 8h3l2-3h6l2 3h3v11H4z" />
 		<circle cx="12" cy="13" r="3.5" />
+	{:else if name === 'paperclip'}
+		<!--
+			Three nested runs of a wire, each turning through a semicircle: the
+			outer loop's radius 3.5, the top 2.5, the inner 1.5, so the runs sit
+			one stroke apart. Drawn upright about the centre and turned 45°, the
+			way an attach button leans, and no point sits more than 9.5 from the
+			centre, so the turn cannot push it out of the box.
+		-->
+		<path
+			d="M15.5 6.5v9a3.5 3.5 0 0 1-7 0V5a2.5 2.5 0 0 1 5 0v10a1.5 1.5 0 0 1-3 0V7"
+			transform="rotate(45 12 12)"
+		/>
 	{:else if name === 'mic'}
 		<rect x="9" y="3" width="6" height="12" rx="3" />
 		<path d="M5 11a7 7 0 0 0 14 0M12 18v3" />

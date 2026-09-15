@@ -1,5 +1,6 @@
 import { error, json } from '@sveltejs/kit';
-import { HerdrRequestError, promptAgent } from '$lib/server/herdr';
+import { commandReceipt } from '$lib/server/command-receipt';
+import { HerdrRequestError, promptAgent, readVisible } from '$lib/server/herdr';
 import type { RequestHandler } from './$types';
 
 export const POST: RequestHandler = async ({ params, request }) => {
@@ -8,7 +9,8 @@ export const POST: RequestHandler = async ({ params, request }) => {
 
 	try {
 		await promptAgent(params.pane, text);
-		return json({ ok: true });
+		const command = await commandReceipt(text, () => readVisible(params.pane));
+		return json({ ok: true, command });
 	} catch (e) {
 		if (e instanceof HerdrRequestError) throw error(409, e.message);
 		throw e;

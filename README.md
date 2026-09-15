@@ -49,12 +49,12 @@ All you need is Tailscale, Herdr and a PC to run it on.
 - A tab's real split, dividers and all, not a row of chips.
 - An on-screen key strip for anything the TUI insists on handling itself.
 - Type `/` for the harness's commands and your own skills, with descriptions.
-- Type, dictate, or share a photo straight in from another app.
+- Type, dictate, attach any file from the camera, gallery or files, or share a photo in from another app.
 
 **Your whole estate**
 
 - Machines, workspaces, tabs and panes, in herdr's own shape.
-- Other machines over SSH — only the ones `BORDR_MACHINES` names, none by default.
+- Other machines over SSH: the ones herdr already knows, or just those `BORDR_MACHINES` names.
 - Browse and preview files: Markdown, images, PDFs, and agent-built HTML, sandboxed.
 
 **Make it yours**
@@ -119,8 +119,9 @@ herdr (named machines) ──ssh -L──┘
 - **Write.** Always through herdr's socket API: `agent.prompt` for text,
   `agent.send_keys` for pickers and the key strip, `pane.send_text` for typing
   in terminal mode.
-- **Reach.** Other machines only when `BORDR_MACHINES` names them, over an SSH
-  forward to that machine's own herdr socket. Empty by default.
+- **Reach.** Other machines over an SSH forward to each one's own herdr socket:
+  the ones herdr lists, or only those `BORDR_MACHINES` names.
+  [SECURITY.md](SECURITY.md#machines) says when bordr refuses herdr's list.
 - **Live.** One herdr event stream, fanned out to phones over SSE.
 - **Push.** A boot-time watcher fires a Web Push the moment any agent turns
   `blocked`.
@@ -128,7 +129,7 @@ herdr (named machines) ──ssh -L──┘
 ## Before you start
 
 **bordr has no login.** Anyone who can reach its port can run any command on
-this machine, and on every machine you name in `BORDR_MACHINES`, and can read
+this machine, and on every other machine bordr reaches, and can read
 the files you point it at. That is deliberate: the tailnet is the boundary.
 
 Three things follow.
@@ -257,6 +258,7 @@ reads `.env` when you run the build by hand, and the unit below sets the same.
 mkdir -p ~/.config/systemd/user
 cp deploy/herdr-session.service deploy/bordr.service ~/.config/systemd/user/
 # edit WorkingDirectory, EnvironmentFile and ExecStart (`which bun`, `which herdr`)
+bun run build && bun scripts/publish-build.ts   # the copy the unit runs
 systemctl --user daemon-reload
 systemctl --user enable --now herdr-session bordr
 loginctl enable-linger "$USER"   # so it survives logout and starts at boot
@@ -271,10 +273,41 @@ opens the terminal, and bordr comes up pointing at nothing.
 On macOS there is no systemd; a `launchd` agent or a herdr pane that runs
 `bun ./build/index.js` does the same job.
 
-To deploy a change, `bun run deploy` builds, restarts the service and smoke
-tests it. A phone that has the app open keeps running the old code until it
+To deploy a change, `bun run deploy` builds, copies the result to
+`~/.local/lib/bordr` (`BORDR_LIVE_DIR` moves it) with its own production
+dependencies, stages the release completely, then switches the release symlink,
+restarts the service and smoke tests it. The unit runs that copy
+rather than `build/`, so a build for a check never swaps files under the running
+app. A phone that has the app open keeps running the old code until it
 reloads, so the app checks for a new build every 30 seconds (and whenever it
 comes back to the foreground) and offers a "tap to reload" pill.
+
+Already-installed units must be upgraded too: copy the updated
+`deploy/bordr.service`, retain your `WorkingDirectory`/`EnvironmentFile` and Bun
+path edits, run `systemctl --user daemon-reload`, then restart after publishing.
+For a custom `BORDR_LIVE_DIR`, set the unit's `ExecStart` to Bun plus
+`<BORDR_LIVE_DIR>/index.js`; changing the environment variable alone does not move
+the unit. An existing real directory requires the one-time command
+`bun scripts/publish-build.ts --migrate`: it stages first, stops the user `bordr`
+service, switches, and starts it. A failed activation restores the previous pathname
+and restarts the old release. Use the same stop/switch/start sequence for custom
+service managers. Normal publication refuses real directories; later symlink
+switches are atomic. Failed staging/installation leaves the active release untouched.
+Previous self-contained releases remain beside it in `<BORDR_LIVE_DIR>.releases`
+for rollback/running processes; remove old releases only after verifying no service
+uses them. Retired hashed client assets are retained for seven days after retirement, not
+from build time. Emitted-asset manifests keep inherited chunks from being renewed.
+
+Local OMP slash-command discovery remains automatic and invokes `OMP_BIN` (default
+`omp`) directly. This can execute installed extensions and session-start hooks;
+it is not a read-only filesystem listing. Remote panes never run that probe or
+scan their project paths on this host.
+
+Model badges show the latest recorded model metadata, including local switches
+outside the visible transcript window. Remote reads remain bounded; if no model
+record is available, the badge is unknown rather than using an opening guess.
+Pi's customizable status display cannot prove idle. Herdr lifecycle remains
+authoritative; a stopped transcript conflicting with Working is diagnostic only.
 
 ### If something is wrong
 
@@ -311,13 +344,16 @@ Mostly it is what it looks like. The parts that are not:
 
 The tailnet is the entire boundary, treat bordr like an open terminal on
 every machine that can reach it, and on every machine it can reach. Other
-machines are opt-in: bordr drives only the ones `BORDR_MACHINES` names, and
-none by default. There is no login. Served artifacts render in
+machines come from herdr's own list, narrowed by `BORDR_MACHINES`;
+[SECURITY.md](SECURITY.md#machines) covers when bordr will not inherit it.
+There is no login. Served artifacts render in
 a sandboxed opaque origin and cannot call bordr's APIs; the file browser is
 traversal- and symlink-proofed to its configured roots and refuses dotfiles at
 the resolver, so `.env` cannot be listed or fetched; the keypad endpoint
-accepts only inert navigation keys; uploads are size-capped and their
-declared MIME type is allow-listed.
+accepts only inert navigation keys. Upload ingress accepts any file type within
+the size limit; same-origin download egress permits only verified raster images.
+Attachments are host-local/shared-storage paths: a remote pane must already
+share those paths. Bordr does not transfer files to a remote machine.
 If you ever expose bordr beyond your tailnet, add real authentication first.
 
 ## Development

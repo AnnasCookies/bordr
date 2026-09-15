@@ -30,5 +30,7 @@ export default defineConfig({
 	globalTeardown: './playwright.teardown.ts',
 	testDir: 'e2e',
 	testMatch: '**/*.e2e.{ts,js}',
+	// Offline fixtures need their own baseURL, desktop defaults and isolated server.
+	testIgnore: '**/cold-regressions.e2e.ts',
 	use: { viewport: { width: 390, height: 844 } }
 });

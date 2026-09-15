@@ -8,19 +8,39 @@ import { fromBlocks, type Adapter, type Block, type Message } from './types';
  * same text.
  */
 const PHOTO_PROMPT =
-	/^\[The user attached (an image|\d+ images) from their phone:([\s\S]*?)before responding\.\]\s*(?:\n\n([\s\S]*))?$/;
+	/\[The user attached (an image|\d+ images) from their phone:([\s\S]*?)before responding\.\]/;
 
 /** The upload paths inside the prompt body. Absolute, one per image. */
 const UPLOAD_PATH = /(\/\S+\.(?:png|jpe?g|gif|webp|heic|heif))/gi;
 
-/** The old flat rendering, still used when nothing is servable. */
-export function photoMessage(text: string): string | null {
+interface PhotoPrompt {
+	count: number;
+	paths: string;
+	caption: string;
+}
+
+function parsePhotoPrompt(text: string): PhotoPrompt | null {
 	const photo = PHOTO_PROMPT.exec(text);
 	if (!photo) return null;
-	const count = photo[1] === 'an image' ? 1 : Number.parseInt(photo[1], 10);
-	const caption = photo[3]?.trim();
-	const what = count === 1 ? '📷 photo' : `📷 ${count} photos`;
-	return caption ? `${what}\n${caption}` : what;
+
+	const before = text.slice(0, photo.index).trim();
+	const after = text.slice(photo.index + photo[0].length).trim();
+	const sameCaption =
+		before !== '' && after !== '' && before.replace(/\s+/g, ' ') === after.replace(/\s+/g, ' ');
+	const caption = sameCaption ? before : [before, after].filter(Boolean).join('\n\n');
+	return {
+		count: photo[1] === 'an image' ? 1 : Number.parseInt(photo[1], 10),
+		paths: photo[2],
+		caption
+	};
+}
+
+/** The old flat rendering, still used when nothing is servable. */
+export function photoMessage(text: string): string | null {
+	const photo = parsePhotoPrompt(text);
+	if (!photo) return null;
+	const what = photo.count === 1 ? '📷 photo' : `📷 ${photo.count} photos`;
+	return photo.caption ? `${what}\n${photo.caption}` : what;
 }
 
 /**
@@ -32,17 +52,16 @@ export function photoMessage(text: string): string | null {
  * broken image.
  */
 export function photoBlocks(text: string): Block[] | null {
-	const photo = PHOTO_PROMPT.exec(text);
+	const photo = parsePhotoPrompt(text);
 	if (!photo) return null;
 
-	const caption = photo[3]?.trim() ?? '';
 	const blocks: Block[] = [];
-	for (const match of photo[2].matchAll(UPLOAD_PATH)) {
+	for (const match of photo.paths.matchAll(UPLOAD_PATH)) {
 		const src = servableUrl(match[1]);
 		if (src) blocks.push({ kind: 'image', src, caption: '' });
 	}
 	if (blocks.length === 0) return null;
-	if (caption) blocks.push({ kind: 'text', text: caption });
+	if (photo.caption) blocks.push({ kind: 'text', text: photo.caption });
 	return blocks;
 }
 
@@ -53,7 +72,7 @@ export function withPhotoPrompts(adapter: Adapter): Adapter {
 			return adapter.parse(jsonl).map((message) => {
 				if (message.role !== 'user') return message;
 				const blocks = photoBlocks(message.text);
-				if (blocks) return fromBlocks('user', blocks);
+				if (blocks) return fromBlocks('user', blocks, message.ask, message.at);
 				const text = photoMessage(message.text);
 				return text === null ? message : { ...message, text, blocks: [{ kind: 'text', text }] };
 			});

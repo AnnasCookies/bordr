@@ -1,7 +1,8 @@
 import { spawn } from 'node:child_process';
-import { existsSync, mkdirSync, rmSync } from 'node:fs';
+import { createHash } from 'node:crypto';
+import { chmodSync, existsSync, lstatSync, mkdirSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { join, resolve } from 'node:path';
 import { HerdrClient } from './client';
 import { listMachines, type Machine } from './machines';
 
@@ -27,11 +28,101 @@ export interface Connection {
 	error: string | null;
 }
 
-function runtimeDir(): string {
-	const base = process.env.XDG_RUNTIME_DIR || tmpdir();
-	const dir = join(base, 'bordr-machines');
-	mkdirSync(dir, { recursive: true, mode: 0o700 });
+/**
+ * Which bordr this is, as a short stable name.
+ *
+ * One host can run several instances — this one runs `bordr` and
+ * `bordr-dulce` side by side — and they share a user, so a per-user runtime
+ * directory made their forwards collide: one instance's connect deleted the
+ * `<machine>.sock` the other was using and cancelled its forward through the
+ * shared control master. The data directory is what already makes an
+ * instance itself (its read state, push subscriptions and uploads live
+ * there), and the port separates two that were pointed at one directory by
+ * mistake. Hashed because a path is too long for a unix socket's name.
+ */
+function instanceKey(): string {
+	const dataDir = resolve(process.env.BORDR_DATA_DIR ?? join(process.cwd(), '.data'));
+	return createHash('sha256')
+		.update(`${dataDir}\0${process.env.PORT ?? ''}`)
+		.digest('hex')
+		.slice(0, 12);
+}
+
+/**
+ * Refuse a directory someone else could swap sockets in.
+ *
+ * `mkdirSync`'s mode applies only to a directory it creates, so an existing
+ * one is checked rather than trusted. That matters most on the `tmpdir()`
+ * fallback, where any local user can create `bordr-machines` first and wait
+ * for bordr to put its control sockets inside. A symlink or another owner is
+ * refused outright; a directory of our own that has loosened is tightened.
+ */
+function ensurePrivateDir(path: string): void {
+	mkdirSync(path, { recursive: true, mode: 0o700 });
+	const stat = lstatSync(path);
+	if (stat.isSymbolicLink() || !stat.isDirectory()) {
+		throw new Error(`${path} is not a directory`);
+	}
+	// No uid and no meaningful mode bits on Windows, where there is also no
+	// ssh control master to protect.
+	if (typeof process.getuid !== 'function') return;
+	if (stat.uid !== process.getuid()) {
+		throw new Error(`${path} is owned by uid ${stat.uid}, not this user`);
+	}
+	if ((stat.mode & 0o077) !== 0) chmodSync(path, 0o700);
+}
+
+/** Where this instance keeps its forwarded sockets and control masters. */
+export function runtimeDir(): string {
+	const base = join(process.env.XDG_RUNTIME_DIR || tmpdir(), 'bordr-machines');
+	const dir = join(base, instanceKey());
+	ensurePrivateDir(base);
+	ensurePrivateDir(dir);
 	return dir;
+}
+
+/**
+ * ssh's argument list, with the target where ssh cannot mistake it for an
+ * option.
+ *
+ * The target comes from herdr's endpoints file. `listMachines` already
+ * refuses one that starts with `-`, and `--` makes that true of every spawn
+ * whatever the list lets through: a target of `-oProxyCommand=…` would
+ * otherwise be read as an option and run a local command.
+ */
+export function sshArgs(
+	options: readonly string[],
+	target: string,
+	command: string[] = []
+): string[] {
+	return [...options, '--', target, ...command];
+}
+
+/** Stop a child that outlived its budget, so a hung ssh is not left behind. */
+function killOnTimeout(
+	child: ReturnType<typeof spawn>,
+	ms: number,
+	onTimeout: () => void
+): () => void {
+	const timer = setTimeout(() => {
+		child.kill();
+		onTimeout();
+	}, ms);
+	return () => clearTimeout(timer);
+}
+
+/** Cache and SSH paths belong to a target/session, never just an editable id. */
+export function connectionKey(machine: Machine): string {
+	return createHash('sha256')
+		.update(JSON.stringify([machine.id, machine.target, machine.session]))
+		.digest('hex')
+		.slice(0, 24);
+}
+
+function permitted(machine: Machine): boolean {
+	return listMachines().some(
+		(current) => current.enabled && connectionKey(current) === connectionKey(machine)
+	);
 }
 
 const connections = new Map<string, Connection>();
@@ -58,40 +149,99 @@ const PROVEN_MS = 20_000;
 
 async function alive(connection: Connection): Promise<boolean> {
 	if (!existsSync(connection.socketPath)) return false;
-	const last = provenAt.get(connection.machine.id) ?? 0;
+	const last = provenAt.get(connectionKey(connection.machine)) ?? 0;
 	if (Date.now() - last < PROVEN_MS) return true;
 	try {
 		await connection.client.request('ping', {}, 4000);
-		provenAt.set(connection.machine.id, Date.now());
+		provenAt.set(connectionKey(connection.machine), Date.now());
 		return true;
 	} catch {
-		provenAt.delete(connection.machine.id);
+		provenAt.delete(connectionKey(connection.machine));
 		return false;
 	}
 }
 
-async function connect(machine: Machine): Promise<Connection | null> {
-	const live = connections.get(machine.id);
-	if (live && !live.error && (await alive(live))) return live;
+/**
+ * Tell a control master to forget a forward, so it can be asked for again.
+ *
+ * Best effort by design: no master, no forward, or an ssh too old to know
+ * `-O cancel` all mean there is nothing to undo, which is the same outcome.
+ */
+export function cancelForward(
+	controlPath: string,
+	socketPath: string,
+	remote: string,
+	target: string
+): Promise<void> {
+	return new Promise((done) => {
+		if (!existsSync(controlPath)) return done();
+		const child = spawn(
+			'ssh',
+			sshArgs(
+				['-o', `ControlPath=${controlPath}`, '-O', 'cancel', '-L', `${socketPath}:${remote}`],
+				target
+			),
+			{ stdio: 'ignore' }
+		);
+		// Never let a wedged master hold up the connect that follows it — and
+		// kill the child rather than only stop waiting for it: every connect
+		// attempt otherwise left one more hung ssh running.
+		const stop = killOnTimeout(child, CANCEL_TIMEOUT_MS, done);
+		const finish = () => {
+			stop();
+			done();
+		};
+		child.on('exit', finish);
+		child.on('error', finish);
+	});
+}
 
-	const pending = starting.get(machine.id);
-	if (pending) return pending;
+const CANCEL_TIMEOUT_MS = 4_000;
+
+async function connect(machine: Machine): Promise<Connection | null> {
+	const live = connections.get(connectionKey(machine));
+	if (live && !live.error && (await alive(live))) return permitted(machine) ? live : null;
+
+	const pending = starting.get(connectionKey(machine));
+	if (pending) {
+		const result = await pending;
+		return permitted(machine) ? result : null;
+	}
 
 	// A machine that just failed is not retried on the next poll: the connect
 	// itself costs an ssh timeout, which is the whole reason a down machine
 	// made everything slow.
-	const failedAt = lastFailure.get(machine.id) ?? 0;
+	const failedAt = lastFailure.get(connectionKey(machine)) ?? 0;
 	if (Date.now() - failedAt < RETRY_MS) return null;
 
 	const attempt = (async (): Promise<Connection | null> => {
-		const socketPath = join(runtimeDir(), `${machine.id}.sock`);
+		let dir: string;
+		try {
+			dir = runtimeDir();
+		} catch (e) {
+			// Recorded as this machine's error rather than thrown: a throw here
+			// surfaced nowhere, because the tree's background refresh treats a
+			// failed `activeConnections` as "no machines this time".
+			const reason = `bordr's runtime directory is unusable: ${e instanceof Error ? e.message : String(e)}`;
+			console.error(`bordr: machine ${machine.label} — ${reason}`);
+			lastFailure.set(connectionKey(machine), Date.now());
+			connections.set(connectionKey(machine), {
+				machine,
+				socketPath: '',
+				client: new HerdrClient(''),
+				error: reason
+			});
+			return null;
+		}
+		const socketPath = join(dir, `${connectionKey(machine)}.sock`);
+		const controlPath = join(dir, `${connectionKey(machine)}.ctl`);
 		// A socket left by a dead forward refuses connections forever.
 		rmSync(socketPath, { force: true });
 
-		const home = await remoteHome(machine);
+		const home = await remoteHome(machine, controlPath);
 		if (!home) {
-			lastFailure.set(machine.id, Date.now());
-			connections.set(machine.id, {
+			lastFailure.set(connectionKey(machine), Date.now());
+			connections.set(connectionKey(machine), {
 				machine,
 				socketPath,
 				client: new HerdrClient(socketPath),
@@ -100,27 +250,43 @@ async function connect(machine: Machine): Promise<Connection | null> {
 			return null;
 		}
 
+		const remote = remoteSocketPath(home, machine);
+		// Deleting the socket FILE is not enough while a control master is up.
+		//
+		// The master keeps its own register of forwards. Ask it for one it
+		// already believes it has and it agrees instantly and does nothing:
+		// ssh exits 0, no socket appears, and stderr is empty — so the only
+		// symptom is every machine reading "no answer", with no reason
+		// anywhere. `ControlPersist` outlives bordr, so the state that
+		// causes it survives a restart and never clears itself.
+		//
+		// Cancelling first makes the request real again. Failing is the
+		// normal case — usually there is no master — so it is ignored.
+		await cancelForward(controlPath, socketPath, remote, machine.target);
+
 		const child = spawn(
 			'ssh',
-			[
-				'-o',
-				'BatchMode=yes',
-				'-o',
-				'ConnectTimeout=8',
-				'-o',
-				'ServerAliveInterval=15',
-				// Reuse one connection for the forward and any file reads.
-				'-o',
-				'ControlMaster=auto',
-				'-o',
-				`ControlPath=${join(runtimeDir(), `${machine.id}.ctl`)}`,
-				'-o',
-				'ControlPersist=300',
-				'-fnNT',
-				'-L',
-				`${socketPath}:${remoteSocketPath(home, machine)}`,
+			sshArgs(
+				[
+					'-o',
+					'BatchMode=yes',
+					'-o',
+					'ConnectTimeout=8',
+					'-o',
+					'ServerAliveInterval=15',
+					// Reuse one connection for the forward and any file reads.
+					'-o',
+					'ControlMaster=auto',
+					'-o',
+					`ControlPath=${controlPath}`,
+					'-o',
+					'ControlPersist=300',
+					'-fnNT',
+					'-L',
+					`${socketPath}:${remote}`
+				],
 				machine.target
-			],
+			),
 			{ stdio: ['ignore', 'ignore', 'pipe'] }
 		);
 
@@ -135,8 +301,8 @@ async function connect(machine: Machine): Promise<Connection | null> {
 		});
 
 		if (!ready || !existsSync(socketPath)) {
-			lastFailure.set(machine.id, Date.now());
-			connections.set(machine.id, {
+			lastFailure.set(connectionKey(machine), Date.now());
+			connections.set(connectionKey(machine), {
 				machine,
 				socketPath,
 				client: new HerdrClient(socketPath),
@@ -151,18 +317,19 @@ async function connect(machine: Machine): Promise<Connection | null> {
 			client: new HerdrClient(socketPath),
 			error: null
 		};
-		connections.set(machine.id, connection);
-		lastFailure.delete(machine.id);
-		provenAt.set(machine.id, Date.now());
+		connections.set(connectionKey(machine), connection);
+		lastFailure.delete(connectionKey(machine));
+		provenAt.set(connectionKey(machine), Date.now());
 		console.log(`bordr: machine ${machine.label} connected via ${machine.target}`);
 		return connection;
 	})();
 
-	starting.set(machine.id, attempt);
+	starting.set(connectionKey(machine), attempt);
 	try {
-		return await attempt;
+		const result = await attempt;
+		return permitted(machine) ? result : null;
 	} finally {
-		starting.delete(machine.id);
+		starting.delete(connectionKey(machine));
 	}
 }
 
@@ -176,35 +343,44 @@ async function connect(machine: Machine): Promise<Connection | null> {
  */
 const homes = new Map<string, string>();
 
-async function remoteHome(machine: Machine): Promise<string | null> {
-	const cached = homes.get(machine.id);
+async function remoteHome(machine: Machine, controlPath: string): Promise<string | null> {
+	const cached = homes.get(connectionKey(machine));
 	if (cached) return cached;
-	const home = await new Promise<string | null>((resolve) => {
+	const home = await new Promise<string | null>((done) => {
 		const child = spawn(
 			'ssh',
-			[
-				'-o',
-				'BatchMode=yes',
-				'-o',
-				'ConnectTimeout=8',
-				'-o',
-				'ControlMaster=auto',
-				'-o',
-				`ControlPath=${join(runtimeDir(), `${machine.id}.ctl`)}`,
-				'-o',
-				'ControlPersist=300',
+			sshArgs(
+				[
+					'-o',
+					'BatchMode=yes',
+					'-o',
+					'ConnectTimeout=8',
+					'-o',
+					'ControlMaster=auto',
+					'-o',
+					`ControlPath=${controlPath}`,
+					'-o',
+					'ControlPersist=300'
+				],
 				machine.target,
-				'printf %s "$HOME"'
-			],
+				['printf %s "$HOME"']
+			),
 			{ stdio: ['ignore', 'pipe', 'ignore'] }
 		);
 		let out = '';
+		// Killed, not abandoned, for the same reason as `cancelForward`.
+		const stop = killOnTimeout(child, 15_000, () => done(null));
 		child.stdout.on('data', (chunk) => (out += String(chunk)));
-		child.on('exit', (code) => resolve(code === 0 && out.startsWith('/') ? out.trim() : null));
-		child.on('error', () => resolve(null));
-		setTimeout(() => resolve(null), 15_000);
+		child.on('exit', (code) => {
+			stop();
+			done(code === 0 && out.startsWith('/') ? out.trim() : null);
+		});
+		child.on('error', () => {
+			stop();
+			done(null);
+		});
 	});
-	if (home) homes.set(machine.id, home);
+	if (home) homes.set(connectionKey(machine), home);
 	return home;
 }
 
@@ -229,7 +405,7 @@ export function connectionStates(): Connection[] {
 		.filter((m) => m.enabled)
 		.map(
 			(m) =>
-				connections.get(m.id) ?? {
+				connections.get(connectionKey(m)) ?? {
 					machine: m,
 					socketPath: '',
 					client: new HerdrClient(''),
@@ -252,11 +428,11 @@ export function machineStates(): { machine: Machine; state: MachineState; error:
 	return listMachines()
 		.filter((m) => m.enabled)
 		.map((machine) => {
-			const connection = connections.get(machine.id);
+			const connection = connections.get(connectionKey(machine));
 			if (connection && !connection.error) {
 				return { machine, state: 'connected' as const, error: null };
 			}
-			if (starting.has(machine.id)) {
+			if (starting.has(connectionKey(machine))) {
 				return { machine, state: 'connecting' as const, error: null };
 			}
 			if (connection?.error) {
@@ -268,7 +444,8 @@ export function machineStates(): { machine: Machine; state: MachineState; error:
 }
 
 export function connectionFor(machineId: string): Connection | undefined {
-	return connections.get(machineId);
+	const machine = listMachines().find((m) => m.id === machineId && m.enabled);
+	return machine ? connections.get(connectionKey(machine)) : undefined;
 }
 
 /**
@@ -279,8 +456,6 @@ export function connectionFor(machineId: string): Connection | undefined {
  * beats requiring some other call to have warmed it.
  */
 export async function ensureConnection(machineId: string): Promise<Connection | null> {
-	const live = connections.get(machineId);
-	if (live && !live.error && (await alive(live))) return live;
 	const machine = listMachines().find((m) => m.id === machineId && m.enabled);
 	if (!machine) return null;
 	return connect(machine);
@@ -297,23 +472,38 @@ export function runOn(
 	command: string,
 	limitBytes = 4 * 1024 * 1024
 ): Promise<string | null> {
+	if (!permitted(machine)) return Promise.resolve(null);
 	return new Promise((resolve) => {
+		let dir: string;
+		try {
+			dir = runtimeDir();
+		} catch (e) {
+			// Logged, and the same "no answer" every other failure here gives.
+			console.error(
+				`bordr: machine ${machine.label} — bordr's runtime directory is unusable:`,
+				e instanceof Error ? e.message : String(e)
+			);
+			resolve(null);
+			return;
+		}
 		const child = spawn(
 			'ssh',
-			[
-				'-o',
-				'BatchMode=yes',
-				'-o',
-				'ConnectTimeout=8',
-				'-o',
-				'ControlMaster=auto',
-				'-o',
-				`ControlPath=${join(runtimeDir(), `${machine.id}.ctl`)}`,
-				'-o',
-				'ControlPersist=300',
+			sshArgs(
+				[
+					'-o',
+					'BatchMode=yes',
+					'-o',
+					'ConnectTimeout=8',
+					'-o',
+					'ControlMaster=auto',
+					'-o',
+					`ControlPath=${join(dir, `${connectionKey(machine)}.ctl`)}`,
+					'-o',
+					'ControlPersist=300'
+				],
 				machine.target,
-				command
-			],
+				[command]
+			),
 			{ stdio: ['ignore', 'pipe', 'ignore'] }
 		);
 		const chunks: Buffer[] = [];
@@ -350,7 +540,8 @@ export async function remoteTranscriptTail(
 	machine: Machine,
 	agent: string,
 	sessionId: string,
-	bytes: number
+	bytes: number,
+	head = false
 ): Promise<string | null> {
 	// Only the harnesses whose on-disk layout bordr knows.
 	const globs: Record<string, string> = {
@@ -365,7 +556,7 @@ export async function remoteTranscriptTail(
 	const script = [
 		`ID=${id}`,
 		'shopt -s nullglob',
-		`for f in ${glob}; do tail -c ${bytes} "$f"; exit 0; done`,
+		`for f in ${glob}; do ${head ? 'head' : 'tail'} -c ${Math.min(64 * 1024 * 1024, Math.max(1, Math.floor(bytes)))} "$f"; exit 0; done`,
 		'exit 1'
 	].join('; ');
 

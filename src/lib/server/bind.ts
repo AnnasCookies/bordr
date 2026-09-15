@@ -69,6 +69,54 @@ export function judgeBind(host: string | undefined, allowPublic: string | undefi
 	};
 }
 
+/**
+ * Is bordr reachable by no one the terminal on this host is not?
+ *
+ * The question machines turn on. Adding a host to herdr's endpoints is a
+ * deliberate act performed at a terminal, authenticated by your own keys and
+ * your own shell. Making it reachable from bordr grants it to whoever can
+ * reach bordr — so a second list is only earning its keep when those two sets
+ * differ.
+ *
+ * Bound to loopback or a tailnet address, with the no-auth flag unset, they do
+ * not differ: the tailnet is the boundary this whole app is built on, and
+ * SECURITY.md already says a device on it "is trusted completely". Someone who
+ * can reach loopback directly is on the machine and owns every agent on it
+ * already.
+ *
+ * The flag is where they diverge. It means somebody deliberately bound bordr
+ * somewhere else, and "everyone on this network" is a wider set than "whoever
+ * is sitting at this terminal".
+ *
+ * `BORDR_ALLOWED_HOSTS` is the other place they diverge. It exists for a proxy
+ * on your own domain, and a loopback bind behind such a proxy is reachable by
+ * whoever that proxy lets through — a wider set than the tailnet, and one the
+ * bind cannot see. Naming a host there is the operator saying so, which is
+ * enough to stop inheriting.
+ *
+ * WHAT THIS CANNOT SEE: `tailscale funnel` fronts a loopback bind exactly as
+ * `serve` does, so from here they look identical. Funnel sets no identity
+ * header, which is precisely what `BORDR_ALLOWED_USERS` refuses — that list is
+ * how a funnel is shut out, and SECURITY.md says so.
+ */
+export function machinesInherit(
+	host: string | undefined,
+	allowPublic: string | undefined,
+	allowedHosts: string | undefined
+): boolean {
+	if (allowPublic === '1') return false;
+	// Parsed the way `judgeHost` parses it, so a stray comma or blank value does
+	// not count as naming a proxy.
+	const proxied = (allowedHosts ?? '')
+		.split(',')
+		.map((entry) => entry.trim())
+		.some(Boolean);
+	if (proxied) return false;
+	const value = (host ?? '').trim();
+	if (!value) return false; // unset binds every interface; judgeBind refuses to serve at all
+	return isLoopback(value) || isTailscale(value);
+}
+
 export interface HostPolicy {
 	/** The HOST bordr was told to bind; requests naming it are fine. */
 	bindHost: string | undefined;

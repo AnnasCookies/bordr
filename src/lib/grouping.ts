@@ -1,8 +1,32 @@
+import { pickerIdentity } from './picker-shortcut';
 import type { AgentStatus, AgentSummary } from '$lib/types';
 import type { GroupBy, SortBy } from '$lib/prefs.svelte';
 
 /** Order statuses appear in the rollup and in status grouping. */
 export const STATUS_ORDER: AgentStatus[] = ['blocked', 'working', 'done', 'idle', 'unknown'];
+
+/** Herdr's priority-mode attention queue, highest first. */
+const ATTENTION_PRIORITY: Record<string, number> = {
+	blocked: 4,
+	done: 3,
+	working: 2,
+	idle: 1,
+	unknown: 0
+};
+
+/**
+ * Compare two agents exactly as Herdr's priority mode does.
+ *
+ * A newer state change wins within one status. Returning zero after that is
+ * deliberate: modern JS sorting is stable, so a complete tie keeps Herdr's
+ * workspace, tab and pane order instead of inventing an alphabetical one.
+ */
+export function compareAgentPriority(
+	a: { status: string; seq: number },
+	b: { status: string; seq: number }
+): number {
+	return (ATTENTION_PRIORITY[b.status] ?? 0) - (ATTENTION_PRIORITY[a.status] ?? 0) || b.seq - a.seq;
+}
 
 /** Grouping order excludes blocked — those are pinned above every group. */
 const GROUPED_STATUSES = STATUS_ORDER.filter((s) => s !== 'blocked');
@@ -82,17 +106,28 @@ export function sortAgents(agents: AgentSummary[], sort: SortBy): AgentSummary[]
  *
  * Blocked panes are removed from the groups they would otherwise fall into, so
  * an agent waiting on you appears exactly once however the list is grouped.
+ *
+ * Blocked panes are also exempt from the badge filter. The filter is
+ * persisted, so one left lit from yesterday would otherwise hide an agent
+ * that is waiting on you right now — and the service worker's summary
+ * notification opens `/` precisely because blocked agents are pinned to the
+ * top of it. A filter narrows the groups; it never hides a question.
  */
 export function partitionAgents(
 	agents: AgentSummary[],
 	groupBy: GroupBy,
-	sort: SortBy
+	sort: SortBy,
+	filter: ListFilter | null = null
 ): { blocked: AgentSummary[]; groups: AgentGroup[] } {
 	const blocked = sortAgents(
 		agents.filter((a) => a.status === 'blocked'),
 		sort
 	);
-	const rest = agents.filter((a) => a.status !== 'blocked');
+	// Narrowed here rather than at the caller, so every reader of the list —
+	// the page, and the conversation's swipe order — sees the same rows.
+	const rest = agents.filter(
+		(a) => a.status !== 'blocked' && (filter === null || matchesFilter(a, filter))
+	);
 
 	if (groupBy === 'none') {
 		return {
@@ -156,19 +191,99 @@ export function partitionAgents(
 	};
 }
 
-/** Rollup cells. `unknown` is deliberately absent — the grid shows four. */
-export function rollupCounts(agents: AgentSummary[]): Array<{ status: AgentStatus; n: number }> {
-	return (['blocked', 'working', 'done', 'idle'] as AgentStatus[]).map((status) => ({
-		status,
-		n: agents.filter((a) => a.status === status).length
+/**
+ * What the badges at the top of the list can narrow it to.
+ *
+ * A status, or `dirty` — every pane whose repository has commits its upstream
+ * does not, which is the question the badges could not answer before: not
+ * "what is running" but "what have I left unpushed".
+ */
+export type ListFilter = AgentStatus | 'dirty';
+
+/** Does this agent's directory have work its upstream has not got? */
+export function isDirty(agent: AgentSummary): boolean {
+	return (agent.ahead ?? 0) > 0;
+}
+
+export function matchesFilter(agent: AgentSummary, filter: ListFilter): boolean {
+	return filter === 'dirty' ? isDirty(agent) : agent.status === filter;
+}
+
+/**
+ * Rollup cells, each also a filter.
+ *
+ * `unknown` is deliberately absent — it is a state bordr could not read, not
+ * one you would go looking for. `dirty` is last because it is the only cell
+ * that is not a status, and it counts PANES rather than commits: the cell is
+ * a filter, and what it filters to is a set of rows.
+ */
+export function rollupCounts(
+	agents: AgentSummary[]
+): Array<{ status: ListFilter; n: number; label: string }> {
+	const cells: Array<{ status: ListFilter; label: string }> = [
+		{ status: 'blocked', label: 'blocked' },
+		{ status: 'working', label: 'working' },
+		{ status: 'done', label: 'done' },
+		{ status: 'idle', label: 'idle' },
+		{ status: 'dirty', label: 'unpushed' }
+	];
+	return cells.map((cell) => ({
+		...cell,
+		n: agents.filter((a) => matchesFilter(a, cell.status)).length
 	}));
+}
+
+type ListPicker = AgentSummary['picker'];
+
+/** What the list remembers about a question it answered, until the screen catches up. */
+export interface AnsweredMark {
+	key: string;
+	at: number;
+	/** What was chosen, so the row can say which button was hit. */
+	label: string;
+}
+
+/** A picker's identity: its question and options, so the NEXT question is never mistaken for it. */
+export function pickerKey(picker: ListPicker): string {
+	if (!picker?.options?.length) return '';
+	return pickerIdentity(picker);
+}
+
+/**
+ * Does an accepted answer retire this picker's buttons?
+ *
+ * Single-select only. On a checkbox picker the server's "accepted" means one
+ * box flipped and the question is still open, waiting for more ticks and a
+ * submit. Replacing its buttons with "sent" after the first toggle left no
+ * way to tick a second option. A toggle also leaves the key unchanged —
+ * `checked` is not part of it — so the key alone cannot tell the two apart.
+ */
+export function holdsAnswer(picker: ListPicker): boolean {
+	return Boolean(picker?.options?.length) && picker?.multi !== true;
+}
+
+/** Has this exact question already been answered from the list, and not yet cleared? */
+export function answerSettled(
+	mark: AnsweredMark | undefined,
+	picker: ListPicker,
+	now: number,
+	holdMs: number
+): boolean {
+	if (!mark || !holdsAnswer(picker)) return false;
+	if (now - mark.at >= holdMs) return false;
+	return mark.key === pickerKey(picker);
 }
 
 /**
  * The order the conversation view swipes through — the same order the list
  * renders, flattened, so "next" on a pane means the next one you can see.
  */
-export function flatOrder(agents: AgentSummary[], groupBy: GroupBy, sort: SortBy): string[] {
-	const { blocked, groups } = partitionAgents(agents, groupBy, sort);
+export function flatOrder(
+	agents: AgentSummary[],
+	groupBy: GroupBy,
+	sort: SortBy,
+	filter: ListFilter | null = null
+): string[] {
+	const { blocked, groups } = partitionAgents(agents, groupBy, sort, filter);
 	return [...blocked, ...groups.flatMap((g) => g.agents)].map((a) => a.paneId);
 }

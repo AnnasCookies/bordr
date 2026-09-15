@@ -1,25 +1,113 @@
 {
 	"name": "bordr patrl",
 	"short_name": "bordr",
-	"description": "Mobile workspace for herdr",
+	"description": "Mobile workspace for herdr — watch your coding agents, answer them, and start new ones from your phone.",
 	"id": "/",
 	"start_url": "/",
 	"scope": "/",
 	"display": "standalone",
 	"background_color": "#0a0a0a",
 	"theme_color": "#0a0a0a",
+	"categories": [
+		"productivity",
+		"developer",
+		"utilities"
+	],
 	"icons": [
 		{
 			"src": "/patrl-192.png",
 			"sizes": "192x192",
 			"type": "image/png",
-			"purpose": "any maskable"
+			"purpose": "any"
 		},
 		{
 			"src": "/patrl-512.png",
 			"sizes": "512x512",
 			"type": "image/png",
-			"purpose": "any maskable"
+			"purpose": "any"
+		},
+		{
+			"src": "/patrl-192.png",
+			"sizes": "192x192",
+			"type": "image/png",
+			"purpose": "maskable"
+		},
+		{
+			"src": "/patrl-512.png",
+			"sizes": "512x512",
+			"type": "image/png",
+			"purpose": "maskable"
+		}
+	],
+	"screenshots": [
+		{
+			"src": "/shots/agents-narrow.png",
+			"sizes": "804x1600",
+			"type": "image/png",
+			"form_factor": "narrow",
+			"label": "Every agent, with the blocked ones pinned to the top"
+		},
+		{
+			"src": "/shots/conversation-narrow.png",
+			"sizes": "804x1600",
+			"type": "image/png",
+			"form_factor": "narrow",
+			"label": "An agent's conversation, with its question answerable from the phone"
+		},
+		{
+			"src": "/shots/agents-wide.png",
+			"sizes": "2560x1440",
+			"type": "image/png",
+			"form_factor": "wide",
+			"label": "Every agent, with the blocked ones pinned to the top"
+		},
+		{
+			"src": "/shots/conversation-wide.png",
+			"sizes": "2560x1440",
+			"type": "image/png",
+			"form_factor": "wide",
+			"label": "An agent's conversation beside the session tree"
+		}
+	],
+	"shortcuts": [
+		{
+			"name": "New agent",
+			"short_name": "New",
+			"description": "Start an agent in a workspace",
+			"url": "/?new=1",
+			"icons": [
+				{
+					"src": "/patrl-192.png",
+					"sizes": "192x192",
+					"type": "image/png"
+				}
+			]
+		},
+		{
+			"name": "Search",
+			"short_name": "Search",
+			"description": "Search every transcript",
+			"url": "/search",
+			"icons": [
+				{
+					"src": "/patrl-192.png",
+					"sizes": "192x192",
+					"type": "image/png"
+				}
+			]
+		},
+		{
+			"name": "Settings",
+			"short_name": "Settings",
+			"description": "How bordr looks and what it tells you",
+			"url": "/settings",
+			"icons": [
+				{
+					"src": "/patrl-192.png",
+					"sizes": "192x192",
+					"type": "image/png"
+				}
+			]
 		}
 	],
 	"share_target": {

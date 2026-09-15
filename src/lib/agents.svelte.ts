@@ -24,6 +24,18 @@ export function createAgentStore() {
 	let clock: ReturnType<typeof setInterval> | undefined;
 	const CLOCK_MS = 5000;
 	/**
+	 * The server heartbeats every 5 seconds, so four missed in a row is a dead
+	 * stream however healthy the socket claims to be.
+	 *
+	 * This is the case that lost updates: a phone that walks out of wifi holds
+	 * a HALF-OPEN socket. No error fires, `connected` stays true, EventSource
+	 * never retries, and the only thing that reopened it was the tab being
+	 * hidden and shown again. A phone you are looking at the whole time never
+	 * gets that, so it sat there showing state from minutes ago and nothing
+	 * said otherwise.
+	 */
+	const DEAD_MS = 20_000;
+	/**
 	 * A dropped stream is only worth reporting once it stays dropped. Reconnects
 	 * take a moment, and announcing each one as "bordr unreachable" made a
 	 * recovered blip look like a fault.
@@ -41,6 +53,7 @@ export function createAgentStore() {
 	let retry: ReturnType<typeof setTimeout> | undefined;
 	let backoff = 1000;
 	let stopped = false;
+	let openedAt = 0;
 
 	function armGrace() {
 		if (graceTimer) return;
@@ -73,6 +86,7 @@ export function createAgentStore() {
 	function open() {
 		if (stopped) return;
 		source?.close();
+		openedAt = Date.now();
 		source = new EventSource('/api/events');
 		// The server sends a snapshot on connect, so silence past the grace
 		// window is a fault, not a slow start.
@@ -106,6 +120,26 @@ export function createAgentStore() {
 		// A phone that slept can hold a half-open socket that never errors and
 		// never delivers, and `connected` stays true for it. Age is the tell.
 		if (!connected || Date.now() - lastSeen > 10_000) open();
+	}
+
+	/** The network came back. Do not wait to notice the hard way. */
+	function onOnline() {
+		if (!connected || Date.now() - lastSeen > CLOCK_MS) open();
+	}
+
+	/**
+	 * The watchdog. Runs on the same tick that drives the stale readout — that
+	 * tick already knew the stream was dead and did nothing about it.
+	 */
+	function checkAlive() {
+		now = Date.now();
+		if (stopped) return;
+		if (now - Math.max(lastSeen, openedAt) > DEAD_MS) {
+			// Reopening resets the backoff on purpose: this is not a failing
+			// reconnect loop, it is a socket that lied about being open.
+			backoff = 1000;
+			open();
+		}
 	}
 
 	return {
@@ -148,8 +182,9 @@ export function createAgentStore() {
 			// A phone that slept can hold a half-open connection that never
 			// errors — re-check whenever the tab becomes visible again.
 			document.addEventListener('visibilitychange', onVisible);
+			addEventListener('online', onOnline);
 			clearInterval(clock);
-			clock = setInterval(() => (now = Date.now()), CLOCK_MS);
+			clock = setInterval(checkAlive, CLOCK_MS);
 		},
 		stop() {
 			stopped = true;
@@ -159,6 +194,7 @@ export function createAgentStore() {
 			clearInterval(clock);
 			clock = undefined;
 			document.removeEventListener('visibilitychange', onVisible);
+			removeEventListener('online', onOnline);
 			source?.close();
 			source = undefined;
 		}

@@ -50,10 +50,15 @@ describe('normalisePrefs', () => {
 	 * default is what they get, and it has to be "visible".
 	 */
 	/**
-	 * Back is the way home on a phone, so that is the default. The other value
-	 * exists for anyone who wants the browser's own retracing back.
+	 * The phone's back gesture from inside an agent returns to the agents
+	 * list, which was asked for explicitly. #30 flipped the default to
+	 * 'history' and every pane link began pushing, so back walked through
+	 * every pane visited instead. A fresh install, and any install with
+	 * nothing stored, must get 'home'.
+	 *
+	 * 'history' is still there for anyone who wants back to retrace.
 	 */
-	it('sends the back gesture home unless asked to retrace', () => {
+	it('goes straight home on back unless asked to retrace', () => {
 		expect(DEFAULTS.backTo).toBe('home');
 		expect(normalisePrefs({}).backTo).toBe('home');
 		expect(normalisePrefs({ backTo: 'history' }).backTo).toBe('history');
@@ -66,9 +71,33 @@ describe('normalisePrefs', () => {
 		expect(normalisePrefs({ showGrouping: false }).showGrouping).toBe(false);
 		expect(normalisePrefs({ showGrouping: 'no' }).showGrouping).toBe(true);
 	});
-});
 
-describe('resolveTheme', () => {
+	it('splits thinking from tools without losing the old combined choice', () => {
+		expect(DEFAULTS.showThinking).toBe(true);
+		expect(normalisePrefs({ showWork: false }).showThinking).toBe(false);
+		expect(normalisePrefs({ showWork: false, showThinking: true })).toMatchObject({
+			showWork: false,
+			showThinking: true
+		});
+	});
+
+	it('accepts Herdr’s agent orders and migrates the old workspace name', () => {
+		expect(normalisePrefs({ agentOrder: 'priority' }).agentOrder).toBe('priority');
+		expect(normalisePrefs({ agentOrder: 'grouped' }).agentOrder).toBe('grouped');
+		expect(normalisePrefs({ agentOrder: 'workspace' }).agentOrder).toBe('grouped');
+		expect(normalisePrefs({ agentOrder: 'alphabetical' }).agentOrder).toBe(DEFAULTS.agentOrder);
+	});
+
+	it('accepts the collapsible JSON tree tool view', () => {
+		expect(normalisePrefs({ toolDetail: 'tree' }).toolDetail).toBe('tree');
+		expect(normalisePrefs({ toolDetail: 'xml' }).toolDetail).toBe(DEFAULTS.toolDetail);
+	});
+
+	it('retains every user-selected conversation width', () => {
+		for (const width of ['comfortable', 'wide', 'full'])
+			expect(normalisePrefs({ conversationWidth: width }).conversationWidth).toBe(width);
+	});
+
 	it('follows the OS only for system', () => {
 		expect(resolveTheme('system', true)).toBe('dark');
 		expect(resolveTheme('system', false)).toBe('light');

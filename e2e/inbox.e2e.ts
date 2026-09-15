@@ -1,4 +1,5 @@
 import { expect, test } from '@playwright/test';
+import { openSettings } from './settings';
 
 test('inbox lists agents and never scrolls horizontally', async ({ page }) => {
 	await page.goto('/');
@@ -22,7 +23,7 @@ test('the tab bar reaches every screen', async ({ page }) => {
 });
 
 test('grouping modes all render, and each pane appears exactly once', async ({ page }) => {
-	await page.goto('/settings');
+	await openSettings(page, 'agents list');
 	for (const mode of ['Workspace', 'Status', 'Harness', 'None']) {
 		// Scoped: "Status" is also an option under Sort within group.
 		await page
@@ -44,16 +45,17 @@ test('grouping modes all render, and each pane appears exactly once', async ({ p
 			);
 		expect(hrefs.length, `no rows rendered in ${mode} mode`).toBeGreaterThan(0);
 		expect(new Set(hrefs).size, `duplicate rows in ${mode} mode`).toBe(hrefs.length);
-		await page.goto('/settings');
+		await openSettings(page, 'agents list');
 	}
 });
 
 test('theme switch paints the page and survives a reload', async ({ page }) => {
-	await page.goto('/settings');
+	await openSettings(page, 'appearance');
 	await page.getByRole('group', { name: 'Theme' }).getByRole('button', { name: 'Dark' }).click();
 	await expect(page.locator('html')).toHaveClass(/dark/);
 	await page.reload();
 	await expect(page.locator('html')).toHaveClass(/dark/);
+	await openSettings(page, 'appearance');
 
 	await page.getByRole('group', { name: 'Theme' }).getByRole('button', { name: 'Light' }).click();
 	await expect(page.locator('html')).not.toHaveClass(/dark/);

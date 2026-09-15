@@ -8,7 +8,12 @@ export interface SlashCommand {
 	name: string;
 	description: string;
 	/** Where it came from, for a small label on the phone. */
-	source: 'builtin' | 'skill' | 'command' | 'prompt' | 'plugin';
+	source: 'builtin' | 'skill' | 'command' | 'prompt' | 'plugin' | 'extension';
+}
+
+/** The exact slash-command word at the start of a submitted line. */
+export function slashCommandName(text: string): string | null {
+	return /^\/([^/\s]+)(?:\s|$)/.exec(text.trim())?.[1] ?? null;
 }
 
 /**

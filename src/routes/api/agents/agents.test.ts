@@ -21,8 +21,28 @@ describe('toSummary', () => {
 			cwd: '/home/user',
 			seq: 7,
 			workspaceId: '',
-			workspaceLabel: ''
+			workspaceLabel: '',
+			tabId: '',
+			tabLabel: ''
 		});
+	});
+
+	it('carries the tab name, with the spinner frame herdr animates stripped', () => {
+		const tabs = new Map([['w2:t1', '\u25d1 Bordr exploration']]);
+		const summary = toSummary({ ...RAW, tab_id: 'w2:t1' }, new Map(), tabs);
+		expect(summary.tabId).toBe('w2:t1');
+		expect(summary.tabLabel).toBe('Bordr exploration');
+	});
+
+	/** A tab still on its number says nothing the pane address has not said. */
+	it('ignores a default numeric tab label', () => {
+		const tabs = new Map([['w2:t1', '3']]);
+		expect(toSummary({ ...RAW, tab_id: 'w2:t1' }, new Map(), tabs).tabLabel).toBe('');
+	});
+
+	/** herdr unreachable for `tab.list` must not cost the row its other fields. */
+	it('leaves the tab name empty when no labels were fetched', () => {
+		expect(toSummary({ ...RAW, tab_id: 'w2:t1' }).tabLabel).toBe('');
 	});
 
 	it('falls back to unknown for an unrecognised status', () => {

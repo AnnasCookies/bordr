@@ -39,8 +39,15 @@
 	];
 </script>
 
+<!--
+	The labels go on a short viewport. A phone on its side is 360px tall, and
+	the header and this bar took 128px of it between them — a third of the
+	screen to show two rows of agents. The icons carry the meaning on their
+	own once you have used the app twice; `aria-label` keeps them named for
+	anyone who has not, and for a screen reader.
+-->
 <nav
-	class="sticky bottom-0 z-20 grid grid-cols-4 border-t border-hairline bg-card pt-2.5"
+	class="sticky bottom-0 z-20 grid grid-cols-4 border-t border-hairline bg-card pt-2.5 [@media(max-height:430px)]:pt-1.5"
 	style="padding-bottom: max(0.5rem, env(safe-area-inset-bottom))"
 >
 	{#each TABS as tab (tab.href)}
@@ -48,12 +55,13 @@
 		<a
 			href={tab.href}
 			aria-current={active ? 'page' : undefined}
-			class="flex min-h-11 flex-col items-center gap-0.5 {active
+			aria-label={tab.label}
+			class="flex min-h-11 flex-col items-center justify-center gap-0.5 {active
 				? 'font-medium text-ink'
 				: 'text-faint'}"
 		>
 			<Icon name={tab.icon} size={22} />
-			<span class="text-[11px]">{tab.label}</span>
+			<span class="text-[11px] [@media(max-height:430px)]:hidden">{tab.label}</span>
 		</a>
 	{/each}
 </nav>

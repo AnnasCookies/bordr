@@ -1,5 +1,6 @@
 <script lang="ts">
 	import CodeBlock from './code-block.svelte';
+	import JsonTree from './json-tree.svelte';
 	import { langForPath } from '$lib/highlight';
 	import { prefs } from '$lib/prefs.svelte';
 
@@ -28,14 +29,18 @@
 	} | null;
 
 	function view(tool: string, args: Record<string, unknown>): View {
-		const path = str(args.file_path) || str(args.notebook_path);
-		switch (tool) {
-			case 'Bash':
+		const kind = tool.toLowerCase();
+		const path = str(args.file_path) || str(args.notebook_path) || str(args.path);
+		switch (kind) {
+			case 'bash':
 				return {
-					fields: str(args.description) ? [{ k: 'why', v: str(args.description) }] : [],
+					fields:
+						str(args.description) || str(args.i)
+							? [{ k: 'why', v: str(args.description) || str(args.i) }]
+							: [],
 					code: { text: str(args.command), lang: 'bash' }
 				};
-			case 'Read': {
+			case 'read': {
 				const range = [args.offset, args.limit].filter((n) => typeof n === 'number');
 				return {
 					fields: [
@@ -44,52 +49,71 @@
 					]
 				};
 			}
-			case 'Write':
+			case 'write':
 				return {
 					fields: [{ k: 'file', v: path }],
 					code: { text: str(args.content), lang: langForPath(path) }
 				};
-			case 'Grep':
+			case 'edit':
+				return {
+					fields: path ? [{ k: 'file', v: path }] : [],
+					code: { text: str(args.input), lang: null }
+				};
+			case 'grep':
 				return {
 					fields: [
 						{ k: 'pattern', v: str(args.pattern) },
-						...(str(args.path) ? [{ k: 'in', v: str(args.path) }] : []),
+						...(path ? [{ k: 'in', v: path }] : []),
 						...(str(args.glob) ? [{ k: 'glob', v: str(args.glob) }] : [])
 					]
 				};
-			case 'Glob':
+			case 'glob':
 				return {
 					fields: [
-						{ k: 'pattern', v: str(args.pattern) },
-						...(str(args.path) ? [{ k: 'in', v: str(args.path) }] : [])
+						{ k: 'pattern', v: str(args.pattern) || path },
+						...(str(args.pattern) && path ? [{ k: 'in', v: path }] : [])
 					]
 				};
-			case 'WebFetch':
+			case 'webfetch':
 				return {
 					fields: [
 						{ k: 'url', v: str(args.url) },
 						...(str(args.prompt) ? [{ k: 'asking', v: str(args.prompt) }] : [])
 					]
 				};
-			case 'WebSearch':
+			case 'websearch':
+			case 'web_search':
 				return { fields: [{ k: 'query', v: str(args.query) }] };
-			case 'Skill':
+			case 'skill':
 				return {
 					fields: [
 						{ k: 'skill', v: str(args.skill) },
 						...(str(args.args) ? [{ k: 'args', v: str(args.args) }] : [])
 					]
 				};
-			case 'Task':
-			case 'Agent':
+			case 'task':
+			case 'agent':
 				return {
 					fields: [
 						...(str(args.subagent_type) ? [{ k: 'agent', v: str(args.subagent_type) }] : []),
-						...(str(args.description) ? [{ k: 'task', v: str(args.description) }] : [])
+						...(str(args.description) || str(args.i)
+							? [{ k: 'task', v: str(args.description) || str(args.i) }]
+							: [])
 					],
 					code: str(args.prompt) ? { text: str(args.prompt), lang: 'markdown' } : undefined
 				};
-			case 'TodoWrite': {
+			case 'eval':
+				return {
+					fields: [
+						...(str(args.title) ? [{ k: 'title', v: str(args.title) }] : []),
+						...(str(args.language) ? [{ k: 'language', v: str(args.language) }] : [])
+					],
+					code: {
+						text: str(args.code),
+						lang: str(args.language) || null
+					}
+				};
+			case 'todowrite': {
 				const todos = Array.isArray(args.todos) ? args.todos : [];
 				const mark = (s: string) =>
 					s === 'completed' ? '[x]' : s === 'in_progress' ? '[~]' : '[ ]';
@@ -117,7 +141,9 @@
 	);
 </script>
 
-{#if formatted}
+{#if prefs.value.toolDetail === 'tree' && input}
+	<JsonTree value={input} {mono} />
+{:else if formatted}
 	{#if formatted.fields.length > 0}
 		<dl class="fields" style="--mono: {mono}px">
 			{#each formatted.fields as field (field.k)}

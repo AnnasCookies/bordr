@@ -1,9 +1,14 @@
 import { describe, expect, it } from 'vitest';
 import {
 	agentTitle,
+	answerSettled,
 	collapseHome,
+	compareAgentPriority,
 	flatOrder,
+	holdsAnswer,
+	isDirty,
 	partitionAgents,
+	pickerKey,
 	rollupCounts,
 	sortAgents
 } from './grouping';
@@ -17,6 +22,8 @@ function agent(over: Partial<AgentSummary> & { paneId: string }): AgentSummary {
 		cwd: '/home/dev/dev',
 		seq: 1,
 		workspaceId: 'w1',
+		tabId: 't1',
+		tabLabel: '',
 		workspaceLabel: 'one',
 		...over
 	};
@@ -54,6 +61,36 @@ describe('collapseHome', () => {
 	it('leaves a path outside home alone rather than mangling it', () => {
 		expect(collapseHome('/srv/app')).toBe('/srv/app');
 		expect(collapseHome('/home')).toBe('/home');
+	});
+});
+
+describe('compareAgentPriority', () => {
+	it('matches Herdr’s attention queue and breaks status ties by newest change', () => {
+		const rows = [
+			{ id: 'idle', status: 'idle', seq: 100 },
+			{ id: 'working-old', status: 'working', seq: 2 },
+			{ id: 'done', status: 'done', seq: 1 },
+			{ id: 'blocked', status: 'blocked', seq: 0 },
+			{ id: 'unknown', status: 'unknown', seq: 200 },
+			{ id: 'working-new', status: 'working', seq: 9 }
+		];
+
+		expect(rows.sort(compareAgentPriority).map((row) => row.id)).toEqual([
+			'blocked',
+			'done',
+			'working-new',
+			'working-old',
+			'idle',
+			'unknown'
+		]);
+	});
+
+	it('leaves exact ties in their existing grouped order', () => {
+		const rows = [
+			{ id: 'first', status: 'idle', seq: 4 },
+			{ id: 'second', status: 'idle', seq: 4 }
+		];
+		expect(rows.sort(compareAgentPriority).map((row) => row.id)).toEqual(['first', 'second']);
 	});
 });
 
@@ -130,13 +167,16 @@ describe('partitionAgents', () => {
 });
 
 describe('rollupCounts', () => {
-	it('counts the four cells the grid shows, never unknown', () => {
+	// `unknown` is a state bordr could not read, not one you go looking for,
+	// so it gets no cell and is counted into none of the others.
+	it('counts the cells the grid shows, never unknown', () => {
 		const withUnknown = [...FLEET, agent({ paneId: 'w3:p1', status: 'unknown' })];
 		expect(rollupCounts(withUnknown)).toEqual([
-			{ status: 'blocked', n: 1 },
-			{ status: 'working', n: 1 },
-			{ status: 'done', n: 1 },
-			{ status: 'idle', n: 1 }
+			{ status: 'blocked', label: 'blocked', n: 1 },
+			{ status: 'working', label: 'working', n: 1 },
+			{ status: 'done', label: 'done', n: 1 },
+			{ status: 'idle', label: 'idle', n: 1 },
+			{ status: 'dirty', label: 'unpushed', n: 0 }
 		]);
 	});
 });
@@ -169,7 +209,7 @@ describe('agentTitle', () => {
 	it('falls back to the workspace when the shell title is still up', () => {
 		expect(agentTitle('tony@tm-work:~', 'win-vm-omarchy', 'wJ:p1')).toBe('win-vm-omarchy');
 		expect(agentTitle('~', 'bordr', 'w3:p1')).toBe('bordr');
-		expect(agentTitle('~/repos/it-work', 'it-work', 'w6:p1')).toBe('it-work');
+		expect(agentTitle('~/code/platform', 'platform', 'w6:p1')).toBe('platform');
 		expect(agentTitle('/var/log', 'logs', 'w2:p1')).toBe('logs');
 		expect(agentTitle('', 'e2e', 'wM:p1')).toBe('e2e');
 	});
@@ -192,4 +232,147 @@ describe('agentTitle', () => {
 	it('has the pane id to fall back on when there is nothing else', () => {
 		expect(agentTitle('~', '', 'w9:p2')).toBe('w9:p2');
 	});
+});
+
+describe('answered pickers on the list', () => {
+	type ListPicker = NonNullable<AgentSummary['picker']>;
+	const HOLD = 8_000;
+	const single: ListPicker = {
+		question: 'Which colour?',
+		multi: false,
+		options: [
+			{ index: 1, label: 'Red', selected: true },
+			{ index: 2, label: 'Blue', selected: false }
+		]
+	};
+	const multi: ListPicker = {
+		question: 'Which colours?',
+		multi: true,
+		options: [
+			{ index: 1, label: 'Red', selected: true, checked: true },
+			{ index: 2, label: 'Blue', selected: false, checked: false }
+		]
+	};
+	const markFor = (picker: ListPicker) => ({ key: pickerKey(picker), at: 1_000, label: 'Red' });
+
+	it('holds a single-select answer until the screen catches up, and no longer', () => {
+		expect(holdsAnswer(single)).toBe(true);
+		expect(answerSettled(markFor(single), single, 2_000, HOLD)).toBe(true);
+		expect(answerSettled(markFor(single), single, 1_000 + HOLD, HOLD)).toBe(false);
+	});
+
+	/**
+	 * The defect: one checkbox toggle replaced the options with `sent "Red"`,
+	 * so a second option could never be ticked. A toggle leaves the key as it
+	 * was, so nothing but the picker's kind can tell the two cases apart.
+	 */
+	it('never holds a multi-select picker after a checkbox toggle', () => {
+		expect(holdsAnswer(multi)).toBe(false);
+		const toggled: ListPicker = {
+			...multi,
+			options: multi.options.map((o) => (o.index === 2 ? { ...o, checked: true } : o))
+		};
+		expect(pickerKey(toggled)).toBe(pickerKey(multi));
+		expect(answerSettled(markFor(multi), toggled, 2_000, HOLD)).toBe(false);
+	});
+
+	it('does not swallow the next question', () => {
+		const next: ListPicker = { ...single, question: 'Which shade?' };
+		expect(answerSettled(markFor(single), next, 2_000, HOLD)).toBe(false);
+	});
+
+	it('holds nothing once the picker has gone', () => {
+		expect(holdsAnswer(null)).toBe(false);
+		expect(answerSettled(markFor(single), null, 2_000, HOLD)).toBe(false);
+	});
+});
+
+describe('list filters', () => {
+	const REPOS: AgentSummary[] = [
+		agent({ paneId: 'w1:p1', status: 'working', branch: 'main', ahead: 0, behind: 0 }),
+		agent({ paneId: 'w1:p2', status: 'idle', branch: 'feat/x', ahead: 3, behind: 0 }),
+		agent({ paneId: 'w2:p1', status: 'blocked', branch: 'main', ahead: 1, behind: 2 }),
+		// Not a repository at all: no branch, and never dirty.
+		agent({ paneId: 'w2:p2', status: 'idle' })
+	];
+
+	it('counts a cell per status, plus panes with unpushed commits', () => {
+		expect(rollupCounts(REPOS)).toEqual([
+			{ status: 'blocked', label: 'blocked', n: 1 },
+			{ status: 'working', label: 'working', n: 1 },
+			{ status: 'done', label: 'done', n: 0 },
+			{ status: 'idle', label: 'idle', n: 2 },
+			{ status: 'dirty', label: 'unpushed', n: 2 }
+		]);
+	});
+
+	// Behind-only is not unpushed: there is nothing of yours to lose.
+	it('does not call a branch that is only behind its upstream unpushed', () => {
+		expect(isDirty(agent({ paneId: 'w3:p1', branch: 'main', ahead: 0, behind: 4 }))).toBe(false);
+		expect(isDirty(agent({ paneId: 'w3:p2', branch: 'main', ahead: 1, behind: 4 }))).toBe(true);
+	});
+
+	it('narrows the groups to one status', () => {
+		const { groups } = partitionAgents(REPOS, 'none', 'status-title', 'idle');
+		expect(groups.flatMap((g) => g.agents).map((a) => a.paneId)).toEqual(['w1:p2', 'w2:p2']);
+	});
+
+	/**
+	 * The filter is persisted, so one left lit from yesterday must not hide an
+	 * agent that is waiting on you now. The summary notification opens `/` on
+	 * the promise that blocked agents are pinned to the top of it.
+	 */
+	it('never hides a blocked agent, whatever filter is lit', () => {
+		for (const filter of ['working', 'done', 'idle', 'unknown'] as const) {
+			const { blocked, groups } = partitionAgents(REPOS, 'none', 'status-title', filter);
+			expect(
+				blocked.map((a) => a.paneId),
+				filter
+			).toEqual(['w2:p1']);
+			expect(
+				groups.flatMap((g) => g.agents).map((a) => a.paneId),
+				filter
+			).not.toContain('w2:p1');
+		}
+		// Swiping follows the list, so the blocked pane leads there too.
+		expect(flatOrder(REPOS, 'none', 'status-title', 'working')).toEqual(['w2:p1', 'w1:p1']);
+	});
+
+	it('keeps a blocked pane pinned when it matches the filter', () => {
+		const { blocked, groups } = partitionAgents(REPOS, 'none', 'status-title', 'dirty');
+		expect(blocked.map((a) => a.paneId)).toEqual(['w2:p1']);
+		expect(groups.flatMap((g) => g.agents).map((a) => a.paneId)).toEqual(['w1:p2']);
+	});
+
+	/**
+	 * The conversation swipes through flatOrder. If it ignored the filter,
+	 * "next" would step onto a row that is not on the list you came from.
+	 */
+	it('walks the filtered list, so swiping matches what is on screen', () => {
+		expect(flatOrder(REPOS, 'none', 'status-title', 'dirty')).toEqual(['w2:p1', 'w1:p2']);
+		expect(flatOrder(REPOS, 'none', 'status-title', null)).toHaveLength(4);
+	});
+
+	it('shows everything when no badge is lit', () => {
+		expect(partitionAgents(REPOS, 'none', 'status-title', null).groups[0].agents).toHaveLength(3);
+	});
+});
+
+it('does not hold a same-word approval for a different subject or write-in meaning', () => {
+	const picker = {
+		question: 'Proceed?',
+		context: ['tool A'],
+		multi: false,
+		options: [{ index: 1, label: 'Yes', selected: true }]
+	};
+	const mark = { key: pickerKey(picker), at: 1000, label: 'Yes' };
+	expect(answerSettled(mark, { ...picker, context: ['tool B'] }, 2000, 8000)).toBe(false);
+	expect(
+		answerSettled(
+			mark,
+			{ ...picker, options: [{ index: 1, label: 'Yes', selected: true, writeIn: true }] },
+			2000,
+			8000
+		)
+	).toBe(false);
 });

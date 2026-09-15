@@ -85,3 +85,54 @@ describe('pane load: how far back to read', () => {
 		}
 	});
 });
+
+describe('load: losing the connection', () => {
+	/** A fetch that throws the way a real one does with no network. */
+	const dead = () => Promise.reject(new TypeError('Failed to fetch'));
+
+	const okDetail = (pane: string) =>
+		new Response(JSON.stringify({ paneId: pane, messages: [], title: 'x' }), { status: 200 });
+	const okWatch = () => new Response(JSON.stringify({ watched: false }), { status: 200 });
+
+	function fetcher(mode: 'ok' | 'dead') {
+		return (input: string | URL | Request) => {
+			if (mode === 'dead') return dead();
+			const url = String(input);
+			return Promise.resolve(url.endsWith('/watch') ? okWatch() : okDetail('w1:p1'));
+		};
+	}
+
+	const args = (fetchImpl: unknown) =>
+		({
+			params: { pane: 'w1:p1' },
+			url: new URL('http://x/a/w1:p1'),
+			fetch: fetchImpl
+		}) as unknown as Parameters<typeof load>[0];
+
+	/** `PageLoad` is typed `void | …`, which is not what this load returns. */
+	type Loaded = { detail: unknown; watched: boolean; megabytes: number; offline: boolean };
+	const run = async (fetchImpl: unknown) => (await load(args(fetchImpl))) as unknown as Loaded;
+
+	it('keeps the last transcript when the network goes, instead of erroring', async () => {
+		// The bug: a fetch that fails at the network layer throws rather than
+		// returning a status, so a phone in a tunnel put a 500 page over the
+		// whole app — transcript, composer and any draft in it.
+		const first = await run(fetcher('ok'));
+		expect(first.offline).toBe(false);
+
+		const held = await run(fetcher('dead'));
+		expect(held.offline).toBe(true);
+		expect(held.detail).toEqual(first.detail);
+	});
+
+	it('does error when there is nothing held to show', async () => {
+		// A pane never loaded has no last-good copy, so a blank error page is
+		// the honest answer rather than an empty transcript.
+		const fresh = {
+			params: { pane: 'never:seen' },
+			url: new URL('http://x/a/never:seen'),
+			fetch: fetcher('dead')
+		} as unknown as Parameters<typeof load>[0];
+		await expect(load(fresh)).rejects.toMatchObject({ status: 503 });
+	});
+});

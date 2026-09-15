@@ -66,6 +66,66 @@ export const STATUS_INK: Record<string, string> = {
 };
 
 /**
+ * A pull request's state. Merged is the one worth colouring — a branch whose
+ * pull request has landed is a branch you can stop thinking about.
+ */
+export const PULL_INK: Record<string, string> = {
+	OPEN: 'text-branch',
+	MERGED: 'text-done',
+	CLOSED: 'text-faint'
+};
+
+/**
+ * CI as one mark.
+ *
+ * The colour is not the message: it cannot be, for anyone who cannot see it.
+ * So the marks differ in SHAPE too — a tick for green, a cross for red, a
+ * half-filled ring for still running — and each carries its word as a label.
+ * The same three glyphs the sidebar already uses for a pane's own state.
+ */
+export const CHECK_MARK: Record<string, string> = {
+	passing: '\u2713',
+	failing: '\u2717',
+	pending: '\u25d0',
+	none: ''
+};
+
+export const CHECK_INK: Record<string, string> = {
+	passing: 'text-done',
+	failing: 'text-blocked-ink',
+	pending: 'text-working',
+	none: 'text-faint'
+};
+
+/**
+ * A glyph per status, for the sidebar's `symbol` indicator mode.
+ *
+ * herdr's own set, so the two read the same way side by side — a tick for
+ * work that finished, a hollow ring for ready, a half-filled ring for
+ * something in progress, a cross for something stopped and waiting on you,
+ * and a dot for a pane with no agent in it at all.
+ *
+ * They also differ by SHAPE, not only colour, so the list still scans for
+ * anyone who does not separate red from green.
+ */
+export const STATUS_SYMBOL: Record<string, string> = {
+	blocked: '✕',
+	working: '◑',
+	done: '✓',
+	idle: '○',
+	unknown: '·'
+};
+
+/** The same, spelled out, for the `text` mode. */
+export const STATUS_WORD: Record<string, string> = {
+	blocked: 'blocked',
+	working: 'working',
+	done: 'done',
+	idle: 'idle',
+	unknown: 'shell'
+};
+
+/**
  * A 4px dashed rail, drawn as a repeating gradient because a dashed border on
  * a 4px column renders as a solid line at this width.
  */

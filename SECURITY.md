@@ -7,14 +7,14 @@ point.
 
 bordr is a remote control for coding agents. Through it you can type a prompt
 into any agent on the host, press keys into its terminal, answer its permission
-prompts, start new agents in any directory under `$HOME`, upload images, and
+prompts, start new agents in any directory under `$HOME`, upload files, and
 browse and download files under the roots you configure.
 
 The agents themselves can run arbitrary commands. So:
 
 > **Anyone who can reach bordr's port can run arbitrary code on the host and
-> read files from it, and on every machine you have named in
-> `BORDR_MACHINES`. There is no login.**
+> read files from it, and on every other machine bordr can reach
+> ([Machines](#machines)). There is no login.**
 
 That is not a bug being tracked. It is the design, and everything below follows
 from it.
@@ -57,17 +57,40 @@ proxy in front of it and treat the result as load-bearing security you own.
 
 ### Machines
 
-bordr can drive herdr on other machines over SSH. It does **not** inherit
-herdr's own endpoint list: a machine is reachable only once you name it here,
-by its herdr id or label.
+bordr can drive herdr on other machines over SSH, and whether it inherits
+herdr's own endpoint list depends on how bordr itself is reachable.
+
+**Bound to loopback or a tailnet address, with `BORDR_I_UNDERSTAND_THIS_HAS_NO_AUTH`
+unset, it inherits.** Naming a machine in herdr is a deliberate act at a
+terminal on this host. Making it reachable from bordr grants it to whoever can
+reach bordr — and under this bind that is the same set of people, because the
+tailnet is the boundary and a device on it "is trusted completely" (above), while
+anyone who can reach loopback directly is already on the machine and already owns
+every agent on it. A second list there is bookkeeping that duplicates the first,
+and the usual result of asking for it is a sidebar that silently stops listing
+the machines you use daily.
+
+**With that flag set, or with `BORDR_ALLOWED_HOSTS` set, it does not.** The flag
+means bordr was deliberately bound somewhere else; an allowed hostname means
+something such as a proxy on a name of your own sits in front of it. Either way
+"everyone who can reach this port" is a wider set than "whoever is sitting at
+this terminal", and the list has to be a decision someone made here.
+
+Either way, naming machines narrows it to exactly those:
 
 ```
 BORDR_MACHINES=laptop,tower
 ```
 
-Empty, the default, means this host only. Every machine you name is drivable
-by anyone who reaches bordr, so the list is the blast radius. Authentication
-is your own SSH config and agent; bordr reads no keys and writes none.
+Set that when you share a tailnet, or when you want bordr to reach some of your
+machines and not others. Every machine bordr can reach is drivable by anyone who
+reaches bordr, so the reachable set is the blast radius. Authentication is your
+own SSH config and agent; bordr reads no keys and writes none.
+
+One case this cannot see: `tailscale funnel` fronts a loopback bind exactly as
+`serve` does, so bordr cannot tell them apart from the bind alone. Funnel sends
+no identity header, which is what `BORDR_ALLOWED_USERS` refuses — set it and a
+funnel is shut out, machines included.
 
 ### The hostname check
 
@@ -121,7 +144,7 @@ network, mostly because an _agent_ can be induced to write a hostile file.
 | **Transcript escaping**      | Terminal output is HTML-escaped before rendering; the ANSI renderer emits only colour spans                                                                                                                                                                                                                                                                                                                                                                   |
 | **Markdown**                 | The file viewer renders with `marked`, then sanitises with DOMPurify with `style`, `form` and `iframe` forbidden                                                                                                                                                                                                                                                                                                                                              |
 | **Transcript markdown**      | Agent messages render in bordr's own origin through a stricter allow-list: tags and attributes named explicitly, `javascript:` and `data:` URLs refused, and `class` kept only as `language-*` on a code element so agent output cannot borrow bordr's own layout utilities to paint over the app                                                                                                                                                             |
-| **Upload limits**            | The browser-declared MIME type is allow-listed and the payload size-capped, at most six per message. The file's own bytes are not inspected, so a caller who lies about the type is only limited by the allow-list                                                                                                                                                                                                                                            |
+| **Upload limits**            | Any file can be attached from the phone, each size-capped at 15MB and at most six per message, written 0600 under the data directory with a generated name that keeps only a cleaned copy of the original. The declared type is not trusted: only PNG, JPEG, WebP and GIF uploads are ever served back, so an uploaded SVG or HTML file cannot run in bordr's origin                                                                                          |
 | **Frame protection**         | Every app response sends `x-frame-options: DENY` and `frame-ancestors 'none'`; only the raw artifact route is exempt, because the viewer frames it                                                                                                                                                                                                                                                                                                            |
 
 ## What it does not defend against

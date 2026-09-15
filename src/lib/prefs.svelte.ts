@@ -1,5 +1,8 @@
 import { browser } from '$app/environment';
+import { DEFAULT_FILL, DEFAULT_USER } from './bubble-colour';
 import { parseHex, readableTextOn } from '$lib/contrast';
+import type { ListFilter } from './grouping';
+import { clampSidebar, DEFAULT_SIDEBAR } from './sidebar';
 
 export type GroupBy = 'workspace' | 'status' | 'harness' | 'none';
 export type SortBy = 'status-title' | 'title' | 'recent';
@@ -7,28 +10,159 @@ export type PreviewMode = 'activity' | 'cwd' | 'none';
 export type Theme = 'light' | 'dark' | 'system';
 export type KeyStripMode = 'always' | 'peek';
 export type BackTo = 'home' | 'history';
-export type HarnessAccent = 'edge' | 'tint' | 'off';
-export type ToolDetail = 'formatted' | 'json';
+
+/**
+ * How often a bubble carries the time.
+ *
+ *   off   never
+ *   runs  once per run of turns from the same speaker, on its last bubble —
+ *         a burst of five replies in the same minute gets one stamp, not five
+ *   all   every bubble
+ */
+export type MessageTime = 'off' | 'runs' | 'all';
+
+/**
+ * Which sub-agents the strip above a conversation carries.
+ *
+ *   off       none; the Task rows in the transcript still open them
+ *   running   only the ones still working, with the finished behind a count
+ *   all       every sub-agent this session has ever spawned
+ */
+export type SubagentStrip = 'off' | 'running' | 'all';
+
+/**
+ * What the drawer offers for getting home, on a phone.
+ *
+ * The drawer covers the whole screen, header included, so the mark in the
+ * header — which is a link to the agents list — cannot be reached while it is
+ * open. Something in the drawer has to stand in for it.
+ *
+ *   mark  the collie, the same control as the header's
+ *   icon  a plain home glyph
+ *   off   nothing; close the drawer and use the header
+ */
+export type DrawerHome = 'mark' | 'icon' | 'off';
+
+/**
+ * When one of the header's three controls is drawn.
+ *
+ * The same three answers for each of them, because they sit side by side and
+ * a control that appears under different rules from its neighbour is a
+ * control you have to think about.
+ *
+ *   always  every screen, every width
+ *   mobile  only where there is a touch screen
+ *   off     never
+ */
+export type ChromeWhen = 'always' | 'mobile' | 'off';
+
+/**
+ * Whether the Latest button rides down to the bottom or simply arrives.
+ *
+ * 'auto' asks the browser, which is the right default — someone who has
+ * turned motion down at the system level means it. But the browser is not
+ * always right about that: it reads the setting through a desktop portal, and
+ * a machine whose animations are plainly on can still report `reduce`. When
+ * that happens there is nothing on the page to argue with, so the glide looks
+ * broken rather than switched off.
+ */
+export type ConversationWidth = 'comfortable' | 'wide' | 'full';
+
+export type Motion = 'auto' | 'full' | 'none';
+
+/**
+ * The pull request the branch is on, beside the branch.
+ *
+ *   off     nothing; the branch alone, as before
+ *   number  the number and whether it is open, merged or closed
+ *   checks  that, and one mark for how CI is doing
+ *
+ * Local panes only, and read in the background — see `pullFor`.
+ */
+export type HeaderPull = 'off' | 'number' | 'checks';
+
+/**
+ * The model, and how hard it is being asked to think, in the header.
+ *
+ * Both are already in the harness's status block, but that is a dense row of
+ * glyphs and quotas you read when you go looking. These two change what an
+ * answer is worth and what it costs, so they are worth a glance rather than a
+ * hunt.
+ */
+export type HeaderModel = 'off' | 'model' | 'model-effort';
+
+/** Which clock a time is written on, when the locale's own is not wanted. */
+export type ClockFormat = 'auto' | 'h24' | 'h12';
+
+/** Whether the app makes a noise when an agent's state changes. */
+export type SoundAlerts = 'off' | 'attention' | 'all';
+
+/** How a status shows in the sidebar — herdr's own `status_indicators`. */
+export type StatusIndicators = 'dot' | 'symbol' | 'text';
+
+/**
+ * Where a harness's own colour lands on its bubble.
+ *
+ *   edge  the border only
+ *   tint  the border, and a faint blend of it in the fill
+ *   fill  the border, and the fill AT FULL STRENGTH — the loudest option,
+ *         and the only one that has to re-pick the text colour to stay
+ *         readable on it
+ *   off   nowhere; the border falls back to the neutral edge
+ */
+export type HarnessAccent = 'edge' | 'tint' | 'fill' | 'off';
+
+/** A fill is laid flat, or fades away from the speaker's own tail corner. */
+export type FillStyle = 'solid' | 'gradient';
+
+/**
+ * What the far end of a fill gradient fades TO.
+ *
+ *   auto     derived from the fill so the text stays readable by construction
+ *   harness  the agent's own colour, so the bubble carries who is speaking
+ *   custom   a colour picked below
+ */
+export type GradientEnd = 'auto' | 'harness' | 'custom';
+
+/*
+ * A bubble's fill and its border are independent: either, both, or neither.
+ * Border alone is the outline look, fill alone is the older solid bubble,
+ * both gives a filled bubble with a rule, and neither leaves the text bare
+ * on the page. Each has its own colour per side.
+ */
+export type ToolDetail = 'formatted' | 'tree' | 'json';
 export type PaneView = 'auto' | 'conversation' | 'terminal';
 export type TerminalFit = 'fit' | 'wrap' | 'native';
 export type TerminalDensity = 'compact' | 'comfortable';
 
-export type TreeScope = 'all' | 'agents';
-export type AgentOrder = 'priority' | 'workspace';
+/** Herdr's Agents-panel modes: an attention queue, or stable Space groups. */
+export type AgentOrder = 'priority' | 'grouped';
 export type StatusPosition = 'header' | 'bottom';
 export type WorkControl = 'inline' | 'header';
 
 export interface Prefs {
 	v: number;
 	groupBy: GroupBy;
+	/**
+	 * The badge at the top of the list that is lit, narrowing it to one status
+	 * or to panes with unpushed work. Null is the whole list.
+	 *
+	 * Persisted, and not only so it survives a reload: the conversation swipes
+	 * through `flatOrder`, which must walk the list you can actually see. A
+	 * page-local filter would leave "next" stepping onto rows that are not on
+	 * screen.
+	 */
+	listFilter: ListFilter | null;
 	sort: SortBy;
 	/**
-	 * What the phone's back gesture does from inside an agent.
+	 * What the phone's back gesture does, on every screen but the agents list.
 	 *
-	 * 'home': moving between panes, tabs and screens from an agent REPLACES
-	 * the history entry, so back is always one step to the agents list. That
-	 * is what the gesture is for on a phone, and a swipe or the tab strip is
-	 * how you move sideways.
+	 * 'home' is the default: once you have left the agents list, every move
+	 * REPLACES the history entry, so back is always one step to the list. That
+	 * is what the gesture is for on a phone, and it was asked for explicitly; a
+	 * swipe or the tab strip is how you move sideways. It used to cover only
+	 * the conversation page, and four folders deep in Files was five backs.
+	 * The rules live in `$lib/back`.
 	 *
 	 * 'history': every move pushes, and back retraces them one at a time. Ten
 	 * gestures to get home after a few minutes of switching is the behaviour
@@ -46,28 +180,47 @@ export interface Prefs {
 	theme: Theme;
 	monoSize: number;
 	keyStrip: KeyStripMode;
-	/** Show tool calls, results and thinking in a conversation by default. */
+	/** Show tool calls and their results in a conversation by default. */
 	showWork: boolean;
+	/** Show the agent's thinking as separate, quiet transcript rows. */
+	showThinking: boolean;
 	/**
 	 * How the harness's accent reaches a bubble. 'edge' is a stripe down the
 	 * side; 'tint' blends it into the background, which muddies every theme
 	 * colour it touches; 'off' leaves the bubble alone.
 	 */
 	harnessAccent: HarnessAccent;
-	/** Render a tool call the way a terminal shows it, or as raw JSON. */
+	statusIndicators: StatusIndicators;
+	soundAlerts: SoundAlerts;
+	/** Collapse a run of tool-only turns into one expandable group. */
+	groupTools: boolean;
+	bubbleFill: boolean;
+	fillStyle: FillStyle;
+	gradientEnd: GradientEnd;
+	userGradientEnd: string;
+	agentGradientEnd: string;
+	/** A bubble's pointer. Off leaves the squared corner and nothing else. */
+	bubbleTails: boolean;
+	bubbleBorder: boolean;
+	/** Rule thickness in px. */
+	bubbleBorderWidth: number;
+	userBorder: string;
+	agentBorder: string;
+	/** Render tool input for reading, as a collapsible tree, or as raw JSON. */
 	toolDetail: ToolDetail;
-	/**
-	 * Whether the desktop tree lists every pane or only those with an agent.
-	 * Some people work agent-first and do not want their shells in the way.
-	 */
-	treeScope: TreeScope;
-	/** How the sidebar's agent section is ordered: by urgency, or by workspace. */
+	/** How the sidebar's Agents panel is ordered, matching Herdr's toggle. */
 	agentOrder: AgentOrder;
 	/**
 	 * How much of the sidebar the workspaces section takes, 0.15 to 0.75.
 	 * Dragged by the divider between the two sections.
 	 */
 	sidebarSplit: number;
+	/**
+	 * How wide the desktop sidebar is, in pixels. Dragged by its right edge,
+	 * clamped by the resizer so a stored value from anywhere cannot make it
+	 * unusable.
+	 */
+	sidebarWidth: number;
 	/** The desktop session tree, open or collapsed out of the way. */
 	sidebarOpen: boolean;
 	/** Draw a tab's panes as herdr's real split, rather than one pane at a time. */
@@ -84,6 +237,52 @@ export interface Prefs {
 	/** The harness's status row, and where the terminal is looking, on each list row. */
 	listDetail: boolean;
 	/** The git branch under each workspace in the tree. */
+	/**
+	 * Delivery marks on your own messages: a spinner while the request is in
+	 * flight, one tick once herdr has it, two once the agent has picked it up.
+	 */
+	/**
+	 * Put the number of agents waiting on the app's own icon.
+	 *
+	 * A notification cannot still be there tomorrow; a badge can — which is
+	 * the argument for it and, for anyone who keeps a clean home screen, the
+	 * argument against.
+	 */
+	appBadge: boolean;
+	messageTicks: boolean;
+	/** How often a message carries the time it was written. */
+	messageTime: MessageTime;
+	/** Which sub-agents appear in the strip above a conversation. */
+	subagentStrip: SubagentStrip;
+	/** What the phone drawer offers for getting back to the agents list. */
+	drawerHome: DrawerHome;
+	/**
+	 * The header's three controls: an arrow back to the agents list, the
+	 * menu that opens the session tree, and the collie, which is also a link
+	 * to the list.
+	 */
+	backButton: ChromeWhen;
+	menuButton: ChromeWhen;
+	logoButton: ChromeWhen;
+	/**
+	 * The tab strip under the title.
+	 *
+	 * A row of the tabs in this workspace, and the panes in this tab. Worth 40px
+	 * of a 179px header, so it is worth being able to decide about — swiping
+	 * already moves between the same panes.
+	 */
+	tabStrip: ChromeWhen;
+	conversationWidth: ConversationWidth;
+	/** Whether "Latest" glides to the bottom or jumps there. */
+	motion: Motion;
+	/** The pull request and its CI, beside the branch in the header. */
+	headerPull: HeaderPull;
+	/** The model and effort on the conversation header's location row. */
+	headerModel: HeaderModel;
+	/** Which clock that time is written on; 'auto' follows the device. */
+	clockFormat: ClockFormat;
+	/** The herdr tab name on list rows and in the sidebar. */
+	showTabName: boolean;
 	showBranches: boolean;
 	/** Name an unnamed tab after what is in it, rather than "tab 2". */
 	smartTabLabels: boolean;
@@ -98,12 +297,16 @@ export interface Prefs {
 	/** Offer the harness's own ghost prompt above the composer. */
 	showSuggestions: boolean;
 	/**
-	 * Where the harness's status block sits. 'bottom' puts it under the
-	 * composer, where the on-screen keyboard covers it instead of the
-	 * conversation.
+	 * Where the harness's status block sits.
+	 *
+	 * 'bottom' is the default: under the composer, where the on-screen keyboard
+	 * covers it instead of the conversation, and where it is not part of a
+	 * header that had grown to 22% of a phone screen. It is reference material
+	 * — model, quota, spend — rather than anything you act on, so it belongs
+	 * out of the way of the thing you came to read.
 	 */
 	statusPosition: StatusPosition;
-	/** Where the show-the-work control lives: with the transcript, or in the header. */
+	/** Where the show-tools control lives: with the transcript, or in the header. */
 	workControl: WorkControl;
 	/**
 	 * Which status row to show when the block is collapsed, per harness.
@@ -131,6 +334,7 @@ export interface Prefs {
 export const DEFAULTS: Prefs = {
 	v: 2,
 	groupBy: 'workspace',
+	listFilter: null,
 	sort: 'status-title',
 	backTo: 'home',
 	showGrouping: true,
@@ -140,17 +344,46 @@ export const DEFAULTS: Prefs = {
 	monoSize: 11,
 	keyStrip: 'peek',
 	showWork: true,
+	showThinking: true,
 	harnessAccent: 'edge',
+	statusIndicators: 'dot',
+	soundAlerts: 'attention',
+	groupTools: true,
+	bubbleFill: false,
+	fillStyle: 'gradient',
+	gradientEnd: 'auto',
+	userGradientEnd: '',
+	agentGradientEnd: '',
+	bubbleTails: true,
+	bubbleBorder: true,
+	bubbleBorderWidth: 2,
+	userBorder: '',
+	agentBorder: '',
 	toolDetail: 'formatted',
-	treeScope: 'all',
 	agentOrder: 'priority',
 	sidebarSplit: 0.4,
+	sidebarWidth: DEFAULT_SIDEBAR,
 	sidebarOpen: true,
 	splitPanes: true,
 	paneView: 'auto',
 	terminalFit: 'fit',
 	terminalDensity: 'comfortable',
 	listDetail: true,
+	appBadge: true,
+	messageTicks: true,
+	messageTime: 'runs',
+	subagentStrip: 'running',
+	drawerHome: 'mark',
+	backButton: 'always',
+	menuButton: 'always',
+	logoButton: 'always',
+	tabStrip: 'always',
+	conversationWidth: 'full',
+	motion: 'auto',
+	headerPull: 'checks',
+	headerModel: 'model-effort',
+	clockFormat: 'auto',
+	showTabName: true,
 	showBranches: true,
 	smartTabLabels: true,
 	showActivity: true,
@@ -158,7 +391,7 @@ export const DEFAULTS: Prefs = {
 	syntaxHighlight: true,
 	compactImages: true,
 	showSuggestions: true,
-	statusPosition: 'header',
+	statusPosition: 'bottom',
 	workControl: 'inline',
 	statusLine: {},
 	enterSends: false,
@@ -186,22 +419,35 @@ const KEY = 'bordr-prefs';
  */
 const VERSION = 2;
 const GROUPS: GroupBy[] = ['workspace', 'status', 'harness', 'none'];
+const FILTERS: ListFilter[] = ['blocked', 'working', 'done', 'idle', 'unknown', 'dirty'];
 const SORTS: SortBy[] = ['status-title', 'title', 'recent'];
 const PREVIEWS: PreviewMode[] = ['activity', 'cwd', 'none'];
 const THEMES: Theme[] = ['light', 'dark', 'system'];
 const STRIPS: KeyStripMode[] = ['always', 'peek'];
 const BACKS: BackTo[] = ['home', 'history'];
-const ACCENTS: HarnessAccent[] = ['edge', 'tint', 'off'];
-const TOOL_DETAILS: ToolDetail[] = ['formatted', 'json'];
-const TREE_SCOPES: TreeScope[] = ['all', 'agents'];
-const AGENT_ORDERS: AgentOrder[] = ['priority', 'workspace'];
+const MESSAGE_TIMES: MessageTime[] = ['off', 'runs', 'all'];
+const SUBAGENT_STRIPS: SubagentStrip[] = ['off', 'running', 'all'];
+const DRAWER_HOMES: DrawerHome[] = ['mark', 'icon', 'off'];
+const WIDTHS: ConversationWidth[] = ['comfortable', 'wide', 'full'];
+const CHROME_WHENS: ChromeWhen[] = ['always', 'mobile', 'off'];
+const MOTIONS: Motion[] = ['auto', 'full', 'none'];
+const HEADER_PULLS: HeaderPull[] = ['off', 'number', 'checks'];
+const HEADER_MODELS: HeaderModel[] = ['off', 'model', 'model-effort'];
+const CLOCKS: ClockFormat[] = ['auto', 'h24', 'h12'];
+const ACCENTS: HarnessAccent[] = ['edge', 'tint', 'fill', 'off'];
+const INDICATORS: StatusIndicators[] = ['dot', 'symbol', 'text'];
+const SOUNDS: SoundAlerts[] = ['off', 'attention', 'all'];
+const FILL_STYLES: FillStyle[] = ['solid', 'gradient'];
+const GRADIENT_ENDS: GradientEnd[] = ['auto', 'harness', 'custom'];
+const TOOL_DETAILS: ToolDetail[] = ['formatted', 'tree', 'json'];
+const AGENT_ORDERS: AgentOrder[] = ['priority', 'grouped'];
 const STATUS_POSITIONS: StatusPosition[] = ['header', 'bottom'];
 const WORK_CONTROLS: WorkControl[] = ['inline', 'header'];
 const PANE_VIEWS: PaneView[] = ['auto', 'conversation', 'terminal'];
 const TERMINAL_FITS: TerminalFit[] = ['fit', 'wrap', 'native'];
 const TERMINAL_DENSITIES: TerminalDensity[] = ['compact', 'comfortable'];
 
-function pick<T extends string>(value: unknown, allowed: T[], fallback: T): T {
+function pick<T extends string | number>(value: unknown, allowed: T[], fallback: T): T {
 	return allowed.includes(value as T) ? (value as T) : fallback;
 }
 
@@ -233,6 +479,11 @@ export function normalisePrefs(raw: unknown): Prefs {
 	return {
 		v: VERSION,
 		groupBy: pick(stored.groupBy, GROUPS, DEFAULTS.groupBy),
+		// Null, not a fallback filter: an unrecognised value must open the whole
+		// list, never silently hide rows the reader did not ask to hide.
+		listFilter: FILTERS.includes(stored.listFilter as ListFilter)
+			? (stored.listFilter as ListFilter)
+			: null,
 		sort: pick(stored.sort, SORTS, DEFAULTS.sort),
 		backTo: pick(stored.backTo, BACKS, DEFAULTS.backTo),
 		showGrouping: bool(stored.showGrouping, DEFAULTS.showGrouping),
@@ -249,22 +500,64 @@ export function normalisePrefs(raw: unknown): Prefs {
 		keyStrip:
 			stored.v === VERSION ? pick(stored.keyStrip, STRIPS, DEFAULTS.keyStrip) : DEFAULTS.keyStrip,
 		showWork: bool(stored.showWork, DEFAULTS.showWork),
+		// Before this setting existed, showWork controlled both tools and thinking.
+		// Preserve that old choice on upgrade instead of making hidden thinking
+		// suddenly appear; once saved, the two switches are independent.
+		showThinking: bool(stored.showThinking, bool(stored.showWork, DEFAULTS.showThinking)),
 		harnessAccent: pick(stored.harnessAccent, ACCENTS, DEFAULTS.harnessAccent),
+		statusIndicators: pick(stored.statusIndicators, INDICATORS, DEFAULTS.statusIndicators),
+		soundAlerts: pick(stored.soundAlerts, SOUNDS, DEFAULTS.soundAlerts),
+		groupTools: bool(stored.groupTools, DEFAULTS.groupTools),
+		bubbleFill: bool(stored.bubbleFill, DEFAULTS.bubbleFill),
+		fillStyle: pick(stored.fillStyle, FILL_STYLES, DEFAULTS.fillStyle),
+		gradientEnd: pick(stored.gradientEnd, GRADIENT_ENDS, DEFAULTS.gradientEnd),
+		userGradientEnd: colour(stored.userGradientEnd, DEFAULTS.userGradientEnd),
+		agentGradientEnd: colour(stored.agentGradientEnd, DEFAULTS.agentGradientEnd),
+		bubbleTails: bool(stored.bubbleTails, DEFAULTS.bubbleTails),
+		bubbleBorder: bool(stored.bubbleBorder, DEFAULTS.bubbleBorder),
+		bubbleBorderWidth: pick(
+			Number(stored.bubbleBorderWidth),
+			[1, 2, 3],
+			DEFAULTS.bubbleBorderWidth
+		),
+		userBorder: colour(stored.userBorder, DEFAULTS.userBorder),
+		agentBorder: colour(stored.agentBorder, DEFAULTS.agentBorder),
 		toolDetail: pick(stored.toolDetail, TOOL_DETAILS, DEFAULTS.toolDetail),
-		treeScope: pick(stored.treeScope, TREE_SCOPES, DEFAULTS.treeScope),
-		agentOrder: pick(stored.agentOrder, AGENT_ORDERS, DEFAULTS.agentOrder),
+		// `workspace` was Bordr's old name for Herdr's `grouped`/`spaces` mode.
+		agentOrder:
+			stored.agentOrder === 'workspace'
+				? 'grouped'
+				: pick(stored.agentOrder, AGENT_ORDERS, DEFAULTS.agentOrder),
 		// Clamped on read: it comes from storage a person can hand-edit, and a
 		// value outside this range collapses one section to nothing.
 		sidebarSplit:
 			typeof stored.sidebarSplit === 'number' && Number.isFinite(stored.sidebarSplit)
 				? Math.min(Math.max(stored.sidebarSplit, 0.15), 0.75)
 				: DEFAULTS.sidebarSplit,
+		sidebarWidth: clampSidebar(
+			typeof stored.sidebarWidth === 'number' ? stored.sidebarWidth : DEFAULTS.sidebarWidth
+		),
 		sidebarOpen: bool(stored.sidebarOpen, DEFAULTS.sidebarOpen),
 		splitPanes: bool(stored.splitPanes, DEFAULTS.splitPanes),
 		paneView: pick(stored.paneView, PANE_VIEWS, DEFAULTS.paneView),
 		terminalFit: pick(stored.terminalFit, TERMINAL_FITS, DEFAULTS.terminalFit),
 		terminalDensity: pick(stored.terminalDensity, TERMINAL_DENSITIES, DEFAULTS.terminalDensity),
 		listDetail: bool(stored.listDetail, DEFAULTS.listDetail),
+		appBadge: bool(stored.appBadge, DEFAULTS.appBadge),
+		messageTicks: bool(stored.messageTicks, DEFAULTS.messageTicks),
+		messageTime: pick(stored.messageTime, MESSAGE_TIMES, DEFAULTS.messageTime),
+		subagentStrip: pick(stored.subagentStrip, SUBAGENT_STRIPS, DEFAULTS.subagentStrip),
+		drawerHome: pick(stored.drawerHome, DRAWER_HOMES, DEFAULTS.drawerHome),
+		backButton: pick(stored.backButton, CHROME_WHENS, DEFAULTS.backButton),
+		menuButton: pick(stored.menuButton, CHROME_WHENS, DEFAULTS.menuButton),
+		logoButton: pick(stored.logoButton, CHROME_WHENS, DEFAULTS.logoButton),
+		tabStrip: pick(stored.tabStrip, CHROME_WHENS, DEFAULTS.tabStrip),
+		conversationWidth: pick(stored.conversationWidth, WIDTHS, DEFAULTS.conversationWidth),
+		motion: pick(stored.motion, MOTIONS, DEFAULTS.motion),
+		headerPull: pick(stored.headerPull, HEADER_PULLS, DEFAULTS.headerPull),
+		headerModel: pick(stored.headerModel, HEADER_MODELS, DEFAULTS.headerModel),
+		clockFormat: pick(stored.clockFormat, CLOCKS, DEFAULTS.clockFormat),
+		showTabName: bool(stored.showTabName, DEFAULTS.showTabName),
 		showBranches: bool(stored.showBranches, DEFAULTS.showBranches),
 		smartTabLabels: bool(stored.smartTabLabels, DEFAULTS.smartTabLabels),
 		showActivity: bool(stored.showActivity, DEFAULTS.showActivity),
@@ -343,9 +636,9 @@ function createPrefs() {
 		} {
 			const dark = resolveTheme(current.theme, prefersDark) === 'dark';
 			return {
-				userBubble: current.userBubble || (dark ? '#2f4fd0' : '#3558e6'),
+				userBubble: current.userBubble || (dark ? DEFAULT_USER.dark : DEFAULT_USER.light),
 				userText: current.userText || '#ffffff',
-				agentBubble: current.agentBubble || (dark ? '#262626' : '#eceef1'),
+				agentBubble: current.agentBubble || (dark ? DEFAULT_FILL.dark : DEFAULT_FILL.light),
 				agentText: current.agentText || (dark ? '#e5e5e5' : '#111418')
 			};
 		},

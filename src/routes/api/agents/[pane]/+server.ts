@@ -1,13 +1,27 @@
 import { error, json } from '@sveltejs/kit';
 import { rawAgent, rawPane, readPane, readVisible, toSummary } from '$lib/server/herdr';
 import { adapterFor } from '$lib/server/transcript';
+import { agentCwd } from '$lib/server/transcript/cwd';
 import { parsePane } from '$lib/server/herdr/address';
+import { branchesFor } from '$lib/server/herdr/branches';
+import { pullFor } from '$lib/server/herdr/pulls';
 import { ensureConnection, remoteTranscriptTail } from '$lib/server/herdr/connections';
 import { backfillBlocks } from '$lib/server/transcript/types';
-import { DEFAULT_TAIL_BYTES, readTranscriptTail } from '$lib/server/transcript/tail';
+import {
+	DEFAULT_TAIL_BYTES,
+	MAX_TAIL_BYTES,
+	readTranscriptHead,
+	readTranscriptTail
+} from '$lib/server/transcript/tail';
+import { listSubagents } from '$lib/server/transcript/subagents';
+import { parseQueue, type QueuedPrompt } from '$lib/server/transcript/queue';
+import { latestModel, parseModel } from '$lib/server/transcript/model';
 import { menuFooter, parsePicker, pendingAsk, suggestionFrom } from '$lib/server/picker';
+import { piSessionEnded } from '$lib/server/transcript/pi';
+import { resolveLocalTranscript } from '$lib/server/transcript/resolve';
 import { extractStatusLines } from '$lib/server/status';
 import { extractActivity } from '$lib/server/activity';
+import { piScreenWorking, piTranscriptSettled, piStatusDiagnostic } from '$lib/server/pi-status';
 import { stripAnsi } from '$lib/ansi';
 import { cleanSnapshot } from '$lib/server/snapshot';
 import type { AgentDetail, Message } from '$lib/types';
@@ -61,6 +75,8 @@ function explain(degraded: Degraded, harness: string, reason?: string): string |
 				reason ??
 				`herdr reported no session for this pane, so the transcript cannot be found. Run \`herdr integration install ${harness}\` and restart the agent; showing the terminal instead.`
 			);
+		case 'stale-session':
+			return `Herdr reported an OMP session that has already shut down; showing the live terminal instead of the wrong chat.`;
 		case 'unreadable':
 			return `The transcript file could not be read (${reason ?? 'unknown error'}); showing the terminal instead.`;
 		case 'empty':
@@ -75,7 +91,10 @@ export const GET: RequestHandler = async ({ params, url }) => {
 	// fall back to the default rather than reading zero bytes and rendering
 	// an empty conversation.
 	const requested = Number(url.searchParams.get('bytes'));
-	const windowBytes = Number.isFinite(requested) && requested > 0 ? requested : DEFAULT_TAIL_BYTES;
+	const windowBytes =
+		Number.isFinite(requested) && requested > 0
+			? Math.min(requested, MAX_TAIL_BYTES)
+			: DEFAULT_TAIL_BYTES;
 
 	let raw: Awaited<ReturnType<typeof rawAgent>>;
 	let visible: string;
@@ -137,17 +156,22 @@ export const GET: RequestHandler = async ({ params, url }) => {
 	// is waiting for input and nothing else is on screen: a busy pane repaints
 	// constantly and has no input box to read anyway.
 	let suggestion: string | null = null;
-	if (!picker && (summary.status === 'idle' || summary.status === 'done')) {
-		suggestion = suggestionFrom(ansiVisible);
-	}
 
 	const sessionId = (raw.agent_session as { value?: string } | undefined)?.value;
-	const adapter = adapterFor(summary.agent);
+	// A remote pane's transcript names files on its own machine, never this one.
+	const adapter = adapterFor(summary.agent, { remote: parsePane(params.pane).machineId !== '' });
 
 	let messages: Message[] = [];
 	let degraded: Degraded = 'none';
 	let reason: string | undefined;
 	let hasMore = false;
+	/** Where the agent is working, when its transcript says. '' falls back to the pane. */
+	let workingDir = '';
+	let subagents: Awaited<ReturnType<typeof listSubagents>> = [];
+	/** What the harness says about prompts it has queued; empty when it says nothing. */
+	let queue: QueuedPrompt[] = [];
+	/** The model the harness recorded; '' when its transcript never said. */
+	let model = '';
 
 	if (!adapter) {
 		degraded = 'no-adapter';
@@ -168,16 +192,34 @@ export const GET: RequestHandler = async ({ params, url }) => {
 				reason = `The transcript for this pane lives on ${connection?.machine.label ?? machineId}; bordr could not read it over ssh. Its screen is shown instead.`;
 			} else {
 				try {
-					messages = adapter.parse(remote);
-					hasMore = remote.length >= windowBytes;
-					if (messages.length === 0) degraded = 'empty';
+					if (summary.agent === 'omp' && piSessionEnded(remote)) {
+						degraded = 'stale-session';
+					} else {
+						messages = adapter.parse(remote);
+						queue = parseQueue(remote);
+						model = parseModel(remote);
+						workingDir = agentCwd(remote);
+						if (!workingDir && connection)
+							workingDir = agentCwd(
+								(await remoteTranscriptTail(
+									connection.machine,
+									summary.agent,
+									sessionId,
+									64 * 1024,
+									true
+								)) ?? '',
+								Infinity
+							);
+						hasMore = remote.length >= windowBytes;
+						if (messages.length === 0) degraded = 'empty';
+					}
 				} catch (e) {
 					degraded = 'unreadable';
 					reason = e instanceof Error ? e.message : String(e);
 				}
 			}
 		} else {
-			const path = await adapter.resolve(sessionId);
+			const path = await resolveLocalTranscript(adapter, summary.paneId, summary.agent, sessionId);
 			if (!path) {
 				// herdr named a session, so the contract message ("reported no
 				// session") would be untrue here — the file is what is missing.
@@ -186,14 +228,31 @@ export const GET: RequestHandler = async ({ params, url }) => {
 			} else {
 				try {
 					const tail = await readTranscriptTail(path, windowBytes);
-					messages = adapter.parse(tail.text);
-					hasMore = tail.partial;
-					// A whole transcript that parses to nothing is a format we no
-					// longer understand; a partial window with nothing in it is
-					// just a window full of tool output, and paging back may help.
-					if (messages.length === 0 && !tail.partial) {
-						degraded = 'empty';
-						reportEmpty(path, summary.agent, tail.text);
+					// The sub-agents live beside this file, so its path is what finds
+					// them. Local branch only: a remote pane's transcript is on that
+					// machine and its children are with it.
+					//
+					// The tail goes with it: a direct child's Task result is written
+					// into THIS transcript, and that is how bordr knows which of them
+					// have finished rather than guessing from a timer.
+					subagents = await listSubagents(path, tail.text);
+					if (summary.agent === 'omp' && piSessionEnded(tail.text)) {
+						degraded = 'stale-session';
+					} else {
+						messages = adapter.parse(tail.text);
+						queue = parseQueue(tail.text);
+						model = await latestModel(path);
+						workingDir = agentCwd(tail.text);
+						if (!workingDir)
+							workingDir = agentCwd(await readTranscriptHead(path, 64 * 1024), Infinity);
+						hasMore = tail.partial;
+						// A whole transcript that parses to nothing is a format we no
+						// longer understand; a partial window with nothing in it is
+						// just a window full of tool output, and paging back may help.
+						if (messages.length === 0 && !tail.partial) {
+							degraded = 'empty';
+							reportEmpty(path, summary.agent, tail.text);
+						}
 					}
 				} catch (e) {
 					degraded = 'unreadable';
@@ -219,7 +278,10 @@ export const GET: RequestHandler = async ({ params, url }) => {
 	// transcript, so this is the only place it can come from.
 	const activity = extractActivity(visible);
 
-	const statusLines = extractStatusLines(visible);
+	// OMP extension widgets allow ten logical rows, and each is an ordinary
+	// Text component that can wrap into several physical rows. Keep enough for
+	// the whole widget plus extension hook statuses at narrow terminal widths.
+	const statusLines = extractStatusLines(visible, 32);
 
 	/**
 	 * The same lines with their SGR colour, for the header.
@@ -252,13 +314,64 @@ export const GET: RequestHandler = async ({ params, url }) => {
 		.slice(-MAX_SCREEN_ROWS)
 		.join('\n');
 
+	// Where the agent actually is, falling back to the pane when its transcript
+	// never said — a shell pane has no transcript at all — and the git state of
+	// that directory. Read where the pane LIVES: a remote pane's repository is
+	// on that machine, not this disk. One directory, and branchesFor caches for
+	// a minute, so a poll costs nothing between checkouts.
+	const cwd = workingDir || summary.cwd;
+	const { machineId: gitMachineId } = parsePane(params.pane);
+	const gitMachine = gitMachineId
+		? ((await ensureConnection(gitMachineId))?.machine ?? null)
+		: null;
+	const git =
+		gitMachineId && !gitMachine
+			? undefined // unreachable machine: no branch is honest, a stale one is not
+			: (await branchesFor(gitMachine, [cwd])).get(cwd);
+
+	const transcriptPicker = summary.agent === 'omp' ? null : pendingAsk(messages);
+	const effectivePicker = picker ?? transcriptPicker;
+	const reportedStatus =
+		effectivePicker && summary.status !== 'blocked' ? 'blocked' : summary.status;
+	const effectiveStatus = reportedStatus;
+	if (!effectivePicker && (effectiveStatus === 'idle' || effectiveStatus === 'done')) {
+		suggestion = suggestionFrom(ansiVisible);
+	}
+
 	return json({
 		...summary,
+		// The agent's directory wins over the pane's for everything the detail
+		// view shows; `paneCwd` keeps the shell's, which is what a key sent to
+		// the terminal would actually run in.
+		cwd,
+		paneCwd: summary.cwd,
+		branch: git?.branch ?? '',
+		ahead: git?.ahead ?? 0,
+		behind: git?.behind ?? 0,
+		branchUrl: git?.url ?? '',
+		// Read from cache only; the first poll after opening a pane says nothing
+		// and the next one has the answer. Never awaited — see pullFor.
+		pull: git?.branch ? pullFor(gitMachine, cwd, git.branch) : null,
 		messages,
-		// A dialog on screen wins; otherwise a question asked through a tool.
-		picker: picker ?? pendingAsk(messages),
+		subagents,
+		queue,
+		model,
+		status: effectiveStatus,
+		statusDiagnostic:
+			degraded === 'none'
+				? piStatusDiagnostic(
+						summary.agent,
+						effectiveStatus,
+						piScreenWorking(visible),
+						piTranscriptSettled(messages)
+					)
+				: undefined,
+		// OMP options are relative-key modals: without the live highlight,
+		// transcript labels cannot be answered safely. Other harnesses here
+		// accept an absolute text label and may use the transcript fallback.
+		picker: effectivePicker,
 		// No picker, but a menu is open: say so, and where to drive it.
-		menu: picker || summary.status === 'working' ? null : menuFooter(visible),
+		menu: effectivePicker || effectiveStatus === 'working' ? null : menuFooter(visible),
 		degraded,
 		degradedMessage: explain(degraded, summary.agent, reason),
 		activity,

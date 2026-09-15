@@ -149,6 +149,16 @@ describe('parsePicker', () => {
 		]);
 	});
 
+	it('marks the rows that take typed text rather than answering', () => {
+		const writeIns = (screen: string) =>
+			parsePicker(screen)
+				?.options.filter((o) => o.writeIn)
+				.map((o) => o.label);
+		expect(writeIns(ASK_USER_QUESTION)).toEqual(['Type something.']);
+		expect(writeIns(AGY_PICKER)).toEqual(['Write-in...']);
+		expect(writeIns(MULTI_SELECT)).toEqual([]);
+	});
+
 	it('marks the highlighted option', () => {
 		const picker = parsePicker(ASK_USER_QUESTION);
 		expect(picker?.options.find((o) => o.selected)?.index).toBe(1);
@@ -272,6 +282,20 @@ const OMP_ASK = `
 ╰──────────────────────────────────────────
 `;
 
+/** Current nerd-symbol preset from the live OMP ask that failed in Bordr. */
+const OMP_ASK_NERD = `
+╭─ Ask ─────────────────────────────────────
+│ Pick a colour.                            │
+├───────────────────────────────────────────┤
+│   Red                                  │
+│    Green                                │
+│    Blue                                 │
+│    Other (type your own)                │
+├───────────────────────────────────────────┤
+│ Enter select · n note · ↑/↓ move · Esc cancel
+╰───────────────────────────────────────────╯
+`;
+
 describe('parsePicker: omp ask dialog', () => {
 	it('parses the boxed radio list nearest the footer, not the summary box above it', () => {
 		const picker = parsePicker(OMP_ASK);
@@ -283,6 +307,18 @@ describe('parsePicker: omp ask dialog', () => {
 			['Other (type your own)', false]
 		]);
 		expect(picker?.question).toBe('Which colour?');
+	});
+
+	it('parses the live nerd-symbol radio list', () => {
+		const picker = parsePicker(OMP_ASK_NERD);
+		expect(picker?.numbered).toBe(false);
+		expect(picker?.options.map((o) => [o.label, o.selected])).toEqual([
+			['Red', true],
+			['Green', false],
+			['Blue', false],
+			['Other (type your own)', false]
+		]);
+		expect(picker?.question).toBe('Pick a colour.');
 	});
 });
 
@@ -475,6 +511,27 @@ describe('menuFooter: a panel or menu with no readable options', () => {
 		).toBe('Enter/Space to change · / to search · Esc to close');
 	});
 
+	it("recognises OMP's model browser when a narrow pane clips the Esc hint", () => {
+		expect(
+			menuFooter(
+				'│    deepseek               │    default ·  slow │\n' +
+					'│ Enter assign roles · ↑/↓ providers · → models · type to sear… │\n' +
+					'╰───────────────────────────────────────────────────────────────╯'
+			)
+		).toBe('Enter assign roles · ↑/↓ providers · → models · type to sear…');
+	});
+
+	it("recognises OMP's settings panel when a narrow pane clips the Esc hint", () => {
+		expect(
+			menuFooter(
+				'│   Theme                                                     █ │\n' +
+					'│  Dark Theme                  titanium                      █ │\n' +
+					'│ Enter/Space to change · Tab to jump sections · ←/→ to switch… │\n' +
+					'╰───────────────────────────────────────────────────────────────╯'
+			)
+		).toBe('Enter/Space to change · Tab to jump sections · ←/→ to switch…');
+	});
+
 	it('finds nothing on an idle screen of any harness', () => {
 		for (const idle of [
 			'❯\n────\n  ⏵⏵ auto mode on (shift+tab to cycle) · ← for agents',
@@ -530,5 +587,49 @@ describe('suggestionFrom', () => {
 		expect(picker?.options.map((o) => o.label)).toEqual(['Submit answers', 'Cancel']);
 		expect(picker?.options[0].selected).toBe(true);
 		expect(picker?.question).toBe('Ready to submit your answers?');
+	});
+});
+
+describe('parsePicker: what the approval is about', () => {
+	/** Claude Code's permission dialog, as it actually draws. */
+	const PERMISSION = [
+		'╭──────────────────────────────────────────────╮',
+		'│ Bash command                                 │',
+		'│                                              │',
+		'│   rm -rf /tmp/build-cache                    │',
+		'│   Clear the stale build cache                │',
+		'│                                              │',
+		'│ Do you want to proceed?                      │',
+		'│ ❯ 1. Yes                                     │',
+		"│   2. Yes, and don't ask again this session   │",
+		'│   3. No, and tell Claude what to do          │',
+		'╰──────────────────────────────────────────────╯'
+	].join('\n');
+
+	it('keeps the command being approved, not just the question', () => {
+		// The complaint this fixes: a bare "Do you want to proceed?" with yes/no
+		// and no sign of WHAT — unanswerable on a phone.
+		const picker = parsePicker(PERMISSION)!;
+		expect(picker.question).toBe('Do you want to proceed?');
+		expect(picker.context).toContain('rm -rf /tmp/build-cache');
+		expect(picker.context).toContain('Bash command');
+	});
+
+	it('strips the box, and stops at its top rule', () => {
+		const picker = parsePicker(`earlier transcript line\n${PERMISSION}`)!;
+		expect(picker.context.join('\n')).not.toContain('│');
+		expect(picker.context.join('\n')).not.toContain('earlier transcript line');
+	});
+
+	it('still reads the options', () => {
+		const picker = parsePicker(PERMISSION)!;
+		expect(picker.options.map((o) => o.index)).toEqual([1, 2, 3]);
+		expect(picker.options[0].selected).toBe(true);
+	});
+
+	it('is empty when there is nothing above the question', () => {
+		const bare = ['Pick one', '❯ 1. Red', '  2. Blue'].join('\n');
+		const picker = parsePicker(bare)!;
+		expect(picker.context).toEqual([]);
 	});
 });

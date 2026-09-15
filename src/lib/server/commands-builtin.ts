@@ -255,7 +255,7 @@ export const BUILTIN_COMMANDS: Record<
 		['compact', 'Manually compact the session context'],
 		['resume', 'Resume a different session'],
 		['reload', 'Reload keybindings, extensions, skills, prompts, themes, and context files'],
-		['quit', 'Quit pi'],
+		['quit', 'Quit OMP'],
 		['switch', 'Switch model (opens the model browser)'],
 		['vibe', 'Toggle vibe mode'],
 		['loop', 'Toggle loop mode'],

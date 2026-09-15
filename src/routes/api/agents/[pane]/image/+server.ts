@@ -3,13 +3,17 @@ import { unlink, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { error, json } from '@sveltejs/kit';
 import { HerdrRequestError, promptAgent, rawAgent } from '$lib/server/herdr';
+import {
+	attachPrompt,
+	MAX_ATTACH_BYTES,
+	MAX_ATTACH_FILES,
+	PHOTO_TYPES,
+	storedName
+} from '$lib/server/attachments';
 import { DATA_DIR } from '$lib/server/state-store';
 import type { RequestHandler } from './$types';
 
 const UPLOADS = join(DATA_DIR, 'uploads');
-const MAX_BYTES = 15 * 1024 * 1024;
-const MAX_FILES = 6;
-const ALLOWED_TYPES = new Set(['image/png', 'image/jpeg', 'image/webp', 'image/gif']);
 const KEEP_MS = 7 * 24 * 60 * 60 * 1000;
 
 /**
@@ -35,10 +39,15 @@ function pruneOldUploads(): void {
 }
 
 /**
- * Accept one or more photos/screenshots plus an optional caption, spool them
- * to disk, and prompt the agent with their paths — every harness here has a
- * file-reading tool that renders images natively, so nothing has to survive
- * a clipboard or a TUI paste.
+ * Accept up to six files plus an optional caption, spool them to disk, and
+ * prompt the agent with their paths — every harness here has a file-reading
+ * tool, and renders images natively, so nothing has to survive a clipboard or
+ * a TUI paste.
+ *
+ * Any type. The phone's picker offers the camera, the gallery and its files,
+ * and the agent is what reads the result. Only a raster photo is ever served
+ * back (the uploads route), so an SVG or HTML file stored here cannot run in
+ * bordr's origin. The route keeps its old name for the page that calls it.
  */
 export const POST: RequestHandler = async ({ params, request }) => {
 	const form = await request.formData();
@@ -46,12 +55,13 @@ export const POST: RequestHandler = async ({ params, request }) => {
 	const caption = String(form.get('text') ?? '').trim();
 
 	if (files.length === 0) throw error(400, 'file is required');
-	if (files.length > MAX_FILES) throw error(400, `at most ${MAX_FILES} images per message`);
+	if (files.length > MAX_ATTACH_FILES) {
+		throw error(400, `at most ${MAX_ATTACH_FILES} files per message`);
+	}
 	for (const file of files) {
-		if (!ALLOWED_TYPES.has(file.type)) {
-			throw error(400, `unsupported type: ${file.type || 'unknown'} (png, jpeg, webp or gif)`);
+		if (file.size > MAX_ATTACH_BYTES) {
+			throw error(413, `${file.name || 'that file'} is too large (15MB cap)`);
 		}
-		if (file.size > MAX_BYTES) throw error(413, `${file.name || 'image'} is too large (15MB cap)`);
 	}
 	// Check the pane BEFORE spooling: a closed pane must not leave bytes on disk.
 	if (!(await rawAgent(params.pane))) throw error(409, 'that agent is no longer running');
@@ -60,23 +70,14 @@ export const POST: RequestHandler = async ({ params, request }) => {
 	mkdirSync(UPLOADS, { recursive: true, mode: 0o700 });
 	pruneOldUploads();
 	for (const file of files) {
-		const extension = file.type === 'image/png' ? 'png' : file.type.split('/')[1];
-		const path = join(
-			UPLOADS,
-			`${Date.now()}-${Math.random().toString(36).slice(2, 8)}.${extension}`
-		);
+		const stamp = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+		const path = join(UPLOADS, storedName(file, stamp));
 		await writeFile(path, Buffer.from(await file.arrayBuffer()), { mode: 0o600 });
 		paths.push(path);
 	}
 
-	const label =
-		paths.length === 1
-			? `an image from their phone: ${paths[0]}`
-			: `${paths.length} images from their phone:\n${paths.map((p) => `- ${p}`).join('\n')}`;
-	const text =
-		`[The user attached ${label} — use your file-reading tool to view ${
-			paths.length === 1 ? 'it' : 'them'
-		} before responding.]` + (caption ? `\n\n${caption}` : '');
+	const allPhotos = files.every((file) => file.type in PHOTO_TYPES);
+	const text = attachPrompt(paths, allPhotos, caption);
 
 	try {
 		await promptAgent(params.pane, text);
