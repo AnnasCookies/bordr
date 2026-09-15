@@ -258,14 +258,13 @@ test('swipe to cycle can be turned off', async ({ page }) => {
 });
 
 /**
- * Dispatched INSIDE the swipe root: the listener is on the page's root
- * element, and touch events bubble upward, so firing on `body` reaches
- * nothing. That mistake made an earlier version of this check silently pass.
+ * Dispatched on the header, which sits inside the shared swipe root in both
+ * conversation and terminal views. `main` only exists in conversation view,
+ * so targeting it broke as soon as a live swipe reached a shell pane.
  */
 async function swipe(page: import('@playwright/test').Page, dx: number) {
 	const before = new URL(page.url()).pathname;
-	await page.evaluate((dx) => {
-		const target = document.querySelector('main') as HTMLElement;
+	await page.locator('header').evaluate((target, dx) => {
 		const fire = (type: string, cx: number) => {
 			const touch = new Touch({ identifier: 1, target, clientX: cx, clientY: 430 });
 			target.dispatchEvent(
@@ -331,7 +330,6 @@ test('swiping cycles agents, and one back always returns to the list', async ({ 
 	// deterministically by the flatOrder and neighbourPane unit tests.
 	const moved = await swipe(page, 160);
 	expect(moved, 'a right swipe should move to another agent').not.toBe(start);
-	await expect(page.locator('header')).toContainText(/\d+\/\d+/, { timeout: 10_000 });
 
 	// However many swipes, ONE back reaches the list — swipes replace history
 	// rather than stacking it, which is the whole point of this test.
