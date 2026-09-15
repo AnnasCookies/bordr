@@ -149,6 +149,16 @@ describe('parsePicker', () => {
 		]);
 	});
 
+	it('marks the rows that take typed text rather than answering', () => {
+		const writeIns = (screen: string) =>
+			parsePicker(screen)
+				?.options.filter((o) => o.writeIn)
+				.map((o) => o.label);
+		expect(writeIns(ASK_USER_QUESTION)).toEqual(['Type something.']);
+		expect(writeIns(AGY_PICKER)).toEqual(['Write-in...']);
+		expect(writeIns(MULTI_SELECT)).toEqual([]);
+	});
+
 	it('marks the highlighted option', () => {
 		const picker = parsePicker(ASK_USER_QUESTION);
 		expect(picker?.options.find((o) => o.selected)?.index).toBe(1);

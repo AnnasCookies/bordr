@@ -4,6 +4,12 @@ export interface PickerOption {
 	selected: boolean;
 	/** Multi-select checkbox state; undefined on single-select pickers. */
 	checked?: boolean;
+	/**
+	 * A row that takes typed text instead of being an answer itself: Claude
+	 * Code's and pi's "Type something.", agy's "Write-in...". Answered with the
+	 * text, never with a bare confirmation.
+	 */
+	writeIn?: boolean;
 }
 
 export interface Picker {
@@ -87,6 +93,13 @@ const SLIDER_ROW = /[━●◉]{3,}|◂[\s\S]*▸/;
 /** Multi-select rows carry a checkbox: `2. [x] Ding` (Claude uses ✔). */
 const CHECKBOX = /^\[([ xX✓✔●■])\]\s+(.*)$/;
 /**
+ * Rows that open a text field rather than answering. Confirming one straight
+ * away submits the field empty: pi's ask extension (rpiv-ask-user-question)
+ * turns the row into an input the moment the highlight lands on it, so the
+ * Enter that followed confirmed nothing (reported 2026-09-15).
+ */
+const WRITE_IN = /^(?:type something|write-in)\b[.…]*$/i;
+/**
  * An unnumbered highlighted row: `❯ No, exit` (Claude Code), `→ ✓ gpt-5.6-sol`
  * (pi's model selector, where ✓ marks the current one). The prefix, marker
  * included, is the label column its siblings align to.
@@ -166,12 +179,14 @@ export function parsePicker(visible: string): Picker | null {
 		const radio = match[3];
 		const label = bareLabel(match[4]);
 		const box = CHECKBOX.exec(label);
+		const text = box ? box[2] : label;
 		options.push({
 			index,
-			label: box ? box[2] : label,
+			label: text,
 			// A caret marks the highlight; a filled radio marks it too.
 			selected: match[1] !== undefined || radio === '●' || radio === '◉',
-			...(box ? { checked: box[1] !== ' ' } : {})
+			...(box ? { checked: box[1] !== ' ' } : {}),
+			...(WRITE_IN.test(text) ? { writeIn: true } : {})
 		});
 	}
 

@@ -1728,11 +1728,35 @@
 		burst = BURST_MS.map((ms) => setTimeout(() => refreshGate.call(), ms));
 	}
 
-	async function answer(index: number) {
-		if (busy) return;
+	/**
+	 * A write-in row the reader tapped, waiting for what they type.
+	 *
+	 * "Type something." is not an answer, it is a place to put one. Tapping it
+	 * used to select and confirm it straight away, which submitted the field
+	 * empty. Now the tap points the composer at the row, and Send carries the
+	 * text to the answer route, which types it into that row and confirms.
+	 */
+	let writeIn = $state<{ index: number; label: string } | null>(null);
+	$effect(() => {
+		const target = writeIn;
+		if (target && !detail.picker?.options.some((o) => o.index === target.index && o.writeIn)) {
+			writeIn = null;
+		}
+	});
+
+	function startWriteIn(option: { index: number; label: string }) {
+		writeIn = { index: option.index, label: option.label };
+		uncertain = null;
+		textarea?.focus();
+	}
+
+	/** Resolves to whether the answer left, so a write-in draft survives one that did not. */
+	async function answer(index: number, text?: string): Promise<boolean> {
+		if (busy) return false;
 		busy = true;
 		sendingIndex = index;
 		uncertain = null;
+		let ok = false;
 
 		/**
 		 * An answer is a turn you took, so it becomes a bubble like anything
@@ -1759,7 +1783,7 @@
 				...pendingSends,
 				{
 					id: echo,
-					text: chose?.label ?? String(index),
+					text: text ?? chose?.label ?? String(index),
 					question: picker?.question ?? '',
 					at: Date.now(),
 					state: 'sending'
@@ -1773,7 +1797,7 @@
 				fetch(`/api/agents/${encodeURIComponent(detail.paneId)}/answer`, {
 					method: 'POST',
 					headers: { 'content-type': 'application/json' },
-					body: JSON.stringify({ index })
+					body: JSON.stringify({ index, text })
 				})
 			);
 			const body = (await r.json().catch(() => null)) as {
@@ -1791,6 +1815,7 @@
 				pendingSends = pendingSends.filter((p) => p.id !== echo);
 				uncertain = body?.message ?? `Could not answer (${r.status}).`;
 			} else if (body?.outcome === 'unknown') {
+				ok = true;
 				// Sent, but unconfirmed. The echo stays — something did leave —
 				// and the warning says it could not be verified.
 				pendingSends = pendingSends.map((p) =>
@@ -1798,6 +1823,7 @@
 				);
 				uncertain = `Sent "${body.chose}" but could not confirm it landed — check before sending again.`;
 			} else {
+				ok = true;
 				pendingSends = pendingSends.map((p) =>
 					p.id === echo ? { ...p, state: 'queued' as const, deliveredAt: Date.now() } : p
 				);
@@ -1819,6 +1845,7 @@
 			sendingIndex = -1;
 		}
 		refreshSoon();
+		return ok;
 	}
 
 	/** Resolves to whether herdr took the keys; a refusal shows up as `sendError`. */
@@ -1910,6 +1937,23 @@
 
 	async function send() {
 		if (!draft.trim() && attachments.length === 0) return;
+		// The answer for the write-in row the reader tapped: typed into THAT row
+		// and confirmed by the answer route, not typed at whatever the question
+		// happens to have highlighted.
+		if (writeIn && detail.picker && attachments.length === 0) {
+			const target = writeIn;
+			const text = draft.trim();
+			const paneId = detail.paneId;
+			draft = '';
+			writeIn = null;
+			if (await answer(target.index, text)) {
+				draftStore?.clear(paneId);
+			} else if (detail.paneId === paneId) {
+				draft = text;
+				writeIn = target;
+			}
+			return;
+		}
 		const paneId = detail.paneId;
 		// Sending ends dictation: a still-listening engine would otherwise keep
 		// writing the next sentence into the emptied composer. The mic is one
@@ -3307,7 +3351,9 @@
 							placeholder={isShell
 								? 'Runs on the host…'
 								: detail.picker
-									? 'Type into the question…'
+									? writeIn
+										? 'Type your answer, then send…'
+										: 'Type into the question…'
 									: 'Type a reply…'}
 							class="[field-sizing:content] max-h-[min(10rem,22dvh)] min-w-0 flex-1 resize-none bg-transparent py-1.5 pr-2 text-[16px] placeholder:text-faint focus:outline-none"
 						></textarea>
@@ -3454,7 +3500,8 @@
 									? 'bg-ink text-card'
 									: 'border border-black/[.08] bg-card dark:border-white/[.08]'}"
 							disabled={busy}
-							onclick={() => answer(option.index)}
+							aria-pressed={option.writeIn ? writeIn?.index === option.index : undefined}
+							onclick={() => (option.writeIn ? startWriteIn(option) : answer(option.index))}
 						>
 							{#if detail.picker.multi}
 								<span
@@ -3471,7 +3518,13 @@
 									>{option.selected ? '❯ ' : ''}{option.index}</span
 								>
 							{/if}
-							<span class="min-w-0 flex-1">{option.label}</span>
+							<span class="min-w-0 flex-1"
+								>{option.label}{#if option.writeIn}<span class="text-muted" aria-hidden="true">
+										✎</span
+									>{/if}{#if option.writeIn && writeIn?.index === option.index}<span
+										class="block text-[12px] text-muted">Type your answer below, then send.</span
+									>{/if}</span
+							>
 						</button>
 					{/each}
 				</div>

@@ -1,7 +1,7 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
 	import { page } from '$app/state';
-	import { replaceState } from '$app/navigation';
+	import { goto, replaceState } from '$app/navigation';
 	import { version } from '$app/environment';
 	import { resolve } from '$app/paths';
 	import { agentStore } from '$lib/agents.svelte';
@@ -564,11 +564,20 @@
 															: ''} {sending ? 'animate-pulse' : ''}"
 														aria-pressed={multi ? option.checked === true : undefined}
 														disabled={answering === agent.paneId}
-														onclick={() => answer(agent, option.index)}
+														onclick={() =>
+															// A write-in row needs text, and the composer is on the
+															// conversation: answering it from here confirmed it empty.
+															option.writeIn
+																? goto(resolve('/a/[pane]', { pane: agent.paneId }))
+																: answer(agent, option.index)}
 													>
 														{#if sending}<Spinner size={13} label="Sending your answer" />{/if}
 														{#if multi && option.checked}✓{/if}
-														{option.index}. {option.label}
+														{option.index}. {option.label}{#if option.writeIn}<span
+																aria-hidden="true"
+															>
+																✎</span
+															>{/if}
 													</button>
 												{/each}
 												<!--
