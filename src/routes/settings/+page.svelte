@@ -861,8 +861,8 @@
 {#snippet backPreview()}
 	<div class="rounded-lg bg-page p-2 text-[12px] text-muted">
 		{#if prefs.value.backTo === 'home'}
-			One <span class="font-mono">back</span> from anywhere inside an agent returns to the agents list.
-			Move between panes with the tab strip or a swipe.
+			One <span class="font-mono">back</span> from anywhere returns to the agents list: an agent, a folder
+			in Files, a settings page or a search. Move sideways with the tab strip or a swipe.
 		{:else}
 			<span class="font-mono">back</span> retraces every pane and screen you visited, one gesture at a
 			time.

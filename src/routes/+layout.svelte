@@ -1,7 +1,9 @@
 <script lang="ts">
 	import './layout.css';
 	import { navigating, page, updated } from '$app/state';
+	import { afterNavigate, beforeNavigate } from '$app/navigation';
 	import { browser } from '$app/environment';
+	import { homeBelowAfter, replacesHistory, stepsBackHome } from '$lib/back';
 	import { onMount } from 'svelte';
 	import { installCapture } from '$lib/install-event.svelte';
 	import { prefs } from '$lib/prefs.svelte';
@@ -39,6 +41,35 @@
 	 * hydrating. The layout never unmounts, so there is no teardown to run.
 	 */
 	if (browser) installCapture.listen(window);
+
+	/**
+	 * One back to the agents list, from any screen, when Settings says Home.
+	 *
+	 * The root below replaces history for every link off `/`; this keeps a link
+	 * back to `/` from stacking a second copy of the list on the one already
+	 * underneath. Tracked here because only the layout sees every navigation.
+	 */
+	let homeBelow = false;
+	beforeNavigate((nav) => {
+		if (!nav.to || !nav.from) return;
+		const move = {
+			type: nav.type,
+			from: nav.from.url.pathname,
+			to: nav.to.url.pathname,
+			search: nav.to.url.search
+		};
+		if (!stepsBackHome(prefs.value.backTo, homeBelow, move)) return;
+		nav.cancel();
+		// After this navigation has finished cancelling, not inside it.
+		queueMicrotask(() => history.back());
+	});
+	afterNavigate((nav) => {
+		homeBelow = homeBelowAfter(homeBelow, {
+			type: nav.type,
+			from: nav.from?.url.pathname ?? null,
+			to: nav.to?.url.pathname ?? page.url.pathname
+		});
+	});
 
 	/**
 	 * A phone brought back to the app is the moment a new build is most
@@ -221,7 +252,19 @@
 	</div>
 {/if}
 
-<div class="mx-auto min-h-dvh max-w-screen-sm bg-page text-ink {wide ? 'lg:max-w-none' : ''}">
+<!--
+	The replace-history root for the whole app. SvelteKit reads the nearest
+	`data-sveltekit-replacestate` above a link at the moment it is clicked, so
+	this covers Files, Settings and Search the way the conversation page's own
+	root already covered panes. On `/` it is off: leaving the list must push
+	the one entry back returns to.
+-->
+<div
+	class="mx-auto min-h-dvh max-w-screen-sm bg-page text-ink {wide ? 'lg:max-w-none' : ''}"
+	data-sveltekit-replacestate={replacesHistory(prefs.value.backTo, page.url.pathname)
+		? ''
+		: 'false'}
+>
 	{#if updated.current || workerSaysStale}
 		<!--
 			Never reloaded for the person: a draft or a dictation in flight would

@@ -3,6 +3,9 @@
 	import { track } from '$lib/pending.svelte';
 	import { goto } from '$app/navigation';
 	import { resolve } from '$app/paths';
+	import { page } from '$app/state';
+	import { replacesHistory } from '$lib/back';
+	import { prefs } from '$lib/prefs.svelte';
 	import { harnessText } from '$lib/theme';
 
 	let { open, onclose }: { open: boolean; onclose: () => void } = $props();
@@ -93,7 +96,10 @@
 			);
 			const result = (await response.json()) as { paneId?: string; message?: string };
 			if (!response.ok || !result.paneId) throw new Error(result.message ?? 'spawn failed');
-			await goto(resolve('/a/[pane]', { pane: result.paneId }));
+			// Pushed from the list, replaced from anywhere else: see $lib/back.
+			await goto(resolve('/a/[pane]', { pane: result.paneId }), {
+				replaceState: replacesHistory(prefs.value.backTo, page.url.pathname)
+			});
 			onclose();
 		} catch (e) {
 			error = (e as Error).message;

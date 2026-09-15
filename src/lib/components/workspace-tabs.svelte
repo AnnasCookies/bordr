@@ -4,6 +4,8 @@
 	import Spinner from './spinner.svelte';
 	import { goto } from '$app/navigation';
 	import { resolve } from '$app/paths';
+	import { page } from '$app/state';
+	import { replacesHistory } from '$lib/back';
 	import { prefs } from '$lib/prefs.svelte';
 	import { STATUS_RAIL, harnessText } from '$lib/theme';
 	import HarnessMark from './harness-mark.svelte';
@@ -132,7 +134,12 @@
 			if (!res.ok) return;
 			const { paneId } = await res.json();
 			await load();
-			if (paneId) await goto(resolve('/a/[pane]', { pane: paneId }));
+			// A new tab is a sideways move, like the tab strip it came from.
+			if (paneId) {
+				await goto(resolve('/a/[pane]', { pane: paneId }), {
+					replaceState: replacesHistory(prefs.value.backTo, page.url.pathname)
+				});
+			}
 		} catch {
 			// The bar keeps working; a failed create just leaves you where you were.
 		} finally {

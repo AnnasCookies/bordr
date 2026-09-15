@@ -240,6 +240,42 @@ test('back returns to the agents list however much you moved around', async ({ p
 });
 
 /**
+ * The same rule off the conversation page. Files pushed a history entry per
+ * folder: measured on 2026-09-15, four folders deep took five backs.
+ */
+test('back returns to the agents list from deep in Files', async ({ page }) => {
+	await page.goto('/');
+	await page.getByRole('link', { name: 'Files' }).first().click();
+	await expect.poll(() => new URL(page.url()).pathname).toMatch(/^\/f/);
+
+	let depth = 0;
+	for (let i = 0; i < 3; i++) {
+		const here = new URL(page.url()).pathname;
+		const folder = page.locator(`main a[href^="${here === '/f' ? '/f/' : `${here}/`}"]`).first();
+		if ((await folder.count()) === 0) break;
+		await folder.click();
+		await expect.poll(() => new URL(page.url()).pathname).not.toBe(here);
+		depth += 1;
+	}
+	test.skip(depth < 2, 'no file roots with folders to walk into');
+
+	await page.goBack();
+	await expect(page).toHaveURL(/\/$|\/\?/);
+});
+
+/** Going back to the list by a link must not leave a second copy of it underneath. */
+test('a link back to the agents list steps back rather than stacking another', async ({ page }) => {
+	await page.goto('/');
+	const before = await page.evaluate(() => history.length);
+	await page.getByRole('link', { name: 'Settings' }).first().click();
+	await expect(page).toHaveURL(/\/settings/);
+	await page.getByRole('link', { name: 'Agents' }).first().click();
+	await expect(page).toHaveURL(/\/$|\/\?/);
+	// history.length never shrinks; a step back leaves it where the push put it.
+	expect(await page.evaluate(() => history.length)).toBe(before + 1);
+});
+
+/**
  * The tab bar is `sticky bottom-0`, which only holds it down while there is
  * something to scroll. Every class on the row above it was `lg:`-prefixed, so
  * below the breakpoint that row took only the height of its contents and the

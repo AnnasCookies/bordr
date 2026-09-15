@@ -166,12 +166,14 @@ export interface Prefs {
 	listFilter: ListFilter | null;
 	sort: SortBy;
 	/**
-	 * What the phone's back gesture does from inside an agent.
+	 * What the phone's back gesture does, on every screen but the agents list.
 	 *
-	 * 'home' is the default: moving between panes, tabs and screens from an
-	 * agent REPLACES the history entry, so back is always one step to the
-	 * agents list. That is what the gesture is for on a phone, and it was asked
-	 * for explicitly; a swipe or the tab strip is how you move sideways.
+	 * 'home' is the default: once you have left the agents list, every move
+	 * REPLACES the history entry, so back is always one step to the list. That
+	 * is what the gesture is for on a phone, and it was asked for explicitly; a
+	 * swipe or the tab strip is how you move sideways. It used to cover only
+	 * the conversation page, and four folders deep in Files was five backs.
+	 * The rules live in `$lib/back`.
 	 *
 	 * 'history': every move pushes, and back retraces them one at a time. Ten
 	 * gestures to get home after a few minutes of switching is the behaviour
