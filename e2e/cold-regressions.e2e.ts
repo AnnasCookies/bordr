@@ -50,6 +50,9 @@ const workspaces = [
 
 async function fixture(page: Page, prefs: Record<string, unknown> = {}) {
 	const state = {
+		treeData: workspaces,
+		controlDelay: null as Promise<void> | null,
+		controlCalls: 0,
 		extraBlocks: [] as unknown[],
 		trees: 0,
 		selected: 1,
@@ -118,9 +121,14 @@ async function fixture(page: Page, prefs: Record<string, unknown> = {}) {
 			route.fulfill({ status, contentType: 'application/json', body: JSON.stringify(body) });
 		if (path === '/api/panes') {
 			state.trees++;
-			return respond({ workspaces });
+			return respond({ workspaces: state.treeData });
 		}
 		if (path === '/api/agents') return respond({ agents });
+		if (path === '/api/control') {
+			state.controlCalls++;
+			await state.controlDelay;
+			return respond({ ok: true });
+		}
 		if (path.endsWith('/keys')) {
 			state.keys.push(route.request().postDataJSON().keys);
 			await state.keyDelay;
@@ -469,4 +477,28 @@ test('a write-in failure after navigation restores the originating pane only', a
 		.toContain('original answer');
 	await openPane(page, 'a');
 	await expect(composer).toHaveValue('original answer');
+});
+
+test('closing a hidden split tab captures membership before asynchronous tree changes', async ({
+	page
+}) => {
+	const state = await fixture(page);
+	state.picker = false;
+	await openPane(page, 'c');
+	await expect.poll(() => state.trees).toBeGreaterThan(0);
+	await page.getByRole('button', { name: 'Pane and tab controls' }).click();
+	await page.getByRole('button', { name: 'tab', exact: true }).click();
+	let release!: () => void;
+	state.controlDelay = new Promise((resolve) => (release = resolve));
+	await page
+		.getByRole('button', { name: 'Close this tab ends what is running', exact: true })
+		.click();
+	await page.getByRole('button', { name: 'Close it', exact: true }).click();
+	await expect.poll(() => state.controlCalls).toBe(1);
+	const reads = state.trees;
+	state.treeData = [];
+	await expect.poll(() => state.trees, { timeout: 8000 }).toBeGreaterThan(reads);
+	await page.evaluate(() => new Promise(requestAnimationFrame));
+	release();
+	await expect.poll(() => new URL(page.url()).pathname).toBe('/a/b');
 });
