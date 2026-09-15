@@ -2924,7 +2924,6 @@
 
 			<!--
 				Sub-agents this session has spawned.
-				
 				A Task call used to say an agent had been dispatched and nothing
 				more — whether it was still going, what it found, whether it
 				failed, none of it was reachable. Each has its own transcript, so
