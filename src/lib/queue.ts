@@ -14,6 +14,7 @@ export interface QueuedPrompt {
 	at: number;
 	/** Taken by the agent — dequeued at a turn start, or absorbed mid-turn. */
 	taken: boolean;
+	ambiguous?: boolean;
 }
 
 /**
@@ -28,37 +29,16 @@ export function queueKey(text: string): string {
 	return text.replace(/\s+/g, ' ').trim();
 }
 
-/**
- * How far the phone's clock may run ahead of the host's before a record the
- * harness wrote for THIS send looks older than the send itself.
- *
- * DECISION: 5s. Phones and hosts are both network-synced, so real skew is
- * well under a second; the margin is for the send's own round trip. Sending
- * the same text twice inside five seconds is the price, and that case falls
- * back to the screen rather than showing anything false.
- */
-export const QUEUE_SKEW_MS = 5_000;
-
-/**
- * What the harness says about one prompt, or null when it has said nothing.
- *
- * Null is not "not queued" — it is "this harness does not report a queue", so
- * the caller can fall back rather than claim the message is stuck.
- *
- * `since` is when the phone sent it. The queue is keyed by text, so the second
- * "continue" of a session finds the FIRST one's record — already taken — and
- * showed read ticks before the harness had even queued it. A record from
- * before the send is about a different message, and says nothing about this
- * one. Omitted, any record counts.
- */
+/** A unique record no older than this send. Clock-skew collisions stay unconfirmed. */
 export function queueVerdict(
 	text: string,
 	queue: QueuedPrompt[],
 	since?: number
 ): 'queued' | 'taken' | null {
 	const key = queueKey(text);
-	const match = queue.find((q) => queueKey(q.text) === key);
-	if (!match) return null;
-	if (since !== undefined && match.at < since - QUEUE_SKEW_MS) return null;
-	return match.taken ? 'taken' : 'queued';
+	const matches = queue.filter(
+		(q) => queueKey(q.text) === key && (since === undefined || q.at >= since)
+	);
+	if (matches.length !== 1 || matches[0].ambiguous) return null;
+	return matches[0].taken ? 'taken' : 'queued';
 }

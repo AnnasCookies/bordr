@@ -14,13 +14,13 @@ import {
 } from '$lib/server/transcript/tail';
 import { listSubagents } from '$lib/server/transcript/subagents';
 import { parseQueue, type QueuedPrompt } from '$lib/server/transcript/queue';
-import { HEAD_BYTES, parseModel } from '$lib/server/transcript/model';
+import { latestModel, parseModel } from '$lib/server/transcript/model';
 import { menuFooter, parsePicker, pendingAsk, suggestionFrom } from '$lib/server/picker';
 import { piSessionEnded } from '$lib/server/transcript/pi';
 import { resolveLocalTranscript } from '$lib/server/transcript/resolve';
 import { extractStatusLines } from '$lib/server/status';
 import { extractActivity } from '$lib/server/activity';
-import { piScreenWorking, piTranscriptSettled, reconcilePiStatus } from '$lib/server/pi-status';
+import { piScreenWorking, piTranscriptSettled, piStatusDiagnostic } from '$lib/server/pi-status';
 import { stripAnsi } from '$lib/ansi';
 import { cleanSnapshot } from '$lib/server/snapshot';
 import type { AgentDetail, Message } from '$lib/types';
@@ -195,6 +195,16 @@ export const GET: RequestHandler = async ({ params, url }) => {
 						queue = parseQueue(remote);
 						model = parseModel(remote);
 						workingDir = agentCwd(remote);
+						if (!workingDir && connection)
+							workingDir = agentCwd(
+								(await remoteTranscriptTail(
+									connection.machine,
+									summary.agent,
+									sessionId,
+									64 * 1024,
+									true
+								)) ?? ''
+							);
 						hasMore = remote.length >= windowBytes;
 						if (messages.length === 0) degraded = 'empty';
 					}
@@ -226,14 +236,9 @@ export const GET: RequestHandler = async ({ params, url }) => {
 					} else {
 						messages = adapter.parse(tail.text);
 						queue = parseQueue(tail.text);
-						model = parseModel(tail.text);
-						// The tail has it for a harness that names the model on every
-						// turn. For one that declares it once and stays quiet — omp —
-						// the answer is in the opening lines instead.
-						if (!model && tail.partial) {
-							model = parseModel(await readTranscriptHead(path, HEAD_BYTES));
-						}
+						model = await latestModel(path);
 						workingDir = agentCwd(tail.text);
+						if (!workingDir) workingDir = agentCwd(await readTranscriptHead(path, 64 * 1024));
 						hasMore = tail.partial;
 						// A whole transcript that parses to nothing is a format we no
 						// longer understand; a partial window with nothing in it is
@@ -322,14 +327,7 @@ export const GET: RequestHandler = async ({ params, url }) => {
 	const effectivePicker = picker ?? transcriptPicker;
 	const reportedStatus =
 		effectivePicker && summary.status !== 'blocked' ? 'blocked' : summary.status;
-	const effectiveStatus = effectivePicker
-		? reportedStatus
-		: reconcilePiStatus(
-				summary.agent,
-				reportedStatus,
-				piScreenWorking(visible),
-				piTranscriptSettled(messages)
-			);
+	const effectiveStatus = reportedStatus;
 	if (!effectivePicker && (effectiveStatus === 'idle' || effectiveStatus === 'done')) {
 		suggestion = suggestionFrom(ansiVisible);
 	}
@@ -347,12 +345,21 @@ export const GET: RequestHandler = async ({ params, url }) => {
 		branchUrl: git?.url ?? '',
 		// Read from cache only; the first poll after opening a pane says nothing
 		// and the next one has the answer. Never awaited — see pullFor.
-		pull: git?.branch ? pullFor(gitMachine, cwd) : null,
+		pull: git?.branch ? pullFor(gitMachine, cwd, git.branch) : null,
 		messages,
 		subagents,
 		queue,
 		model,
 		status: effectiveStatus,
+		statusDiagnostic:
+			degraded === 'none'
+				? piStatusDiagnostic(
+						summary.agent,
+						effectiveStatus,
+						piScreenWorking(visible),
+						piTranscriptSettled(messages)
+					)
+				: undefined,
 		// OMP options are relative-key modals: without the live highlight,
 		// transcript labels cannot be answered safely. Other harnesses here
 		// accept an absolute text label and may use the transcript fallback.

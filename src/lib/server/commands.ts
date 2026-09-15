@@ -86,14 +86,14 @@ const AGENTS_SKILLS = () => join(HOME(), '.agents', 'skills');
 
 async function discover(agent: string, cwd: string, remote: boolean): Promise<SlashCommand[]> {
 	/** Scans of the pane's own project directory, which only means something locally. */
-	const project = (parts: Array<Promise<SlashCommand[]>>) => (remote ? [] : parts);
+	const project = (scan: () => Array<Promise<SlashCommand[]>>) => (remote ? [] : scan());
 	switch (agent) {
 		case 'claude': {
 			const configDir = process.env.CLAUDE_CONFIG_DIR || join(HOME(), '.claude');
 			return flatten([
 				skills(join(configDir, 'skills')),
 				commands(join(configDir, 'commands')),
-				...project([
+				...project(() => [
 					skills(join(cwd, '.claude', 'skills')),
 					commands(join(cwd, '.claude', 'commands'))
 				]),
@@ -118,7 +118,7 @@ async function discover(agent: string, cwd: string, remote: boolean): Promise<Sl
 				skills(AGENTS_SKILLS(), 'skill:'),
 				skills(join(own, 'skills'), 'skill:'),
 				skills(join(own, 'managed-skills'), 'skill:'),
-				...project([commands(join(cwd, '.omp', 'commands'))]),
+				...project(() => [commands(join(cwd, '.omp', 'commands'))]),
 				commands(join(own, 'commands')),
 				prompts(join(own, 'prompts')),
 				npmPackages(join(own, 'npm', 'node_modules'))

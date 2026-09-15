@@ -86,3 +86,16 @@ describe('parseQueue', () => {
 		expect(queueVerdict('anything', [])).toBeNull();
 	});
 });
+
+it('does not collapse duplicate pending occurrences into a false taken receipt', () => {
+	const queue = parseQueue(
+		[op('enqueue', 'again'), op('enqueue', 'again'), op('dequeue', 'again')].join('\n')
+	);
+	expect(queue).toHaveLength(2);
+	expect(queueVerdict('again', queue)).toBeNull();
+});
+it('redacts queue text with the same parsed-text policy', () => {
+	const queue = parseQueue(op('enqueue', 'API_KEY=fixture-private-value'));
+	expect(JSON.stringify(queue)).not.toContain('fixture-private-value');
+	expect(queue[0].text).toContain('[REDACTED]');
+});

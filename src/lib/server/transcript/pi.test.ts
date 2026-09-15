@@ -188,7 +188,7 @@ describe('piAdapter.parse', () => {
 					toolCallId: 'edit-numbered',
 					content: [{ type: 'text', text: 'Successfully replaced 2 blocks.' }],
 					details: {
-						diff: '-145 old one\n+145 new one\n     ...\n-219 \told two\n+219 \tnew two',
+						diff: '-  5 old one\n+  5 new one\n     ...\n-145 \told two\n+145 \tnew two',
 						firstChangedLine: 145
 					}
 				}
@@ -201,8 +201,8 @@ describe('piAdapter.parse', () => {
 					file: '/repo/example.ts',
 					before: 'old one\n\told two',
 					after: 'new one\n\tnew two',
-					beforeLines: [145, 219],
-					afterLines: [145, 219]
+					beforeLines: [5, 145],
+					afterLines: [5, 145]
 				}
 			]
 		});

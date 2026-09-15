@@ -82,7 +82,12 @@ export function latestRuns(entries: readonly RollupEntry[]): RollupEntry[] {
 	const latest = new Map<string, { entry: RollupEntry; at: number }>();
 	entries.forEach((entry, index) => {
 		const label = entry.name ?? entry.context;
-		const key = label === undefined ? `#${index}` : `${entry.workflowName ?? ''}\0${label}`;
+		const unresolved =
+			when(entry) === -Infinity &&
+			((Boolean(entry.status) && entry.status?.toUpperCase() !== 'COMPLETED') ||
+				entry.state?.toUpperCase() === 'PENDING');
+		const key =
+			label === undefined || unresolved ? `#${index}` : `${entry.workflowName ?? ''}\0${label}`;
 		const at = when(entry);
 		const held = latest.get(key);
 		// `>=` so that, with no usable timestamps, the later listing wins.
@@ -160,11 +165,11 @@ export function parsePull(stdout: string): Pull | null {
 
 const FIELDS = 'number,state,url,isDraft,statusCheckRollup';
 
-function ghPull(cwd: string): Promise<Pull | null> {
+function ghPull(cwd: string, branch: string): Promise<Pull | null> {
 	return new Promise((resolve) => {
 		execFile(
 			'gh',
-			['pr', 'view', '--json', FIELDS],
+			['pr', 'view', branch, '--json', FIELDS],
 			// Long enough for a cold API call, short enough that a hung gh does
 			// not hold a cache entry open forever.
 			{ cwd, timeout: 8_000, maxBuffer: 4 * 1024 * 1024 },
@@ -209,15 +214,16 @@ const TTL_MS = 60_000;
  * something this can assume. To lift it, run the same command through
  * `runOn` the way `remoteBranches` does.
  */
-export function pullFor(machine: Machine | null, cwd: string): Pull | null {
-	if (machine || !cwd) return null;
-	const hit = cache.get(cwd);
+export function pullFor(machine: Machine | null, cwd: string, branch: string): Pull | null {
+	if (machine || !cwd || !branch) return null;
+	const key = `${cwd}\0${branch}`;
+	const hit = cache.get(key);
 	const fresh = hit && Date.now() - hit.at < TTL_MS;
-	if (!fresh && !inflight.has(cwd)) {
-		inflight.add(cwd);
-		void ghPull(cwd)
-			.then((pull) => cache.set(cwd, { at: Date.now(), pull }))
-			.finally(() => inflight.delete(cwd));
+	if (!fresh && !inflight.has(key)) {
+		inflight.add(key);
+		void ghPull(cwd, branch)
+			.then((pull) => cache.set(key, { at: Date.now(), pull }))
+			.finally(() => inflight.delete(key));
 	}
 	return hit?.pull ?? null;
 }

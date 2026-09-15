@@ -68,6 +68,8 @@ export type Block =
 
 export interface Message {
 	role: 'user' | 'assistant' | 'system';
+	/** Explicit harness completion evidence, never inferred from prose. */
+	stopReason?: string;
 	/**
 	 * When the harness wrote this entry, epoch milliseconds, or 0 when it did
 	 * not say. Used to slot a prompt that has been sent but not yet written to

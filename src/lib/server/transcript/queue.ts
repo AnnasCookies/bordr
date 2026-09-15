@@ -1,3 +1,4 @@
+import { redactSecrets } from './redact';
 import { queueKey, type QueuedPrompt } from '$lib/queue';
 
 /**
@@ -26,8 +27,8 @@ import { queueKey, type QueuedPrompt } from '$lib/queue';
 export type { QueuedPrompt };
 
 export function parseQueue(jsonl: string): QueuedPrompt[] {
-	/** Keyed by text: the last operation on a prompt is the one that counts. */
-	const latest = new Map<string, QueuedPrompt>();
+	/** Preserve occurrences; text alone cannot disambiguate identical pending sends. */
+	const latest: QueuedPrompt[] = [];
 
 	for (const line of jsonl.split('\n')) {
 		if (!line.trim()) continue;
@@ -56,7 +57,8 @@ export function parseQueue(jsonl: string): QueuedPrompt[] {
 		// absorb is a prompt that never reached the agent, so it is dropped
 		// rather than marked taken — a cancelled message must not show as read.
 		if (entry.operation === 'remove' && entry.reason !== 'absorbed_mid_turn') {
-			latest.delete(key);
+			const index = latest.findIndex((q) => queueKey(q.text) === key && !q.taken);
+			if (index >= 0) latest.splice(index, 1);
 			continue;
 		}
 		if (
@@ -66,12 +68,20 @@ export function parseQueue(jsonl: string): QueuedPrompt[] {
 		)
 			continue;
 
-		latest.set(key, {
-			text: entry.content,
-			at: entry.timestamp ? Date.parse(entry.timestamp) || 0 : 0,
-			taken: entry.operation !== 'enqueue'
-		});
+		const matches = latest.filter((q) => queueKey(q.text) === key && !q.taken);
+		const at = entry.timestamp ? Date.parse(entry.timestamp) || 0 : 0;
+		if (entry.operation === 'enqueue') {
+			latest.push({ text: entry.content, at, taken: false });
+		} else if (matches.length === 1) {
+			// Keep the enqueue time: a later dequeue does not identify a newer send.
+			matches[0].taken = true;
+		} else if (matches.length > 1) {
+			// Text alone cannot say which identical occurrence was consumed.
+			for (const match of matches) match.ambiguous = true;
+		} else {
+			latest.push({ text: entry.content, at, taken: true, ambiguous: true });
+		}
 	}
 
-	return [...latest.values()];
+	return latest.map((prompt) => ({ ...prompt, text: redactSecrets(prompt.text) }));
 }

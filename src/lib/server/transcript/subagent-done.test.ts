@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { isDone, resolvedToolUses, SILENT_MS } from './subagent-done';
+import { isDone, resolvedToolUses } from './subagent-done';
 
 const NOW = 1_700_000_000_000;
 
@@ -36,25 +36,25 @@ describe('isDone', () => {
 
 	/** The exact signal: the harness wrote the Task's result. */
 	it('is done the moment its result is written', () => {
-		expect(isDone({ toolUseId: 'toolu_finished', lastAt: NOW }, resolved, NOW)).toBe(true);
+		expect(isDone({ toolUseId: 'toolu_finished', lastAt: NOW }, resolved)).toBe(true);
 	});
 
 	it('is running while its result is outstanding', () => {
-		expect(isDone({ toolUseId: 'toolu_going', lastAt: NOW - 1000 }, resolved, NOW)).toBe(false);
+		expect(isDone({ toolUseId: 'toolu_going', lastAt: NOW - 1000 }, resolved)).toBe(false);
 	});
 
 	/**
 	 * The fallback, for a result written outside the window of the parent
 	 * transcript that was read — a depth-2 agent, or an old one.
 	 */
-	it('gives up on one that has gone quiet', () => {
-		const lastAt = NOW - SILENT_MS - 1;
-		expect(isDone({ toolUseId: 'toolu_going', lastAt }, resolved, NOW)).toBe(true);
+	it('never calls an unresolved quiet child done', () => {
+		const lastAt = NOW - 120_000 - 1;
+		expect(isDone({ toolUseId: 'toolu_going', lastAt }, resolved)).toBe(false);
 	});
 
 	it('holds on through a pause shorter than the window', () => {
-		const lastAt = NOW - SILENT_MS + 1000;
-		expect(isDone({ toolUseId: 'toolu_going', lastAt }, resolved, NOW)).toBe(false);
+		const lastAt = NOW - 120_000 + 1000;
+		expect(isDone({ toolUseId: 'toolu_going', lastAt }, resolved)).toBe(false);
 	});
 
 	/**
@@ -62,6 +62,6 @@ describe('isDone', () => {
 	 * would mark a just-dispatched agent finished before it started.
 	 */
 	it('never gives up on one that has not written yet', () => {
-		expect(isDone({ toolUseId: 'toolu_new', lastAt: 0 }, resolved, NOW)).toBe(false);
+		expect(isDone({ toolUseId: 'toolu_new', lastAt: 0 }, resolved)).toBe(false);
 	});
 });

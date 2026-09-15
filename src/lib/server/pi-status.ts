@@ -1,34 +1,35 @@
 import type { AgentStatus } from '$lib/types';
 import type { Message } from './transcript/types';
 
-/** Pi's live footer while a turn is running: `── ⠹ Working ─────`. */
-const PI_WORKING_ROW = /^[─━]+\s+\S+\s+Working\b/imu;
-
+/** A recognized busy row is evidence of work; its absence is not evidence of idle. */
 export function piScreenWorking(visible: string): boolean {
-	return PI_WORKING_ROW.test(visible);
+	return /^[─━]+\s+\S+\s+Working\b/imu.test(visible);
 }
 
-/** Whether the transcript has reached a finished assistant reply. */
 export function piTranscriptSettled(messages: Message[]): boolean {
 	const last = messages.at(-1);
-	return last?.role === 'assistant' && last.text.trim().length > 0;
+	return (
+		last?.role === 'assistant' &&
+		last.stopReason === 'stop' &&
+		!messages.some((message) =>
+			message.blocks?.some((block) => block.kind === 'tool' && !block.result)
+		)
+	);
 }
 
 /**
- * Repair Pi's occasional missed idle report without second-guessing real work.
- *
- * Herdr remains authoritative except for one proved contradiction: it says
- * working, Pi's live screen has no Working row, and the transcript ends in a
- * finished assistant reply. During a new turn either the transcript ends with
- * the user's prompt or Pi paints its Working row, so neither signal alone can
- * incorrectly flip the pane to idle.
+ * Pi 0.85.1 can hide/replace its working indicator while streaming; IdleStatus
+ * renders blank rows and the editor also accepts steering prompts while busy.
+ * No source-verified ready footer exists, so retain lifecycle authority.
  */
-export function reconcilePiStatus(
+/** Retain the stale-report diagnostic without turning a discrepancy into idle. */
+export function piStatusDiagnostic(
 	agent: string,
 	status: AgentStatus,
 	screenWorking: boolean,
 	transcriptSettled: boolean
-): AgentStatus {
-	if (agent !== 'pi' || status !== 'working' || !transcriptSettled) return status;
-	return screenWorking ? status : 'idle';
+): string | undefined {
+	return agent === 'pi' && status === 'working' && !screenWorking && transcriptSettled
+		? 'Pi recorded a stopped reply, but Herdr still reports working; live readiness is unverified.'
+		: undefined;
 }

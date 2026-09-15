@@ -540,7 +540,8 @@ export async function remoteTranscriptTail(
 	machine: Machine,
 	agent: string,
 	sessionId: string,
-	bytes: number
+	bytes: number,
+	head = false
 ): Promise<string | null> {
 	// Only the harnesses whose on-disk layout bordr knows.
 	const globs: Record<string, string> = {
@@ -555,7 +556,7 @@ export async function remoteTranscriptTail(
 	const script = [
 		`ID=${id}`,
 		'shopt -s nullglob',
-		`for f in ${glob}; do tail -c ${bytes} "$f"; exit 0; done`,
+		`for f in ${glob}; do ${head ? 'head' : 'tail'} -c ${Math.min(64 * 1024 * 1024, Math.max(1, Math.floor(bytes)))} "$f"; exit 0; done`,
 		'exit 1'
 	].join('; ');
 

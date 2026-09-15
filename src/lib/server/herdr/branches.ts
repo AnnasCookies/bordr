@@ -123,7 +123,9 @@ async function localCounts(cwd: string): Promise<{ ahead: number; behind: number
 async function localRemote(cwd: string): Promise<string> {
 	const upstream = await gitOut(cwd, ['rev-parse', '--abbrev-ref', '@{u}']);
 	const remote = upstream.split('/')[0];
-	return remote ? gitOut(cwd, ['remote', 'get-url', remote]) : '';
+	return remote
+		? branchUrl(await gitOut(cwd, ['remote', 'get-url', remote]), upstream.slice(remote.length + 1))
+		: '';
 }
 
 /**
@@ -185,7 +187,7 @@ async function localBranches(cwds: string[]): Promise<Map<string, BranchInfo>> {
 			branch
 				? {
 						...(await localCounts(cwd)),
-						url: branchUrl(await localRemote(cwd), branch)
+						url: await localRemote(cwd)
 					}
 				: { ahead: 0, behind: 0, url: '' }
 		)
@@ -194,7 +196,7 @@ async function localBranches(cwds: string[]): Promise<Map<string, BranchInfo>> {
 }
 
 /**
- * One line of the remote script: `dir<TAB>branch<TAB>url<TAB>behind<TAB>ahead`.
+ * One line of the remote script: `dir<TAB>branch<TAB>url<TAB>upstream<TAB>behind<TAB>ahead`.
  *
  * The field order is load-bearing. `rev-list` prints its OWN tab between
  * behind and ahead and prints nothing at all when the branch has no upstream,
@@ -208,7 +210,7 @@ async function localBranches(cwds: string[]): Promise<Map<string, BranchInfo>> {
 export function parseRemoteRow(line: string): { cwd: string; info: BranchInfo } | null {
 	const tab = line.indexOf('\t');
 	if (tab === -1) return null;
-	const [branch, remote, behind, ahead] = line.slice(tab + 1).split('\t');
+	const [branch, remote, upstream, behind, ahead] = line.slice(tab + 1).split('\t');
 	const name = branch.trim();
 	if (!name || name === 'HEAD') return null;
 	return {
@@ -216,7 +218,7 @@ export function parseRemoteRow(line: string): { cwd: string; info: BranchInfo } 
 		info: {
 			branch: name,
 			...parseCounts(`${behind ?? ''}\t${ahead ?? ''}`),
-			url: branchUrl(remote ?? '', name)
+			url: branchUrl(remote ?? '', upstream ?? '')
 		}
 	};
 }
@@ -231,7 +233,7 @@ async function remoteBranches(machine: Machine, cwds: string[]): Promise<Map<str
 	const out = new Map<string, BranchInfo>();
 	// Each path quoted, so nothing in a directory name is read as shell syntax.
 	const quoted = cwds.map(shellQuote).join(' ');
-	// A row is dir, branch, remote url, behind, ahead.
+	// A row is dir, local branch, remote URL, upstream branch, behind, ahead.
 	//
 	// `rev-list` prints its own tab between behind and ahead, so it must come
 	// LAST: with no upstream it prints nothing at all, and any field after it
@@ -240,7 +242,7 @@ async function remoteBranches(machine: Machine, cwds: string[]): Promise<Map<str
 	// `${u%%/*}` is the upstream's remote name, matching localRemote above. It
 	// is empty when there is no upstream, and `git remote get-url ''` then
 	// fails to an empty field — which is the wanted answer, not a fallback.
-	const script = `for d in ${quoted}; do u=$(git -C "$d" rev-parse --abbrev-ref '@{u}' 2>/dev/null); printf '%s\t%s\t%s\t%s\n' "$d" "$(git -C "$d" rev-parse --abbrev-ref HEAD 2>/dev/null)" "$(git -C "$d" remote get-url "\${u%%/*}" 2>/dev/null)" "$(git -C "$d" rev-list --count --left-right '@{u}...HEAD' 2>/dev/null)"; done`;
+	const script = `for d in ${quoted}; do u=$(git -C "$d" rev-parse --abbrev-ref '@{u}' 2>/dev/null); printf '%s\t%s\t%s\t%s\t%s\n' "$d" "$(git -C "$d" rev-parse --abbrev-ref HEAD 2>/dev/null)" "$(git -C "$d" remote get-url "\${u%%/*}" 2>/dev/null)" "\${u#*/}" "$(git -C "$d" rev-list --count --left-right '@{u}...HEAD' 2>/dev/null)"; done`;
 	const text = await runOn(machine, `bash -lc ${shellQuote(script)}`, 65536);
 	if (!text) return out;
 

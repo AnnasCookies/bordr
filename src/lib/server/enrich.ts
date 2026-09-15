@@ -8,7 +8,7 @@ import { parsePane } from './herdr/address';
 import { branchesFor, type BranchInfo } from './herdr/branches';
 import { connectionFor } from './herdr/connections';
 import { extractStatusLines } from './status';
-import { piScreenWorking, piTranscriptSettled, reconcilePiStatus } from './pi-status';
+import { piScreenWorking, piTranscriptSettled, piStatusDiagnostic } from './pi-status';
 import type { AgentSummary } from '$lib/types';
 import type { Message } from './transcript/types';
 
@@ -148,7 +148,8 @@ async function previewFor(summary: AgentSummary, sessionId: string | undefined):
 					idlePreview = previewFrom(messages, 'idle');
 					settled = piTranscriptSettled(messages);
 					const pending = pendingAsk(messages);
-					if (pending) ask = { question: pending.question, options: pending.options, multi: false };
+					if (pending && summary.agent !== 'omp')
+						ask = { question: pending.question, options: pending.options, multi: false };
 				}
 			}
 		} catch {
@@ -285,9 +286,7 @@ export async function enrichAgents(agents: AgentSummary[]): Promise<AgentSummary
 		const picker = reading?.picker ?? transcript.ask;
 		const repo = git.get(`${parsePane(summary.paneId).machineId ?? ''}\0${summary.cwd}`);
 		const reported = picker && summary.status !== 'blocked' ? 'blocked' : summary.status;
-		const status = picker
-			? reported
-			: reconcilePiStatus(summary.agent, reported, reading?.piWorking ?? true, transcript.settled);
+		const status = reported;
 		return {
 			...summary,
 			branch: repo?.branch ?? '',
@@ -295,6 +294,12 @@ export async function enrichAgents(agents: AgentSummary[]): Promise<AgentSummary
 			behind: repo?.behind ?? 0,
 			preview:
 				status === 'idle' && transcript.settled ? transcript.idlePreview : transcript.preview,
+			statusDiagnostic: piStatusDiagnostic(
+				summary.agent,
+				status,
+				reading?.piWorking ?? true,
+				transcript.settled
+			),
 			statusRows: reading?.status ?? [],
 			focused: focused.has(summary.paneId),
 			picker,

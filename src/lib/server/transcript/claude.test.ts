@@ -74,7 +74,12 @@ describe('claudeAdapter.parse', () => {
 				message: { content: text }
 			});
 		const text = [turn('user', 'go and look'), turn('assistant', 'found it')].join('\n');
-		expect(claudeAdapter.parse(text).map((m) => m.role)).toEqual(['user', 'assistant']);
+		expect(claudeAdapter.parse(text)).toEqual([]);
+		expect(
+			adapterFor('claude', { child: true })
+				?.parse(text)
+				.map((m) => m.role)
+		).toEqual(['user', 'assistant']);
 	});
 
 	it('leaves sidechain (sub-agent) turns out of the conversation', () => {

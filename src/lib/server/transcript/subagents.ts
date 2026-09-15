@@ -83,8 +83,7 @@ function lastTimestamp(text: string): number {
 export async function listSubagents(
 	transcriptPath: string,
 	/** The session's own transcript, already read by the caller. */
-	sessionText = '',
-	now = Date.now()
+	sessionText = ''
 ): Promise<SubagentSummary[]> {
 	const dir = subagentsDir(transcriptPath);
 	let names: string[];
@@ -140,7 +139,7 @@ export async function listSubagents(
 	};
 
 	for (const agent of withText) {
-		agent.done = isDone(agent, resolvedFor(agent.parentAgentId), now);
+		agent.done = isDone(agent, resolvedFor(agent.parentAgentId));
 	}
 	// The transcripts themselves were only ever needed to answer that; sending
 	// several megabytes of them to a phone would be absurd.

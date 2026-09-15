@@ -350,37 +350,7 @@ async function exists(path: string): Promise<boolean> {
 	}
 }
 
-/**
- * Does every turn in this file belong to a sidechain?
- *
- * True only for a sub-agent's own transcript, where the flag is on all of
- * them. Returns false the moment an ordinary turn appears, so a session
- * transcript — which opens with one — costs a line or two rather than a full
- * parse of a file that can run to megabytes.
- *
- * False for a file with no turns at all: there is nothing to rescue, and
- * "everything here is a sidechain" is a claim an empty file cannot support.
- */
-export function onlySidechain(jsonl: string): boolean {
-	let sawTurn = false;
-	for (const line of jsonl.split('\n')) {
-		if (!line.trim()) continue;
-		let parsed: unknown;
-		try {
-			parsed = JSON.parse(line);
-		} catch {
-			continue;
-		}
-		if (parsed === null || typeof parsed !== 'object') continue;
-		const entry = parsed as { type?: string; isSidechain?: boolean };
-		if (entry.type !== 'user' && entry.type !== 'assistant') continue;
-		if (entry.isSidechain !== true) return false;
-		sawTurn = true;
-	}
-	return sawTurn;
-}
-
-export const claudeAdapter: Adapter = {
+export const claudeAdapter = {
 	/**
 	 * herdr reports agent_session.value as the transcript's basename, but the
 	 * project sub-directory depends on the pane's cwd — so search for it. An
@@ -403,24 +373,8 @@ export const claudeAdapter: Adapter = {
 		return null;
 	},
 
-	parse(jsonl: string): Message[] {
+	parse(jsonl: string, child = false): Message[] {
 		const messages: Message[] = [];
-		/**
-		 * Whether this file is a SUB-AGENT's own transcript.
-		 *
-		 * `isSidechain` does not mean "not a real turn" — it means "belongs to a
-		 * different conversation than the one this file is". In a session's own
-		 * transcript those turns are a sub-agent's and are correctly skipped. In
-		 * a sub-agent's file EVERY entry carries the flag, because from the
-		 * session's point of view the whole file is a sidechain — so the same
-		 * rule threw the entire conversation away and the sheet opened empty.
-		 *
-		 * Decided per FILE rather than per entry, which needs no flag plumbed
-		 * through the five wrappers between here and the endpoint. A session
-		 * transcript answers this on its first turn or two; only a sub-agent's
-		 * file is read to the end, and only when one is opened.
-		 */
-		const sidechainOnly = onlySidechain(jsonl);
 		/** tool_use id -> the block awaiting its result, which lands later. */
 		const pending = new Map<string, Block>();
 		/**
@@ -457,7 +411,7 @@ export const claudeAdapter: Adapter = {
 			const at = entry.timestamp ? Date.parse(entry.timestamp) || 0 : 0;
 			// Sub-agent turns share the file but are not this conversation —
 			// unless the file IS the sub-agent's, where they are all there is.
-			if (entry.isSidechain === true && !sidechainOnly) continue;
+			if (entry.isSidechain === true && !child) continue;
 			const content = entry.message?.content;
 			const isMeta = entry.isMeta === true;
 
@@ -594,4 +548,4 @@ export const claudeAdapter: Adapter = {
 		}
 		return messages;
 	}
-};
+} satisfies Adapter;

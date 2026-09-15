@@ -14,6 +14,7 @@ export interface AgentSummary {
 	agent: string;
 	title: string;
 	status: AgentStatus;
+	statusDiagnostic?: string;
 	cwd: string;
 	/** herdr state_change_seq — monotonic per pane; drives unread badges. */
 	seq: number;

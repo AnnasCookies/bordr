@@ -140,7 +140,7 @@ describe('branchUrl', () => {
 describe('parseRemoteRow', () => {
 	it('reads a full row from a machine over ssh', () => {
 		const row = parseRemoteRow(
-			'/home/tony/bordr\tfeat/rich-transcript\tgit@github.com:sling86/bordr.git\t1\t2'
+			'/home/tony/bordr\tfeat/rich-transcript\tgit@github.com:sling86/bordr.git\tfeat/rich-transcript\t1\t2'
 		);
 		expect(row).toEqual({
 			cwd: '/home/tony/bordr',
@@ -157,7 +157,7 @@ describe('parseRemoteRow', () => {
 	// upstream, so a field after it would land in the column meant for `ahead`.
 	// This row puts a URL where that field would be to prove it does not.
 	it('reads zero counts from an empty trailing field without shifting the columns', () => {
-		const row = parseRemoteRow('/srv/app\tmain\tgit@github.com:sling86/app.git\t');
+		const row = parseRemoteRow('/srv/app\tmain\tgit@github.com:sling86/app.git\tmain\t');
 		expect(row?.info).toEqual({
 			branch: 'main',
 			ahead: 0,
@@ -167,7 +167,7 @@ describe('parseRemoteRow', () => {
 	});
 
 	it('links nothing when the remote field is empty', () => {
-		const row = parseRemoteRow('/srv/app\tmain\t\t0\t0');
+		const row = parseRemoteRow('/srv/app\tmain\t\t\t0\t0');
 		expect(row?.info.branch).toBe('main');
 		expect(row?.info.url).toBe('');
 	});
@@ -199,4 +199,10 @@ it('resolves linked worktree metadata rather than an enclosing repository (older
 	} finally {
 		rmSync(dir, { recursive: true, force: true });
 	}
+});
+
+it('uses the upstream branch name when it differs from the local one', () => {
+	expect(
+		parseRemoteRow('/repo\tlocal\tgit@github.com:o/r.git\tupstream-name\t0\t0')?.info.url
+	).toBe('https://github.com/o/r/tree/upstream-name');
 });

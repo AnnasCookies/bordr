@@ -193,3 +193,15 @@ describe('parsePull', () => {
 		expect(parsePull(JSON.stringify({ state: 'OPEN' }))).toBe(null);
 	});
 });
+
+it('retains a timestamp-less queued rerun in either listing order', () => {
+	const completed = {
+		name: 'gate',
+		status: 'COMPLETED',
+		conclusion: 'SUCCESS',
+		startedAt: '2026-09-14T09:00:00Z'
+	};
+	const queued = { name: 'gate', status: 'QUEUED', startedAt: '0001-01-01T00:00:00Z' };
+	expect(rollup([completed, queued])).toBe('pending');
+	expect(rollup([queued, completed])).toBe('pending');
+});

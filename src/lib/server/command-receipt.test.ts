@@ -1,5 +1,5 @@
-import { describe, expect, it } from 'vitest';
-import { commandReceipt } from './command-receipt';
+import { describe, expect, it, vi } from 'vitest';
+import { commandReceipt, RECEIPT_DEADLINE_MS } from './command-receipt';
 
 const noPause = async () => {};
 
@@ -22,12 +22,12 @@ describe('commandReceipt', () => {
 		});
 	});
 
-	it('confirms reload only after Pi progress appears and clears', async () => {
+	it('confirms reload only after Pi progress appears and a positive success row replaces it', async () => {
 		const read = screens([
 			'/reload',
 			'Reloading keybindings, extensions, skills, prompts, themes, and context files...',
 			'Reloading keybindings, extensions, skills, prompts, themes, and context files...',
-			'Pi ready'
+			'Reloaded keybindings, extensions, skills, prompts, themes, and context files'
 		]);
 		expect(await commandReceipt('/reload', read, noPause)).toEqual({
 			name: 'reload',
@@ -43,4 +43,24 @@ describe('commandReceipt', () => {
 			message: '→ /reload sent'
 		});
 	});
+});
+
+it('never confirms disappearance or a visible failure', async () => {
+	const progress =
+		'Reloading keybindings, extensions, skills, prompts, themes, and context files...';
+	for (const after of ['Pi ready', 'Reload failed: fixture']) {
+		expect((await commandReceipt('/reload', screens([progress, after]), noPause))?.outcome).toBe(
+			'accepted'
+		);
+	}
+});
+it('bounds a hung observation by the total elapsed deadline', async () => {
+	vi.useFakeTimers();
+	try {
+		const result = commandReceipt('/reload', () => new Promise(() => {}));
+		await vi.advanceTimersByTimeAsync(RECEIPT_DEADLINE_MS);
+		expect((await result)?.outcome).toBe('accepted');
+	} finally {
+		vi.useRealTimers();
+	}
 });

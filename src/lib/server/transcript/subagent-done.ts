@@ -46,20 +46,6 @@ export function resolvedToolUses(jsonl: string): Set<string> {
 	return done;
 }
 
-/**
- * How long a sub-agent may be silent before it counts as finished.
- *
- * The fallback, for the case the exact signal cannot reach: a result written
- * outside the window of the parent transcript that was read. A live agent
- * writes an entry per tool call, so a couple of minutes of silence is not a
- * pause in the work — but the cost of being wrong is only that a finished
- * agent stays in the strip a little longer, so the window is generous.
- *
- * ponytail: a time-based fallback, not a liveness check. If the harness ever
- * records a status in the sidecar, read that instead and delete this.
- */
-export const SILENT_MS = 120_000;
-
 export interface DoneInput {
 	/** The `tool_use` id of the Task that started it. */
 	toolUseId: string;
@@ -73,10 +59,6 @@ export interface DoneInput {
  * `resolved` is the set of tool ids answered in its parent's transcript —
  * exact, and the reason this is not a pure timer.
  */
-export function isDone(agent: DoneInput, resolved: Set<string>, now: number): boolean {
-	if (agent.toolUseId && resolved.has(agent.toolUseId)) return true;
-	// Nothing written at all: it has only just been dispatched, so it is
-	// running by definition, however long ago the sidecar appeared.
-	if (agent.lastAt <= 0) return false;
-	return now - agent.lastAt > SILENT_MS;
+export function isDone(agent: DoneInput, resolved: Set<string>): boolean {
+	return Boolean(agent.toolUseId && resolved.has(agent.toolUseId));
 }

@@ -37,6 +37,18 @@ vi.mock('node:child_process', async (importOriginal) => {
 	};
 });
 
+const scans = vi.hoisted(() => ({ paths: [] as string[] }));
+vi.mock('node:fs/promises', async (importOriginal) => {
+	const actual = await importOriginal<typeof import('node:fs/promises')>();
+	return {
+		...actual,
+		readdir: vi.fn((...args: Parameters<typeof actual.readdir>) => {
+			scans.paths.push(String(args[0]));
+			return actual.readdir(...args);
+		})
+	};
+});
+
 function file(path: string, content: string): void {
 	mkdirSync(join(HOME, path, '..'), { recursive: true });
 	writeFileSync(join(HOME, path), content);
@@ -221,7 +233,9 @@ describe('commandsFor: omp probe', () => {
 
 	it("does not read a remote pane's project directory off this disk", async () => {
 		const { commandsFor } = await load();
+		scans.paths = [];
 		const list = await commandsFor('claude', join(HOME, 'project'), { remote: true });
+		expect(scans.paths.some((path) => path.startsWith(join(HOME, 'project')))).toBe(false);
 		expect(list.find((c) => c.name === 'local-only')).toBeUndefined();
 		// This host's user-level skills are still the fallback.
 		expect(list.find((c) => c.name === 'herdr')).toBeDefined();

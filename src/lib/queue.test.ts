@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { QUEUE_SKEW_MS, queueVerdict } from './queue';
+import { queueVerdict } from './queue';
 
 const SENT = Date.parse('2026-09-14T10:00:00Z');
 
@@ -24,10 +24,10 @@ describe('queueVerdict with a send time', () => {
 	});
 
 	/** A phone clock a little ahead of the host must not lose the verdict. */
-	it('allows for a small clock skew, and no more', () => {
+	it('leaves clock-skew and close-repeat collisions unconfirmed', () => {
 		const at = (ms: number) => [{ text: 'continue', at: SENT - ms, taken: true }];
-		expect(queueVerdict('continue', at(QUEUE_SKEW_MS), SENT)).toBe('taken');
-		expect(queueVerdict('continue', at(QUEUE_SKEW_MS + 1), SENT)).toBeNull();
+		expect(queueVerdict('continue', at(1000), SENT)).toBeNull();
+		expect(queueVerdict('continue', at(5001), SENT)).toBeNull();
 	});
 
 	it('counts any record when no send time is given', () => {

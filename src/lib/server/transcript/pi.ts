@@ -195,7 +195,7 @@ function editDiff(path: unknown, diff: unknown): EditDiff | null {
 		if (line[0] !== '-' && line[0] !== '+') continue;
 		// OMP writes `-501|text`; native Pi writes `-501 text`. Keep the
 		// real file line rather than turning a far-apart multi-edit into 1,2,3.
-		const match = /^[+-](\d+)(?:\|(.*)|\s(.*))$/.exec(line);
+		const match = /^[+-]\s*(\d+)(?:\|(.*)|\s(.*))$/.exec(line);
 		if (!match) continue;
 		const number = Number(match[1]);
 		const text = match[2] ?? match[3] ?? '';
@@ -349,7 +349,10 @@ export const piAdapter: Adapter = {
 			const at = timestamp(entry);
 			if (typeof message.content === 'string') {
 				if (message.content.trim()) {
-					messages.push(fromBlocks(role, [{ kind: 'text', text: message.content }], undefined, at));
+					messages.push({
+						...fromBlocks(role, [{ kind: 'text', text: message.content }], undefined, at),
+						stopReason: str(record(message)?.stopReason)
+					});
 				}
 				continue;
 			}
@@ -384,7 +387,10 @@ export const piAdapter: Adapter = {
 				}
 			}
 			if (blocks.length === 0) continue;
-			messages.push(fromBlocks(role, blocks, ask, at));
+			messages.push({
+				...fromBlocks(role, blocks, ask, at),
+				stopReason: str(record(message)?.stopReason)
+			});
 		}
 
 		for (const { at, tool } of asked) {

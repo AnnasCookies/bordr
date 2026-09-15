@@ -21,7 +21,7 @@ export const GET: RequestHandler = async ({ params }) => {
 	if (!raw) throw error(404, `no pane ${params.pane}`);
 	const summary = toSummary(raw);
 
-	const adapter = adapterFor(summary.agent);
+	const adapter = adapterFor(summary.agent, { child: true });
 	if (!adapter) throw error(404, `no transcript adapter for ${summary.agent || 'this pane'}`);
 
 	const sessionId = (raw.agent_session as { value?: string } | undefined)?.value;

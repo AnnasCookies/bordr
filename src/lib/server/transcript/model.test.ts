@@ -1,5 +1,8 @@
+import { mkdtemp, writeFile, appendFile, rename, rm } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
-import { parseModel } from './model';
+import { latestModel, parseModel } from './model';
 
 const claude = (model: string) =>
 	JSON.stringify({ type: 'assistant', message: { role: 'assistant', model, content: [] } });
@@ -55,4 +58,32 @@ describe('parseModel', () => {
 	it('has nothing to say about an empty transcript', () => {
 		expect(parseModel('')).toBe('');
 	});
+});
+
+it('recovers middle switches and invalidates for append, truncation and replacement', async () => {
+	const dir = await mkdtemp(join(tmpdir(), 'bordr-model-'));
+	const file = join(dir, 'session.jsonl');
+	try {
+		const padding = '{"type":"custom"}\n'.repeat(100_000);
+		await writeFile(
+			file,
+			omp('opening') +
+				'\n' +
+				padding +
+				JSON.stringify({ type: 'model_change', modelId: 'middle' }) +
+				'\n' +
+				padding
+		);
+		expect(await latestModel(file)).toBe('middle');
+		expect(await latestModel(file)).toBe('middle');
+		await appendFile(file, omp('new') + '\n');
+		expect(await latestModel(file)).toBe('new');
+		await writeFile(file, '');
+		expect(await latestModel(file)).toBe('');
+		await writeFile(file + '.new', omp('replacement') + '\n');
+		await rename(file + '.new', file);
+		expect(await latestModel(file)).toBe('replacement');
+	} finally {
+		await rm(dir, { recursive: true, force: true });
+	}
 });

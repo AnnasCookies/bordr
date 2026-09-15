@@ -8,18 +8,10 @@ export interface CommandReceipt {
 
 const RELOADING =
 	'Reloading keybindings, extensions, skills, prompts, themes, and context files...';
-const RELOAD_SAMPLES = 25;
-const RELOAD_SAMPLE_MS = 200;
+const RELOADED = 'Reloaded keybindings, extensions, skills, prompts, themes, and context files';
+export const RECEIPT_DEADLINE_MS = 5_000;
 
-/**
- * Turn a terminal-only slash command into an honest browser receipt.
- *
- * Herdr accepting `agent.prompt` proves every command was delivered. Pi's
- * `/reload` also paints a progress line while it reloads; seeing that line
- * appear and then disappear is the only completion signal Pi currently gives
- * outside its TUI. Missing that short signal falls back to "sent", never a
- * made-up success.
- */
+/** Positive native Pi success after progress, within one elapsed deadline including reads. */
 export async function commandReceipt(
 	text: string,
 	readScreen: () => Promise<string>,
@@ -27,22 +19,30 @@ export async function commandReceipt(
 ): Promise<CommandReceipt | null> {
 	const name = slashCommandName(text);
 	if (!name) return null;
-	if (name !== 'reload') {
-		return { name, outcome: 'accepted', message: `✓ /${name} accepted` };
-	}
-
+	if (name !== 'reload') return { name, outcome: 'accepted', message: `✓ /${name} accepted` };
 	let reloading = false;
-	for (let sample = 0; sample < RELOAD_SAMPLES; sample++) {
+	const deadline = Date.now() + RECEIPT_DEADLINE_MS;
+	for (let sample = 0; sample < 25 && Date.now() < deadline; sample++) {
+		let timer: ReturnType<typeof setTimeout> | undefined;
 		try {
-			const screen = await readScreen();
+			const screen = await Promise.race([
+				readScreen(),
+				new Promise<null>((resolve) => {
+					timer = setTimeout(() => resolve(null), Math.max(0, deadline - Date.now()));
+				})
+			]);
+			if (screen === null) break;
+			if (/Reload failed:|models\.json error:/i.test(screen)) break;
 			if (screen.includes(RELOADING)) reloading = true;
-			else if (reloading) {
+			else if (reloading && screen.includes(RELOADED))
 				return { name, outcome: 'confirmed', message: '✓ Reload complete' };
-			}
 		} catch {
-			// Delivery already succeeded. A failed screen read only weakens the receipt.
+			break;
+		} finally {
+			// Delivery succeeded; observation failure cannot delay its acknowledgment.
+			clearTimeout(timer);
 		}
-		await pause(RELOAD_SAMPLE_MS);
+		await pause(Math.min(200, Math.max(0, deadline - Date.now())));
 	}
 	return { name, outcome: 'accepted', message: '→ /reload sent' };
 }

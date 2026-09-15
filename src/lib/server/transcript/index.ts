@@ -44,10 +44,14 @@ export interface AdapterOptions {
 	 * whatever local image sits at a path it chose. It is left out entirely.
 	 */
 	remote?: boolean;
+	child?: boolean;
 }
 
 export function adapterFor(agentKind: string, options: AdapterOptions = {}): Adapter | null {
-	const adapter = ADAPTERS[agentKind];
+	const adapter =
+		agentKind === 'claude' && options.child
+			? { ...claudeAdapter, parse: (text: string) => claudeAdapter.parse(text, true) }
+			: ADAPTERS[agentKind];
 	if (!adapter) return null;
 	// withBlocks first so the decorators above it always have blocks to walk.
 	// withSentFiles reads a tool call's own input, so it has to sit outside
