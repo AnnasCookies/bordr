@@ -418,10 +418,10 @@ test('duplicate todo prose renders and numbered long diffs keep gutters aligned'
 			diffs: [
 				{
 					file: '/fixture.ts',
-					before: `${long}\nshort`,
-					after: `changed${long}\nshort`,
-					beforeLines: [5, 145],
-					afterLines: [5, 145]
+					before: Array.from({ length: 80 }, (_, i) => `${i} ${long}`).join('\n'),
+					after: Array.from({ length: 80 }, (_, i) => `${i} changed ${long}`).join('\n'),
+					beforeLines: Array.from({ length: 80 }, (_, i) => 5 + i * 2),
+					afterLines: Array.from({ length: 80 }, (_, i) => 5 + i * 2)
 				}
 			]
 		}
@@ -436,6 +436,7 @@ test('duplicate todo prose renders and numbered long diffs keep gutters aligned'
 	await expect(numbered).toBeVisible();
 	expect(await numbered.evaluate((el) => getComputedStyle(el).flexShrink)).toBe('0');
 	const tails = page.locator('.transcript-rows > * svg[viewBox="0 0 14 18"]');
+	expect(await tails.count()).toBeGreaterThan(0);
 	for (let i = 0; i < (await tails.count()); i++) {
 		expect(
 			await tails.nth(i).evaluate((el) => {

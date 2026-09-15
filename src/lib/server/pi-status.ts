@@ -21,8 +21,8 @@ export function piTranscriptSettled(messages: Message[]): boolean {
  * Pi 0.85.1 can hide/replace its working indicator while streaming; IdleStatus
  * renders blank rows and the editor also accepts steering prompts while busy.
  * No source-verified ready footer exists, so retain lifecycle authority.
+ * Retain the stale-report diagnostic without turning a discrepancy into idle.
  */
-/** Retain the stale-report diagnostic without turning a discrepancy into idle. */
 export function piStatusDiagnostic(
 	agent: string,
 	status: AgentStatus,
