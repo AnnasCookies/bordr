@@ -10,7 +10,7 @@
 export interface QueuedPrompt {
 	/** The text as the harness recorded it. */
 	text: string;
-	/** Epoch ms of the last operation on it. */
+	/** Epoch ms of its enqueue, or the observed terminal operation if the enqueue is missing. */
 	at: number;
 	/** Taken by the agent — dequeued at a turn start, or absorbed mid-turn. */
 	taken: boolean;

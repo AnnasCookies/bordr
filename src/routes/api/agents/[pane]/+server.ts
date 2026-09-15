@@ -9,6 +9,7 @@ import { ensureConnection, remoteTranscriptTail } from '$lib/server/herdr/connec
 import { backfillBlocks } from '$lib/server/transcript/types';
 import {
 	DEFAULT_TAIL_BYTES,
+	MAX_TAIL_BYTES,
 	readTranscriptHead,
 	readTranscriptTail
 } from '$lib/server/transcript/tail';
@@ -90,7 +91,10 @@ export const GET: RequestHandler = async ({ params, url }) => {
 	// fall back to the default rather than reading zero bytes and rendering
 	// an empty conversation.
 	const requested = Number(url.searchParams.get('bytes'));
-	const windowBytes = Number.isFinite(requested) && requested > 0 ? requested : DEFAULT_TAIL_BYTES;
+	const windowBytes =
+		Number.isFinite(requested) && requested > 0
+			? Math.min(requested, MAX_TAIL_BYTES)
+			: DEFAULT_TAIL_BYTES;
 
 	let raw: Awaited<ReturnType<typeof rawAgent>>;
 	let visible: string;
@@ -203,7 +207,8 @@ export const GET: RequestHandler = async ({ params, url }) => {
 									sessionId,
 									64 * 1024,
 									true
-								)) ?? ''
+								)) ?? '',
+								Infinity
 							);
 						hasMore = remote.length >= windowBytes;
 						if (messages.length === 0) degraded = 'empty';
@@ -238,7 +243,8 @@ export const GET: RequestHandler = async ({ params, url }) => {
 						queue = parseQueue(tail.text);
 						model = await latestModel(path);
 						workingDir = agentCwd(tail.text);
-						if (!workingDir) workingDir = agentCwd(await readTranscriptHead(path, 64 * 1024));
+						if (!workingDir)
+							workingDir = agentCwd(await readTranscriptHead(path, 64 * 1024), Infinity);
 						hasMore = tail.partial;
 						// A whole transcript that parses to nothing is a format we no
 						// longer understand; a partial window with nothing in it is

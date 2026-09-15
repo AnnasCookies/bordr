@@ -42,13 +42,14 @@ function cwdOf(line: unknown): string {
  *
  * '' rather than a guess: the caller falls back to the pane's cwd, which is
  * wrong in a different way but at least true of something.
+ * A separately byte-bounded header may pass Infinity to retain its opening metadata.
  */
-export function agentCwd(jsonl: string): string {
+export function agentCwd(jsonl: string, maxLines = MAX_LINES): string {
 	const lines = jsonl.split('\n');
 	// The window is a TAIL, so its first line is usually a fragment of one that
 	// started before the window. It fails to parse and is skipped like any
 	// other unreadable line.
-	const stop = Math.max(0, lines.length - MAX_LINES);
+	const stop = Math.max(0, lines.length - maxLines);
 	for (let i = lines.length - 1; i >= stop; i--) {
 		const line = lines[i].trim();
 		if (!line) continue;
