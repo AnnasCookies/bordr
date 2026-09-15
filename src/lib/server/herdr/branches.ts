@@ -1,6 +1,6 @@
-import { execFile } from 'node:child_process';
+import { resolve } from 'node:path';
+import { execFile, execFileSync } from 'node:child_process';
 import { readFileSync } from 'node:fs';
-import { join } from 'node:path';
 import { runOn, shellQuote } from './connections';
 import type { Machine } from './machines';
 
@@ -17,20 +17,19 @@ function headToBranch(head: string): string {
 	return /^[0-9a-f]{7,40}$/.test(text) ? text.slice(0, 7) : '';
 }
 
-/** Walk up for a .git, the way git itself resolves a repository. */
+/** Let Git resolve linked worktrees, gitfiles and repository boundaries. */
 export function localBranch(cwd: string): string {
-	let dir = cwd;
-	for (let depth = 0; depth < 12 && dir && dir !== '/'; depth++) {
-		try {
-			const head = readFileSync(join(dir, '.git', 'HEAD'), 'utf8');
-			return headToBranch(head);
-		} catch {
-			// A worktree keeps a .git FILE pointing elsewhere; reading it as a
-			// directory fails, so fall through and try the parent.
-		}
-		dir = dir.slice(0, dir.lastIndexOf('/'));
+	if (!cwd) return '';
+	try {
+		const head = execFileSync('git', ['-C', cwd, 'rev-parse', '--git-path', 'HEAD'], {
+			encoding: 'utf8',
+			timeout: 5000,
+			stdio: ['ignore', 'pipe', 'ignore']
+		}).trim();
+		return headToBranch(readFileSync(resolve(cwd, head), 'utf8'));
+	} catch {
+		return '';
 	}
-	return '';
 }
 
 /** A directory's branch and how far it has drifted from its upstream. */

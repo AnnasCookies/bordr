@@ -7,7 +7,7 @@ import { branchUrl, branchesFor, localBranch, parseCounts, parseRemoteRow } from
 
 function repo(head: string, nested = ''): string {
 	const dir = mkdtempSync(join(tmpdir(), 'bordr-branch-'));
-	mkdirSync(join(dir, '.git'), { recursive: true });
+	execFileSync('git', ['init', dir], { stdio: 'pipe' });
 	writeFileSync(join(dir, '.git', 'HEAD'), head);
 	if (nested) mkdirSync(join(dir, nested), { recursive: true });
 	return nested ? join(dir, nested) : dir;
@@ -177,4 +177,26 @@ describe('parseRemoteRow', () => {
 		expect(parseRemoteRow('/tmp/detached\tHEAD\t\t')).toBeNull();
 		expect(parseRemoteRow('no tabs at all')).toBeNull();
 	});
+});
+
+it('resolves linked worktree metadata rather than an enclosing repository (older defect)', () => {
+	const dir = mkdtempSync(join(tmpdir(), 'bordr-worktree-'));
+	const git = (...args: string[]) => execFileSync('git', ['-C', dir, ...args], { stdio: 'pipe' });
+	try {
+		git('init');
+		git(
+			'-c',
+			'user.name=Fixture',
+			'-c',
+			'user.email=fixture@example.invalid',
+			'commit',
+			'--allow-empty',
+			'-m',
+			'fixture'
+		);
+		git('worktree', 'add', '-b', 'linked', join(dir, 'child'));
+		expect(localBranch(join(dir, 'child'))).toBe('linked');
+	} finally {
+		rmSync(dir, { recursive: true, force: true });
+	}
 });
