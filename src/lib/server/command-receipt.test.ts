@@ -64,3 +64,13 @@ it('bounds a hung observation by the total elapsed deadline', async () => {
 		vi.useRealTimers();
 	}
 });
+
+it('does not reuse an earlier reload success still visible above a new attempt', async () => {
+	const success = 'Reloaded keybindings, extensions, skills, prompts, themes, and context files';
+	const progress =
+		'Reloading keybindings, extensions, skills, prompts, themes, and context files...';
+	expect(
+		(await commandReceipt('/reload', screens([success + '\n' + progress, success]), noPause))
+			?.outcome
+	).toBe('accepted');
+});

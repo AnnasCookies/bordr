@@ -21,6 +21,7 @@ export async function commandReceipt(
 	if (!name) return null;
 	if (name !== 'reload') return { name, outcome: 'accepted', message: `✓ /${name} accepted` };
 	let reloading = false;
+	let priorSuccesses = 0;
 	const deadline = Date.now() + RECEIPT_DEADLINE_MS;
 	for (let sample = 0; sample < 25 && Date.now() < deadline; sample++) {
 		let timer: ReturnType<typeof setTimeout> | undefined;
@@ -33,8 +34,11 @@ export async function commandReceipt(
 			]);
 			if (screen === null) break;
 			if (/Reload failed:|models\.json error:/i.test(screen)) break;
-			if (screen.includes(RELOADING)) reloading = true;
-			else if (reloading && screen.includes(RELOADED))
+			const successes = screen.split(RELOADED).length - 1;
+			if (screen.includes(RELOADING)) {
+				reloading = true;
+				priorSuccesses = Math.max(priorSuccesses, successes);
+			} else if (reloading && successes > priorSuccesses)
 				return { name, outcome: 'confirmed', message: '✓ Reload complete' };
 		} catch {
 			break;
