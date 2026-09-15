@@ -2,7 +2,7 @@
 
 ## Goal
 
-Review every open PR independently of previous commentary, reconcile findings with existing GitHub discussions, fix confirmed defects, prepare accepted fixes for a later parent-approved fix PR, and report the final merge order. Local integration and focused fix commits approved; no GitHub merge, push or contributor-branch edits.
+Review every open PR independently of previous commentary, reconcile findings with existing GitHub discussions, fix confirmed defects, prepare accepted fixes for a later parent-approved fix PR, and report the squash-compatible integration plan targeting main. Local integration and focused fix commits approved; no GitHub merge, push or contributor-branch edits.
 
 ## Approach
 
@@ -15,7 +15,7 @@ Review every open PR independently of previous commentary, reconcile findings wi
 - [x] Relevant lint, type, unit and offline mobile/desktop gates.
 - [ ] Independent acceptance review (parent owns reviewer launch).
 - [ ] Post one consolidated comment only where useful; no empty approval comments.
-- [ ] Give overall findings and squash-compatible integration/fix PR plan targeting main.
+- [x] Give overall findings and squash-compatible integration/fix PR plan targeting main.
 
 ## Baseline evidence
 
@@ -36,13 +36,13 @@ Review every open PR independently of previous commentary, reconcile findings wi
 
 ## Recovery execution
 
-- [x] Read reconciled source findings and approved D2–D10 boundaries. D1/D5 pending parent.
+- [x] Read reconciled source findings and approved D2–D10 boundaries. D1/D5 subsequently settled as recorded below.
 - [x] Integrate pinned #38 `ea1659d` into #40 `e19089a` locally, preserving width choices, pointer ownership + RAF, both browser groups and single pending metadata.
 - [x] Correct all source-verified remaining findings, including separately attributed older defects.
 - [x] Focused and full offline validation, isolated build, browser regression checks.
 - [ ] Independent review and parent acceptance before publishing anything.
 
-## Implementation evidence (in progress)
+## Prior implementation evidence (through 441b4f4)
 
 - Integration merge `f681835`: #40 `e19089a` first parent, pinned #38 `ea1659d` second; widths retained; ownership + RAF; both e2e groups.
 - Older/pre-existing corrections: `7706315` cached machine policy/target/session identity; `23e9032` native Git worktree metadata. Focused tests: 11/11 and 19/19 respectively.
@@ -53,7 +53,7 @@ Review every open PR independently of previous commentary, reconcile findings wi
 - Final combined gates: typecheck 0 errors/warnings; full unit 850/850 across 103 files; lint passed; isolated adapter build passed; offline browser suite passed 22/22 across two repetitions (11 tests), plus strengthened 80-line diff check passed.
 - No push, PR creation/comment, GitHub merge, deployment or live-agent action performed.
 
-## Final validation and attribution
+## Prior validation and attribution (through 441b4f4)
 
 - #22: watchdog attempts get their own deadline (`agents-store.test.ts`); bounded header cwd survives >2,000 tiny rows (`agent-detail.test.ts`); OMP non-live asks suppressed in detail/list; attic two-cycle age test; duplicate todo snapshot browser test; correct upstream branch URLs.
 - #24: interrupted POSTs restore as explicitly unconfirmed, retained until user recovery; service-worker activation only notifies visible/hidden clients.
@@ -75,3 +75,18 @@ Review every open PR independently of previous commentary, reconcile findings wi
 - Final source/diff inspection: `git diff --check e19089a` clean; all original feature ancestry retained. Repository permits squash merges only: the integration/fix PR must target main and supersede the original stack merges; do not sequentially squash-merge #22–#40. Nothing published by this worker.
 
 - Additional direct regressions: the real service-worker activation handler is executed with invented hidden/visible clients and must never navigate either; an offline delayed tab-close proves captured split membership survives a refreshed empty tree. Final browser suite: 22/22, full unit: 850/850.
+
+## Acceptance-fix completion (after independent server/UI reviews)
+
+- Accepted all five server findings S1–S5 and all eight UI findings UI-1–UI-8 after tracing actual callers. None rejected or silently deferred. First corrective commit: `645c3f9`.
+- S1: local transcript resolver rejects remote addresses before process/file lookup; answer fallback uses the remote adapter/reader; unsupported remote children fail closed, while live-screen answers remain supported.
+- S2: remote tree, refresh and branch caches use target/session identity, serving only enabled current identities and refusing stale in-flight publication.
+- S3/S4: emitted-asset manifests start active chunks' grace period at retirement without renewing inherited chunks. Normal publisher refuses real-directory replacement; explicit `--migrate` stages then stops/switches/starts, restoring the old pathname on activation failure. No service command was executed here.
+- S5: parent model/cwd selectors ignore child sidechain ownership.
+- UI-1–UI-4: terminal text plus keys are one pane-owned queue, including empty submissions; navigation/failure cancels continuations, preserving original drafts in order. Terminal write-ins use the selected answer row. Question typing preserves newer drafts. Acknowledgments and command receipts persist on the originating pane for prompt, answer and attachment sends.
+- UI-5–UI-8: filtered rings retain shells without resurrecting excluded agents; Submit uses the verified answer operation; Home summaries and holds share contextual picker identity. Server fallback confirmation now also refuses a different same-word approval subject. Full/Comfortable/Wide caps and actual resizing have offline browser oracles.
+- Final gates: `bun run check` (0 errors/0 warnings), `bun run lint` (passed), `bunx vitest run` (107 files, 864 tests), isolated build (passed), `bunx playwright test --config playwright.cold.config.ts --repeat-each=2` (52/52; 26 offline tests, desktop/mobile).
+- Mutation evidence: disposable archive `/tmp/bordr-accept-mutations-mcr2Jx`, never the source worktree; 14 independent unit mutants killed, restored baseline 80/80. Two isolated browser mutant builds produced the expected 1/1 and 9/9 failures (pane ownership, ordering, write-in, draft preservation, four off-screen outcomes, Submit). Scripts `/tmp/accept-mutations.py` and `/tmp/accept-browser-mutations.py`; per-mutant logs plus JSON summaries under `/tmp/accept-*`. Final real-source browser gate passes 52/52 after these mutations.
+- Final logs: `/tmp/accept-check.log`, `/tmp/accept-lint.log`, `/tmp/accept-unit.log`, `/tmp/accept-build.log`, `/tmp/accept-browser.log`. Development-only type errors, fixture cache/locator errors and a Set lint error were corrected; they are not counted as passes.
+- All prior product decisions remain settled: automatic local OMP discovery, actual latest recorded parent model, default Herdr lifecycle without bespoke Waiting, width choices, timing, cold deep links, local/shared transport, ordering/inheritance and image contracts.
+- Publication plan: squash-only repository; integration/fix PR targets main and supersedes the original stack merges. No push, PR, comment, merge, deploy, live agents, original-branch edits or integration merge performed. Independent reviewer gate and parent acceptance still required.

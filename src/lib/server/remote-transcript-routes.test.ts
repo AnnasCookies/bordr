@@ -78,3 +78,28 @@ it('remote live-screen answers remain supported without transcript fallback', as
 	expect(fixture.keys).toHaveBeenCalled();
 	expect(fixture.remote).not.toHaveBeenCalled();
 });
+
+it('does not send a fallback confirmation into a new same-word approval subject', async () => {
+	const screen = (subject: string) =>
+		[
+			'╭────────────────────────╮',
+			'│ Bash command │',
+			`│ ${subject} │`,
+			'│ Proceed? │',
+			'│ ❯ 1. Yes │',
+			'│   2. No │',
+			'╰────────────────────────╯'
+		].join('\n');
+	fixture.visible = screen('echo subject-A');
+	fixture.keys.mockImplementation(async () => {
+		fixture.visible = screen('echo subject-B');
+	});
+	vi.useFakeTimers();
+	const result = POST({
+		params: { pane: 'remote~w1:p1' },
+		request: new Request('http://fixture', { method: 'POST', body: JSON.stringify({ index: 1 }) })
+	} as Parameters<typeof POST>[0]);
+	await vi.runAllTimersAsync();
+	expect(await (await result).json()).toMatchObject({ ok: true });
+	expect(fixture.keys).toHaveBeenCalledTimes(1);
+});

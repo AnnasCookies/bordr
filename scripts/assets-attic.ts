@@ -19,8 +19,8 @@
  *   stash    before the build: fold what is there now into the attic
  *   restore  after it: put back anything the new build does not have
  *
- * Bounded by age rather than count: a chunk nobody has asked for in a week
- * belongs to a session that is long gone.
+ * Bounded by retirement age rather than build age: the emitted set gets a
+ * week of grace when replaced; inherited chunks keep their original deadline.
  */
 
 import { cp, mkdir, readdir, rm, stat, utimes, readFile, writeFile } from 'node:fs/promises';

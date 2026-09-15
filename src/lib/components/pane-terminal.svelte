@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { onMount, type Snippet } from 'svelte';
+	import { SvelteSet } from 'svelte/reactivity';
 	import { ansiToHtml } from '$lib/ansi';
 	import { prefs } from '$lib/prefs.svelte';
 	import { promptMark, splitAtPrompt } from '$lib/screen-split';
@@ -205,19 +206,31 @@
 		};
 	});
 
+	const unsent = new SvelteSet<{ paneId: string; epoch: number; text: string }>();
+	function recover(paneId: string, epoch: number) {
+		const items = [...unsent].filter((item) => item.paneId === paneId && item.epoch === epoch);
+		for (const item of items) unsent.delete(item);
+		const text = items
+			.map((item) => item.text)
+			.filter(Boolean)
+			.join('\n');
+		if (text) onrestore(paneId, text);
+	}
+
 	function dispatch(keys: string[], flush = false) {
 		if (composing || busy) return;
 		const origin = paneId;
 		const epoch = generation;
 		const chunk = flush ? draft : '';
+		const item = { paneId: origin, epoch, text: chunk };
+		unsent.add(item);
 		if (flush) draft = '';
 		const valid = () => generation === epoch && paneId === origin;
 		queue = queue.then(async () => {
 			if (!valid()) {
-				if (chunk) onrestore(origin, chunk);
+				recover(origin, epoch);
 				return;
 			}
-			let typed = !chunk;
 			try {
 				if (chunk) {
 					const res = await fetch(`/api/agents/${encodeURIComponent(origin)}/type`, {
@@ -226,17 +239,20 @@
 						body: JSON.stringify({ text: chunk })
 					});
 					if (!res.ok) throw new Error('type refused');
-					typed = true;
 				}
+				unsent.delete(item);
 				if (valid()) {
 					const ok = await onkeys(keys, origin);
 					if (valid()) {
 						failed = !ok;
-						if (!ok) generation++;
+						if (!ok) {
+							recover(origin, epoch);
+							generation++;
+						}
 					}
 				}
 			} catch {
-				if (!typed) onrestore(origin, chunk);
+				recover(origin, epoch);
 				if (valid()) {
 					failed = true;
 					generation++;

@@ -1,3 +1,4 @@
+import { pathToFileURL } from 'node:url';
 import { expect, it } from 'vitest';
 import { mkdtemp, mkdir, readFile, writeFile, rm, readdir } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
@@ -70,7 +71,14 @@ it('requires explicit stopped migration and restores the old pathname on activat
 		await writeFile(join(out, 'index.js'), 'new');
 		await writeFile(join(live, 'index.js'), 'old');
 		await writeFile(join(live, 'route-old.js'), 'lazy old route');
+		await writeFile(
+			join(live, 'loader.mjs'),
+			`export const load = () => import('./lazy-old.mjs');`
+		);
+		await writeFile(join(live, 'lazy-old.mjs'), `export default 'lazy old route';`);
+		const loaded = await import(/* @vite-ignore */ pathToFileURL(join(live, 'loader.mjs')).href);
 		await expect(publishBuild(out, live, async () => {}, root)).rejects.toThrow('--migrate');
+		expect((await loaded.load()).default).toBe('lazy old route');
 		let stopped = false;
 		let starts = 0;
 		await expect(

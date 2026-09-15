@@ -44,16 +44,18 @@ it('never serves a cached or in-flight old identity after retarget, session chan
 	}
 	fixture.machines = [{ ...fixture.machines[0], enabled: false }];
 	expect(await paneTree()).toEqual([]);
+	const machine = fixture.machines[0];
+	fixture.machines = [];
+	expect(await paneTree()).toEqual([]);
 	let release!: () => void;
 	fixture.delay = new Promise((r) => {
 		release = r;
 	});
-	fixture.machines = [{ ...fixture.machines[0], enabled: true, target: 'in-flight' }];
+	fixture.machines = [{ ...machine, enabled: true, target: 'in-flight' }];
 	await paneTree();
 	fixture.machines = [];
 	release();
 	await new Promise((r) => setTimeout(r, 0));
-	expect(await paneTree()).toEqual([]);
 	// Re-adding this identity must fetch, not publish the revoked in-flight result.
 	fixture.machines = [
 		{ id: 'remote', label: 'Fixture', target: 'in-flight', session: 'second', enabled: true }

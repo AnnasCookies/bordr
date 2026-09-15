@@ -738,14 +738,19 @@ test('terminal failure cancels empty confirmations queued behind the failed text
 	state.typeStatus = 409;
 	await input.fill('refused text');
 	await input.press('Enter');
+	await input.fill('second unsent');
+	await input.press('Enter');
 	await input.press('Enter');
 	await expect.poll(() => state.typeCalls.length).toBe(1);
 	release();
-	await expect(input).toHaveValue('refused text');
+	await expect
+		.poll(() => page.evaluate(() => localStorage.getItem('bordr-draft:a')))
+		.toBe('refused text\nsecond unsent');
 	await page.waitForTimeout(100);
 	expect(state.keys).toEqual([]);
 	state.typeDelay = null;
 	state.typeStatus = 200;
+	await input.fill('reviewed retry');
 	await input.press('Enter');
 	await expect.poll(() => state.keys.length).toBe(1);
 });
