@@ -1,5 +1,13 @@
 import { describe, expect, it } from 'vitest';
-import { GRACE_MS, keepPending, landedIn, onScreen, say, type PendingSend } from './pending-sends';
+import {
+	GRACE_MS,
+	restorePending,
+	keepPending,
+	landedIn,
+	onScreen,
+	say,
+	type PendingSend
+} from './pending-sends';
 
 const NOW = 1_000_000;
 const pending = (over: Partial<PendingSend> = {}): PendingSend => ({
@@ -24,7 +32,7 @@ describe('keepPending', () => {
 	});
 
 	it('retires one the transcript shows the agent took', () => {
-		expect(keepPending([pending()], ['run the tests'], false, NOW)).toEqual([]);
+		expect(keepPending([pending()], [{ text: 'run the tests', at: NOW }], false, NOW)).toEqual([]);
 	});
 
 	it('retires a delivered one the agent never took, once it has settled', () => {
@@ -119,4 +127,18 @@ describe('onScreen', () => {
 	it('is false when the prompt is nowhere on the screen', () => {
 		expect(onScreen('run the tests and report back', '❯\n  something else entirely')).toBe(false);
 	});
+});
+
+it('keeps reload-interrupted sends recoverable without reaping or resending', () => {
+	const restored = restorePending(pending({ state: 'sending' }));
+	expect(restored.state).toBe('unconfirmed');
+	expect(
+		keepPending([restored], [{ text: 'run the tests', at: NOW }], true, NOW + 999_999)
+	).toEqual([restored]);
+});
+
+it('does not retire a repeated send from an earlier identical transcript turn', () => {
+	expect(
+		keepPending([pending({ at: NOW })], [{ text: 'run the tests', at: NOW - 1000 }], false, NOW)
+	).toHaveLength(1);
 });

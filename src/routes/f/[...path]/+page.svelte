@@ -579,19 +579,19 @@
 			{/each}
 		</ul>
 	</div>
-	{#if treeOpen}
-		<div class="fixed inset-0 z-40 lg:hidden">
-			<button
-				class="no-press absolute inset-0 bg-black/40"
-				aria-hidden="true"
-				tabindex="-1"
-				onclick={() => (treeOpen = false)}
-			></button>
-			<div class="absolute inset-y-0 left-0 w-[86%] max-w-[320px] shadow-2xl">
-				<SessionTree onclose={() => (treeOpen = false)} home />
-			</div>
+{/if}
+{#if treeOpen}
+	<div class="fixed inset-0 z-40">
+		<button
+			class="no-press absolute inset-0 bg-black/40"
+			aria-hidden="true"
+			tabindex="-1"
+			onclick={() => (treeOpen = false)}
+		></button>
+		<div class="absolute inset-y-0 left-0 w-[86%] max-w-[320px] shadow-2xl">
+			<SessionTree onclose={() => (treeOpen = false)} home />
 		</div>
-	{/if}
+	</div>
 {/if}
 
 <style>

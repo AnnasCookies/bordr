@@ -32,11 +32,15 @@ export interface BackNavigation {
  * Only a move from `/` puts it there, and replaced moves keep it. A cold start
  * (a notification opening a pane) has nothing below it at all.
  */
-export function homeBelowAfter(previous: boolean, nav: BackNavigation): boolean {
+export function homeBelowAfter(
+	previous: boolean,
+	nav: BackNavigation,
+	backTo: BackTo = 'home'
+): boolean {
 	if (nav.to === '/') return false;
 	if (nav.type === 'enter' || nav.from === null) return false;
 	if (nav.from === '/') return true;
-	return previous;
+	return previous && backTo === 'home' && (nav.type === 'link' || nav.type === 'goto');
 }
 
 /**

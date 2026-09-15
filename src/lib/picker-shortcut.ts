@@ -1,7 +1,9 @@
 import type { Picker } from '$lib/server/picker';
 
 export type PickerShortcut =
-	{ kind: 'answer'; index: number } | { kind: 'key'; key: 'up' | 'down' | 'left' | 'right' };
+	| { kind: 'confirm' }
+	| { kind: 'answer'; index: number }
+	| { kind: 'key'; key: 'up' | 'down' | 'left' | 'right' };
 
 /**
  * Turn a desktop key into the same picker action Herdr's terminal would take.
@@ -21,10 +23,7 @@ export function pickerShortcut(
 			? { kind: 'answer', index }
 			: null;
 	}
-	if (key === 'Enter') {
-		const selected = picker.options.find((option) => option.selected);
-		return selected ? { kind: 'answer', index: selected.index } : null;
-	}
+	if (key === 'Enter') return { kind: 'confirm' };
 
 	if (picker.axis === 'horizontal') {
 		if (key === 'ArrowLeft') return { kind: 'key', key: 'left' };
@@ -34,4 +33,14 @@ export function pickerShortcut(
 	if (key === 'ArrowUp') return { kind: 'key', key: 'up' };
 	if (key === 'ArrowDown') return { kind: 'key', key: 'down' };
 	return null;
+}
+
+/** Selection is excluded so arrow motion does not change dialog identity. */
+export function pickerIdentity(picker: Pick<Picker, 'question' | 'options'> | null): string {
+	return picker
+		? [
+				picker.question,
+				...picker.options.map((o) => `${o.index}:${o.label}:${Boolean(o.writeIn)}`)
+			].join('\0')
+		: '';
 }

@@ -77,6 +77,7 @@
 		tab-size: 2;
 	}
 	.numbered {
+		flex-shrink: 0;
 		display: flex;
 		min-width: 0;
 		border-radius: 6px;

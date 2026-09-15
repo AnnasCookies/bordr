@@ -40,3 +40,14 @@ Review every open PR independently of previous commentary, reconcile findings wi
 - [ ] Correct all source-verified remaining findings, including separately attributed older defects.
 - [ ] Focused and full offline validation, isolated build, browser regression checks.
 - [ ] Independent review and parent acceptance before publishing anything.
+
+## Implementation evidence (in progress)
+
+- Integration merge `f681835`: #40 `e19089a` first parent, pinned #38 `ea1659d` second; widths retained; ownership + RAF; both e2e groups.
+- Older/pre-existing corrections: `7706315` cached machine policy/target/session identity; `23e9032` native Git worktree metadata. Focused tests: 11/11 and 19/19 respectively.
+- D1 resolved by parent: retain automatic local OMP discovery; document startup execution and retain remote prohibition.
+- D5 resolved: latest recorded model, cached by file identity/change metadata; append/truncation/replacement regressions. Remote tail limitations remain explicit.
+- D6 source inspection (installed public Pi 0.85.1 only): `setWorkingVisible(false)` can hide work while streaming; `IdleStatus.render()` emits blanks; editor accepts steering while active. Parent accepted discrepancy diagnostic rather than unsafe idle override. No live panes/config/sessions inspected.
+- D4 has no existing Waiting enum/label in source. Parent instructed not to invent one; explicit Waiting requirement remains pending clarification. Quiet unresolved children stay unfinished; Off keeps existing archive and All includes finished children.
+- Current combined gates: typecheck 0 errors/warnings; full unit 844/844 across 100 files. Further targeted browser and build gates pending.
+- No push, PR creation/comment, GitHub merge, deployment or live-agent action performed.

@@ -64,11 +64,15 @@
 		queueMicrotask(() => history.back());
 	});
 	afterNavigate((nav) => {
-		homeBelow = homeBelowAfter(homeBelow, {
-			type: nav.type,
-			from: nav.from?.url.pathname ?? null,
-			to: nav.to?.url.pathname ?? page.url.pathname
-		});
+		homeBelow = homeBelowAfter(
+			homeBelow,
+			{
+				type: nav.type,
+				from: nav.from?.url.pathname ?? null,
+				to: nav.to?.url.pathname ?? page.url.pathname
+			},
+			prefs.value.backTo
+		);
 	});
 
 	/**

@@ -81,7 +81,9 @@
 			<span>{remaining}</span>
 		</div>
 
-		{#each plan.phases as phase (phase.name)}
+		<!-- Snapshot prose is not a unique key. -->
+		<!-- eslint-disable-next-line svelte/require-each-key -->
+		{#each plan.phases as phase}
 			<section class:current={phase.name === plan.activePhase}>
 				<header>
 					<span>{phase.name}</span>
@@ -92,7 +94,8 @@
 					>
 				</header>
 				<ul>
-					{#each phase.items as item (item.content)}
+					<!-- eslint-disable-next-line svelte/require-each-key -->
+					{#each phase.items as item}
 						<li class={item.status}>
 							<span class="mark" aria-hidden="true"></span>
 							<span class="sr-only">{statusLabel(item.status)}: </span>

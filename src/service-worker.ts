@@ -224,17 +224,10 @@ self.addEventListener('activate', (event) => {
 			await self.clients.claim();
 			console.info(`bordr service worker active for build ${BUILD}`);
 
-			// A page being READ is not reloaded out from under whoever is
-			// reading it — it gets told, and the layout offers its banner. A
-			// backgrounded one is reloaded outright: nobody is looking, and it
-			// is the copy most likely to be days old and pointing at assets
-			// that no longer exist.
+			// Hidden clients may still own attachments or an in-flight POST.
+			// Every client gets the existing explicit update action, never a forced reload.
 			for (const client of await self.clients.matchAll({ type: 'window' })) {
-				if (client.visibilityState === 'visible') {
-					client.postMessage({ type: 'bordr:updated', build: BUILD });
-				} else if ('navigate' in client) {
-					await client.navigate(client.url).catch(() => {});
-				}
+				client.postMessage({ type: 'bordr:updated', build: BUILD });
 			}
 		})()
 	);

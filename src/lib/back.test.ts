@@ -55,3 +55,15 @@ describe('stepsBackHome', () => {
 		expect(stepsBackHome('home', true, { ...toList, from: '/' })).toBe(false);
 	});
 });
+
+it('does not intercept Home after a Retrace push put Files directly below Settings', () => {
+	const belowFiles = homeBelowAfter(false, { type: 'link', from: '/', to: '/f' }, 'history');
+	const belowSettings = homeBelowAfter(
+		belowFiles,
+		{ type: 'link', from: '/f', to: '/settings' },
+		'history'
+	);
+	expect(
+		stepsBackHome('home', belowSettings, { type: 'link', from: '/settings', to: '/', search: '' })
+	).toBe(false);
+});

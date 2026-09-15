@@ -13,13 +13,9 @@ describe('pickerShortcut', () => {
 		expect(pickerShortcut('x', { options })).toBeNull();
 	});
 
-	it('confirms the highlighted option with Enter', () => {
-		expect(pickerShortcut('Enter', { options })).toEqual({ kind: 'answer', index: 1 });
-		expect(
-			pickerShortcut('Enter', {
-				options: options.map((option) => ({ ...option, selected: false }))
-			})
-		).toBeNull();
+	it('defers Enter selection until earlier navigation has completed', () => {
+		expect(pickerShortcut('Enter', { options })).toEqual({ kind: 'confirm' });
+		expect(pickerShortcut('Enter', { options: [] })).toEqual({ kind: 'confirm' });
 	});
 
 	it('uses up and down for a normal picker without stealing sideways arrows', () => {

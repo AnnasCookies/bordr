@@ -74,10 +74,10 @@
 	import { afterClose } from '$lib/after-close';
 	import { echoesAnswer, holdsAnswer } from './answer-echo';
 	import { glideInterrupted } from './glide-interrupt';
-	import { keepPending, onScreen, say, type PendingSend } from '$lib/pending-sends';
+	import { keepPending, restorePending, say, type PendingSend } from '$lib/pending-sends';
 	import { queueVerdict } from '$lib/queue';
 	import { widthClasses } from '$lib/conversation-width';
-	import { pickerShortcut } from '$lib/picker-shortcut';
+	import { pickerShortcut, pickerIdentity } from '$lib/picker-shortcut';
 	import { parseModelLine } from '$lib/model-line';
 	import { shortModel } from '$lib/short-model';
 	import type { Block } from '$lib/server/transcript/types';
@@ -349,13 +349,7 @@
 	let answeredKey = $state('');
 	let answeredAt = $state(0);
 
-	const pickerKey = $derived(
-		detail.picker
-			? [detail.picker.question, ...detail.picker.options.map((o) => `${o.index}:${o.label}`)].join(
-					'\u0000'
-				)
-			: ''
-	);
+	const pickerKey = $derived(pickerIdentity(detail.picker));
 
 	/**
 	 * Held for at most this long. If the picker is still on screen after it,
@@ -440,6 +434,7 @@
 		refreshGate.call();
 		if (dictating) void holdScreen();
 	}
+	let closingContext = { current: '', siblings: [] as string[], all: [] as string[] };
 	/** Which scope the controls sheet is open for, if any. */
 	async function afterControl(action: 'focus' | 'rename' | 'close', scope: ControlScope) {
 		if (action !== 'close') {
@@ -450,9 +445,7 @@
 		// would land on a 404 for something the reader closed on purpose.
 		const next = afterClose({
 			scope,
-			current: detail.paneId,
-			siblings: tabSiblings,
-			all: order
+			...closingContext
 		});
 		await goto(next ? resolve('/a/[pane]', { pane: next }) : resolve('/'), {
 			replaceState: true
@@ -491,8 +484,8 @@
 	 * are still one tap away behind their count.
 	 */
 	const strip = $derived(prefs.value.subagentStrip);
-	const running = $derived(strip === 'off' ? [] : subs.filter((a) => !a.done));
-	const finished = $derived(strip === 'off' ? [] : subs.filter((a) => a.done));
+	const running = $derived(subs.filter((a) => !a.done));
+	const finished = $derived(subs.filter((a) => a.done));
 	let showFinished = $state(false);
 	// 'all' is the old behaviour, kept for anyone who wants it: every sub-agent
 	// the session ever spawned, with no count to expand.
@@ -979,14 +972,14 @@
 			if (Array.isArray(raw)) {
 				restored = raw
 					.filter(
-						(p) => p && typeof p.text === 'string' && now - Number(p.at ?? 0) < PENDING_TTL_MS
+						(p) =>
+							p &&
+							typeof p.text === 'string' &&
+							(p.state === 'sending' ||
+								p.state === 'unconfirmed' ||
+								now - Number(p.at ?? 0) < PENDING_TTL_MS)
 					)
-					// Nothing restored is still in flight — that request died with the
-					// page. Keep a command receipt distinct; normal prompts are queued.
-					.map((p) => ({
-						...p,
-						state: p.state === 'accepted' ? ('accepted' as const) : ('queued' as const)
-					}));
+					.map(restorePending);
 			}
 		} catch {
 			// Unreadable storage is not a reason to lose the conversation.
@@ -1047,14 +1040,14 @@
 		// An array rather than a Set: this is a local scratch value, and the
 		// lint rule that steers reactive state to SvelteSet cannot tell the
 		// difference. There are only ever a handful of unsent prompts.
-		const landed: string[] = [];
+		const landed: { text: string; at: number }[] = [];
 		for (const message of detail.messages) {
 			if (message.role !== 'user') continue;
-			if (say(message.text)) landed.push(say(message.text));
+			if (say(message.text)) landed.push({ text: say(message.text), at: message.at ?? 0 });
 			for (const block of message.blocks ?? []) {
 				if (block.kind !== 'tool' || block.name !== '!') continue;
 				const command = say(String(block.input?.command ?? ''));
-				if (command) landed.push(`!${command}`);
+				if (command) landed.push({ text: `!${command}`, at: message.at ?? 0 });
 			}
 		}
 
@@ -1477,8 +1470,8 @@
 	}
 
 	function scrollHost(): HTMLElement | null {
-		if (!swipeRoot || !swipeRoot.isConnected) return null;
-		return getComputedStyle(swipeRoot).overflowY === 'auto' ? swipeRoot : null;
+		if (!scrollRoot || !scrollRoot.isConnected) return null;
+		return getComputedStyle(scrollRoot).overflowY === 'auto' ? scrollRoot : null;
 	}
 
 	/**
@@ -1685,7 +1678,7 @@
 			if (following && !touching && !glideActive) scrollBottom();
 			else if (!touching) onScroll();
 		});
-		if (swipeRoot) observer.observe(swipeRoot);
+		if (scrollRoot) observer.observe(scrollRoot);
 
 		onScroll();
 		return () => {
@@ -1929,6 +1922,7 @@
 
 	/** Resolves to whether the answer left, so a write-in draft survives one that did not. */
 	async function answer(index: number, text?: string): Promise<boolean> {
+		const paneId = detail.paneId;
 		if (busy) return false;
 		busy = true;
 		sendingIndex = index;
@@ -1971,7 +1965,7 @@
 
 		try {
 			const r = await track(() =>
-				fetch(`/api/agents/${encodeURIComponent(detail.paneId)}/answer`, {
+				fetch(`/api/agents/${encodeURIComponent(paneId)}/answer`, {
 					method: 'POST',
 					headers: { 'content-type': 'application/json' },
 					body: JSON.stringify({ index, text })
@@ -1982,6 +1976,10 @@
 				chose?: string;
 				message?: string;
 			} | null;
+			if (detail.paneId !== paneId) {
+				if (!r.ok && echo !== null) removeStoredPending(paneId, echo);
+				return r.ok;
+			}
 			// Never silently pretend: if the screen did not confirm the
 			// selection, say so and let the user look — do not auto-retry,
 			// which could answer twice. A refusal ("option 4 is not on
@@ -2026,11 +2024,11 @@
 	}
 
 	/** Resolves to whether herdr took the keys; a refusal shows up as `sendError`. */
-	async function sendKeys(keys: string[]): Promise<boolean> {
+	async function sendKeys(keys: string[], paneId = detail.paneId): Promise<boolean> {
 		sendError = null;
 		try {
 			const r = await track(() =>
-				fetch(`/api/agents/${encodeURIComponent(detail.paneId)}/keys`, {
+				fetch(`/api/agents/${encodeURIComponent(paneId)}/keys`, {
 					method: 'POST',
 					headers: { 'content-type': 'application/json' },
 					body: JSON.stringify({ keys })
@@ -2057,11 +2055,14 @@
 			// composer must therefore behave like the terminal: arrows, digits and
 			// Enter drive the question. Once the user has typed anything it becomes
 			// text again, and none of those keys may steal or submit their draft.
-			return editable !== textarea || draft.length > 0;
+			return editable !== textarea || draft.length > 0 || writeIn !== null;
 		}
 		// A focused button or link owns Enter, or the global handler and its native
 		// click both fire.
-		return key === 'Enter' && Boolean(target.closest('button, a'));
+		return (
+			Boolean(target.closest('summary, [role=slider], [role=separator], [aria-label^="Resize"]')) ||
+			(key === 'Enter' && Boolean(target.closest('button, a')))
+		);
 	}
 
 	/**
@@ -2070,10 +2071,11 @@
 	 * over the conversation: digits there are text, not an answer.
 	 */
 	$effect(() => {
-		const picker = detail.picker;
+		const originPane = detail.paneId;
+		const originDialog = pickerKey;
 		if (
 			!wideScreen ||
-			!picker ||
+			!originDialog ||
 			askHidden ||
 			treeOpen ||
 			showNewAgent ||
@@ -2082,7 +2084,9 @@
 			openSubAgent
 		)
 			return;
-
+		let active = true;
+		const valid = () =>
+			active && detail.paneId === originPane && pickerKey === originDialog && !askHidden;
 		const onPickerKey = (event: KeyboardEvent) => {
 			if (
 				event.defaultPrevented ||
@@ -2091,22 +2095,42 @@
 				event.ctrlKey ||
 				event.altKey ||
 				ownsPickerKey(event.target, event.key) ||
-				busy
+				busy ||
+				!detail.picker
 			)
 				return;
-			const shortcut = pickerShortcut(event.key, picker);
+			const shortcut = pickerShortcut(event.key, detail.picker);
 			if (!shortcut) return;
 			event.preventDefault();
-			if (shortcut.kind === 'answer') {
-				if (!event.repeat) void answer(shortcut.index);
-				return;
-			}
-			pickerKeyQueue = pickerKeyQueue.then(() => sendKeys([shortcut.key]));
+			if (event.repeat && shortcut.kind !== 'key') return;
+			pickerKeyQueue = pickerKeyQueue
+				.then(async () => {
+					if (!valid()) return;
+					if (shortcut.kind === 'key') {
+						await sendKeys([shortcut.key], originPane);
+						return;
+					}
+					// Arrows finish first. Never confirm an index read before their POSTs.
+					const response = await fetch(`/api/agents/${encodeURIComponent(originPane)}`);
+					if (!response.ok || !valid()) return;
+					const fresh = (await response.json()) as typeof detail;
+					if (!valid() || pickerIdentity(fresh.picker) !== originDialog) return;
+					const option = fresh.picker?.options.find((o) =>
+						shortcut.kind === 'confirm' ? o.selected : o.index === shortcut.index
+					);
+					if (!option) return;
+					if (option.writeIn) startWriteIn(option);
+					else await answer(option.index);
+				})
+				.catch((e) => {
+					if (valid()) sendError = (e as Error).message;
+				});
 		};
-		// Capture first so Enter cannot be taken by the composer's normal send rule
-		// before a focused Claude picker sees it.
 		window.addEventListener('keydown', onPickerKey, true);
-		return () => window.removeEventListener('keydown', onPickerKey, true);
+		return () => {
+			active = false;
+			window.removeEventListener('keydown', onPickerKey, true);
+		};
 	});
 
 	const KEY_STRIP: Array<{ k: string; l: string }> = [
@@ -2176,7 +2200,8 @@
 	}
 
 	async function send() {
-		if (!draft.trim() && attachments.length === 0) return;
+		if (busy || (!draft.trim() && attachments.length === 0)) return;
+		if (dictating) stopDictation();
 		// The answer for the write-in row the reader tapped: typed into THAT row
 		// and confirmed by the answer route, not typed at whatever the question
 		// happens to have highlighted.
@@ -2184,13 +2209,15 @@
 			const target = writeIn;
 			const text = draft.trim();
 			const paneId = detail.paneId;
+			draftStore?.clear(paneId);
 			draft = '';
 			writeIn = null;
-			if (await answer(target.index, text)) {
-				draftStore?.clear(paneId);
-			} else if (detail.paneId === paneId) {
-				draft = text;
-				writeIn = target;
+			if (!(await answer(target.index, text))) {
+				const restored = draftStore?.restore(paneId, text) ?? text;
+				if (detail.paneId === paneId) {
+					draft = restored;
+					writeIn = target;
+				}
 			}
 			return;
 		}
@@ -2359,6 +2386,7 @@
 	}
 
 	// --- swipe between agents -------------------------------------------------
+	let scrollRoot = $state<HTMLElement | undefined>(undefined);
 	let swipeRoot = $state<HTMLElement | undefined>(undefined);
 	let startX = 0;
 	let startY = 0;
@@ -2396,7 +2424,8 @@
 	 * reached by the gesture at all. `swipeSequence` weaves the two together.
 	 */
 	let tabSiblings = $state<string[]>([]);
-	const swipeOrder = $derived(swipeSequence(order, tabSiblings, detail.paneId));
+	let navigationTree = $state<import('$lib/types').WorkspaceNode[]>([]);
+	const swipeOrder = $derived(swipeSequence(order, navigationTree));
 
 	/**
 	 * The pane a swipe is currently heading towards, as a card under this one.
@@ -2823,7 +2852,7 @@
 {/snippet}
 
 {#snippet conversation()}
-	<div class="flex min-h-dvh flex-col lg:h-full lg:min-h-0 lg:flex-1">
+	<div class="flex min-h-dvh flex-col lg:h-full lg:min-h-0 lg:flex-1" bind:this={swipeRoot}>
 		<header class="sticky top-0 z-10 border-b border-hairline bg-page">
 			{#if !wideScreen}
 				{@render paneHeader()}
@@ -2833,13 +2862,13 @@
 				The pane strip is what the split itself already is, so it appears
 				only where the split is not being drawn.
 			-->
-			{#if showChrome(prefs.value.tabStrip, touchPoints())}
-				<WorkspaceTabs
-					current={detail.paneId}
-					panes={!(wideScreen && splitLayout)}
-					onsiblings={(list) => (tabSiblings = list)}
-				/>
-			{/if}
+			<WorkspaceTabs
+				visible={showChrome(prefs.value.tabStrip, touchPoints())}
+				ontree={(tree) => (navigationTree = tree)}
+				current={detail.paneId}
+				panes={!(wideScreen && splitLayout)}
+				onsiblings={(list) => (tabSiblings = list)}
+			/>
 
 			<!--
 				Sub-agents this session has spawned.
@@ -2856,7 +2885,7 @@
 				move to the controls sheet, which is where things you might want
 				rather than things happening now belong.
 			-->
-			{#if running.length > 0}
+			{#if strip !== 'off' && shownSubs.length > 0}
 				<div class="flex items-center gap-1.5 overflow-x-auto border-b border-hairline px-2 py-1.5">
 					<span class="shrink-0 font-mono text-[10px] tracking-[.06em] text-faint uppercase"
 						>agents</span
@@ -2916,6 +2945,9 @@
 				landed" were both invisible — the screen simply did not respond.
 			-->
 			<div class="mx-auto w-full px-4 pt-3 {widths}">
+				{#if detail.statusDiagnostic}<p class="text-xs text-muted">
+						{detail.statusDiagnostic}
+					</p>{/if}
 				{@render uncertainBanner()}
 				{@render errorBanner()}
 			</div>
@@ -3003,7 +3035,7 @@
 				Only at `lg`. A phone scrolls the window, which is what keeps the URL
 				bar collapsing and the keyboard handling working.
 			-->
-			<div class="flex flex-1 flex-col lg:min-h-0 lg:overflow-y-auto" bind:this={swipeRoot}>
+			<div class="flex flex-1 flex-col lg:min-h-0 lg:overflow-y-auto" bind:this={scrollRoot}>
 				<main
 					class="relative mx-auto w-full flex-1 px-4 pt-3 pb-2 lg:mx-0 lg:px-6 {widths} {dragging
 						? 'bg-page'
@@ -3043,6 +3075,9 @@
 						</p>
 					{/if}
 
+					{#if detail.statusDiagnostic}<p class="text-xs text-muted">
+							{detail.statusDiagnostic}
+						</p>{/if}
 					{@render uncertainBanner()}
 
 					{#if canShowEarlier}
@@ -3111,12 +3146,21 @@
 									-->
 									{@const verdict = queueVerdict(sent.text, detail.queue ?? [], sent.at)}
 									{@const held =
-										sent.state !== 'sending' &&
-										(verdict !== null
-											? verdict === 'taken'
-											: onScreen(sent.text, detail.screenTail ?? ''))}
+										sent.state !== 'sending' && sent.state !== 'unconfirmed' && verdict === 'taken'}
 									{@const tick = sent.state === 'sending' ? 'sending' : held ? 'read' : 'sent'}
-									{#if sent.command}
+									{#if sent.state === 'unconfirmed'}
+										<div class="rounded border border-hairline p-3" role="status">
+											<p>Delivery unconfirmed — check the conversation before sending again.</p>
+											<pre class="whitespace-pre-wrap">{sent.text}</pre>
+											<button
+												type="button"
+												onclick={() => {
+													draft = draftStore?.restore(detail.paneId, sent.text) ?? sent.text;
+													pendingSends = pendingSends.filter((p) => p.id !== sent.id);
+												}}>Restore draft</button
+											>
+										</div>
+									{:else if sent.command}
 										<div class="flex justify-center">
 											<span
 												role="status"
@@ -3999,8 +4043,10 @@
 	<NewAgentSheet open={showNewAgent} onclose={() => (showNewAgent = false)} />
 	{#if controlling}
 		<ControlSheet
+			onstart={() =>
+				(closingContext = { current: detail.paneId, siblings: [...tabSiblings], all: [...order] })}
 			targets={controlTargets}
-			subagents={strip === 'off' ? [] : finished}
+			subagents={subs}
 			toggles={layout.tight
 				? [
 						...(prefs.value.workControl === 'header' && toolCount > 0
@@ -4061,6 +4107,8 @@
 		:global(.transcript-rows > *) {
 			content-visibility: auto;
 			contain-intrinsic-block-size: auto 5rem;
+			padding-inline: 8px;
+			margin-inline: -8px;
 		}
 	}
 

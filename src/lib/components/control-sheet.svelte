@@ -31,7 +31,8 @@
 		toggles = [],
 		onclose,
 		ondone,
-		onworktrees
+		onworktrees,
+		onstart
 	}: {
 		/**
 		 * What this sheet can act on, in the order they are offered.
@@ -43,7 +44,7 @@
 		 */
 		targets: ControlTarget[];
 		/**
-		 * Sub-agents that have finished.
+		 * All sub-agents, including those hidden by the header-strip preference.
 		 *
 		 * They used to sit in a strip above the transcript whether or not
 		 * anything was running, which cost 37px of header to say "+4 done".
@@ -60,6 +61,7 @@
 		 */
 		toggles?: { label: string; hint?: string; on: boolean; onchange: () => void }[];
 		onclose: () => void;
+		onstart?: () => void;
 		/**
 		 * Something changed. The action is passed on because a close leaves
 		 * the page looking at something that no longer exists, and only the
@@ -96,6 +98,8 @@
 
 	async function send(action: 'focus' | 'rename' | 'close') {
 		if (busy) return;
+		onstart?.();
+		const sentScope = scope;
 		busy = action;
 		failed = null;
 		try {
@@ -114,7 +118,7 @@
 				busy = '';
 				return;
 			}
-			ondone(action, scope);
+			ondone(action, sentScope);
 			onclose();
 		} catch (e) {
 			failed = `Nothing was sent: ${(e as Error).message}`;
@@ -128,7 +132,7 @@
 	></button>
 
 	<div
-		class="relative w-full max-w-screen-sm rounded-t-2xl border-t border-hairline bg-card pb-[env(safe-area-inset-bottom)]"
+		class="relative max-h-[90dvh] w-full max-w-screen-sm overflow-y-auto rounded-t-2xl border-t border-hairline bg-card pb-[env(safe-area-inset-bottom)]"
 		role="dialog"
 		aria-label="{scope} controls"
 	>
@@ -249,7 +253,7 @@
 
 			{#if subagents.length > 0 && onsubagent}
 				<p class="px-4 pt-2 pb-1 font-mono text-[10.5px] tracking-[.06em] text-faint uppercase">
-					finished sub-agents
+					sub-agents
 				</p>
 				{#each subagents as sub (sub.id)}
 					<button

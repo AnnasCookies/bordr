@@ -18,7 +18,7 @@ export interface PendingSend {
 	text: string;
 	at: number;
 	/** Request lifecycle; accepted commands carry a browser-visible receipt. */
-	state?: 'sending' | 'queued' | 'accepted';
+	state?: 'sending' | 'unconfirmed' | 'queued' | 'accepted';
 	/** Slash-command word, without `/`, when this is terminal UI control. */
 	command?: string;
 	/** Honest server result: confirmed where Pi exposes one, accepted otherwise. */
@@ -103,15 +103,25 @@ export const GRACE_MS = 20_000;
  */
 export function keepPending(
 	pending: PendingSend[],
-	landed: string[],
+	landed: { text: string; at: number }[],
 	settled: boolean,
 	now: number
 ): PendingSend[] {
 	return pending.filter((p) => {
 		// Still in the air. Nothing has been decided about it yet, and the
 		// request's own success or failure is what will decide.
-		if (p.state === 'sending') return true;
-		if (landedIn(p.text, landed)) return false;
+		if (p.state === 'sending' || p.state === 'unconfirmed') return true;
+		const matching = landed.filter((m) => m.at >= p.at && landedIn(p.text, [say(m.text)]));
+		if (
+			matching.length === 1 &&
+			pending.filter((other) => say(other.text) === say(p.text)).length === 1
+		)
+			return false;
 		return !(settled && now - (p.deliveredAt ?? p.at) > GRACE_MS);
 	});
+}
+
+/** A page reload cannot turn an interrupted request into a delivery acknowledgment. */
+export function restorePending(p: PendingSend): PendingSend {
+	return { ...p, state: p.state === 'sending' ? 'unconfirmed' : p.state };
 }

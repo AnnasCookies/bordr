@@ -15,10 +15,14 @@
 	let {
 		current,
 		panes = true,
+		visible = true,
+		ontree,
 		onsiblings
 	}: {
 		current: string;
 		panes?: boolean;
+		visible?: boolean;
+		ontree?: (workspaces: WorkspaceNode[]) => void;
 		/**
 		 * Every pane of the tab holding `current`, in tab order: what a swipe
 		 * walks through and what closing the pane falls back to.
@@ -63,6 +67,7 @@
 	// panes sent closing a split tab to the half that had just been closed.
 	$effect(() => {
 		onsiblings?.(currentTabPanes(workspaces, current));
+		ontree?.(workspaces);
 	});
 
 	/**
@@ -171,7 +176,7 @@
 	The workspace's tabs, where herdr puts them: across the top of the work
 	area rather than buried in the sidebar tree.
 -->
-{#if workspace}
+{#if workspace && visible}
 	<!--
 		`pt-1.5` because the strip had none: each tab's own `py-1.5` was the only
 		thing between its label and the header above, so the row read as stuck to

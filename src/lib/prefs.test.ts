@@ -93,14 +93,11 @@ describe('normalisePrefs', () => {
 		expect(normalisePrefs({ toolDetail: 'xml' }).toolDetail).toBe(DEFAULTS.toolDetail);
 	});
 
-	it('drops the old conversation width cap', () => {
-		expect(normalisePrefs({ conversationWidth: 'comfortable' })).not.toHaveProperty(
-			'conversationWidth'
-		);
+	it('retains every user-selected conversation width', () => {
+		for (const width of ['comfortable', 'wide', 'full'])
+			expect(normalisePrefs({ conversationWidth: width }).conversationWidth).toBe(width);
 	});
-});
 
-describe('resolveTheme', () => {
 	it('follows the OS only for system', () => {
 		expect(resolveTheme('system', true)).toBe('dark');
 		expect(resolveTheme('system', false)).toBe('light');

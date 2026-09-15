@@ -46,22 +46,22 @@ export function currentTabPanes(
 	return [];
 }
 
+/** A stable full-tree ring, independent of which pane is currently open. */
 export function swipeSequence(
-	/** Every agent, in list order. */
 	order: readonly string[],
-	/** The panes of the current tab, in tab order. */
-	siblings: readonly string[],
-	current: string
+	workspaces: readonly { tabs: readonly TabShape[] }[]
 ): string[] {
-	// Nothing to weave in: one pane in the tab, or a tab this pane is not in.
-	if (siblings.length < 2 || !siblings.includes(current)) return [...order];
-
-	const inTab = new Set(siblings);
-	// Where the tab belongs in the list: the first place any of its panes
-	// appears. A tab whose panes are all shells appears nowhere, so it goes in
-	// at the front rather than being dropped.
-	const at = order.findIndex((paneId) => inTab.has(paneId));
-	const rest = order.filter((paneId) => !inTab.has(paneId));
-	const cut = at === -1 ? 0 : order.slice(0, at).filter((paneId) => !inTab.has(paneId)).length;
-	return [...rest.slice(0, cut), ...siblings, ...rest.slice(cut)];
+	const groups = workspaces.flatMap((w) => w.tabs.map((t) => t.panes.map((p) => p.paneId)));
+	const byPane = new Map(groups.flatMap((group) => group.map((id) => [id, group] as const)));
+	const seen = new Set<string>();
+	const ring: string[] = [];
+	for (const id of [...order, ...groups.flat()]) {
+		for (const pane of byPane.get(id) ?? [id]) {
+			if (!seen.has(pane)) {
+				seen.add(pane);
+				ring.push(pane);
+			}
+		}
+	}
+	return ring;
 }

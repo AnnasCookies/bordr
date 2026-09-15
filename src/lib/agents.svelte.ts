@@ -53,6 +53,7 @@ export function createAgentStore() {
 	let retry: ReturnType<typeof setTimeout> | undefined;
 	let backoff = 1000;
 	let stopped = false;
+	let openedAt = 0;
 
 	function armGrace() {
 		if (graceTimer) return;
@@ -85,6 +86,7 @@ export function createAgentStore() {
 	function open() {
 		if (stopped) return;
 		source?.close();
+		openedAt = Date.now();
 		source = new EventSource('/api/events');
 		// The server sends a snapshot on connect, so silence past the grace
 		// window is a fault, not a slow start.
@@ -131,8 +133,8 @@ export function createAgentStore() {
 	 */
 	function checkAlive() {
 		now = Date.now();
-		if (stopped || !lastSeen) return;
-		if (now - lastSeen > DEAD_MS) {
+		if (stopped) return;
+		if (now - Math.max(lastSeen, openedAt) > DEAD_MS) {
 			// Reopening resets the backoff on purpose: this is not a failing
 			// reconnect loop, it is a socket that lied about being open.
 			backoff = 1000;

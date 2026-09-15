@@ -219,7 +219,7 @@
 	<TabBar />
 </div>
 {#if treeOpen}
-	<div class="fixed inset-0 z-40 lg:hidden">
+	<div class="fixed inset-0 z-40">
 		<button
 			class="no-press absolute inset-0 bg-black/40"
 			aria-hidden="true"
