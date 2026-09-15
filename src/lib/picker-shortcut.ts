@@ -36,11 +36,20 @@ export function pickerShortcut(
 }
 
 /** Selection is excluded so arrow motion does not change dialog identity. */
-export function pickerIdentity(picker: Pick<Picker, 'question' | 'options'> | null): string {
+export function pickerIdentity(
+	picker:
+		| (Pick<Picker, 'question' | 'options'> &
+				Partial<Pick<Picker, 'context' | 'multi' | 'axis' | 'answer'>>)
+		| null
+): string {
 	return picker
-		? [
+		? JSON.stringify([
 				picker.question,
-				...picker.options.map((o) => `${o.index}:${o.label}:${Boolean(o.writeIn)}`)
-			].join('\0')
+				picker.context ?? [],
+				picker.multi,
+				picker.axis,
+				picker.answer,
+				picker.options.map((o) => [o.index, o.label, Boolean(o.writeIn)])
+			])
 		: '';
 }

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { pickerShortcut } from './picker-shortcut';
+import { pickerShortcut, pickerIdentity } from './picker-shortcut';
 
 const options = [
 	{ index: 1, label: 'One', selected: true },
@@ -30,4 +30,12 @@ describe('pickerShortcut', () => {
 		expect(pickerShortcut('ArrowRight', slider)).toEqual({ kind: 'key', key: 'right' });
 		expect(pickerShortcut('ArrowDown', slider)).toBeNull();
 	});
+});
+
+it('invalidates a new approval subject without invalidating arrow selection', () => {
+	const picker = { question: 'Proceed?', context: ['tool A'], options };
+	expect(pickerIdentity(picker)).toBe(
+		pickerIdentity({ ...picker, options: options.map((o) => ({ ...o, selected: !o.selected })) })
+	);
+	expect(pickerIdentity(picker)).not.toBe(pickerIdentity({ ...picker, context: ['tool B'] }));
 });

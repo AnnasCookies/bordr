@@ -1906,16 +1906,28 @@
 	 * empty. Now the tap points the composer at the row, and Send carries the
 	 * text to the answer route, which types it into that row and confirms.
 	 */
-	let writeIn = $state<{ index: number; label: string } | null>(null);
+	let writeIn = $state<{ index: number; label: string; paneId: string; dialog: string } | null>(
+		null
+	);
 	$effect(() => {
 		const target = writeIn;
-		if (target && !detail.picker?.options.some((o) => o.index === target.index && o.writeIn)) {
+		if (
+			target &&
+			(target.paneId !== detail.paneId ||
+				target.dialog !== pickerKey ||
+				!detail.picker?.options.some((o) => o.index === target.index && o.writeIn))
+		) {
 			writeIn = null;
 		}
 	});
 
 	function startWriteIn(option: { index: number; label: string }) {
-		writeIn = { index: option.index, label: option.label };
+		writeIn = {
+			index: option.index,
+			label: option.label,
+			paneId: detail.paneId,
+			dialog: pickerKey
+		};
 		uncertain = null;
 		textarea?.focus();
 	}
@@ -1944,6 +1956,7 @@
 		 * period once the agent settles.
 		 */
 		const picker = detail.picker;
+		const dialog = pickerIdentity(picker);
 		const chose = picker?.options.find((o) => o.index === index);
 		// A checkbox tick is not a turn: the question is still open and Submit
 		// is what answers it, so ticking gets no bubble. Null matches no row, so
@@ -2007,14 +2020,17 @@
 				// next read catches up — unless it was a checkbox, whose card must
 				// stay up with its Submit button while the rest are ticked.
 				if (holdsAnswer(picker, body?.outcome)) {
-					answeredKey = pickerKey;
+					answeredKey = dialog;
 					answeredAt = Date.now();
 					now = answeredAt;
 				}
 			}
 		} catch (e) {
-			pendingSends = pendingSends.filter((p) => p.id !== echo);
-			uncertain = `Nothing was sent: ${(e as Error).message}. Check the connection and try again.`;
+			if (echo !== null) removeStoredPending(paneId, echo);
+			if (detail.paneId === paneId) {
+				pendingSends = pendingSends.filter((p) => p.id !== echo);
+				uncertain = `Delivery could not be verified: ${(e as Error).message}. Check before sending again.`;
+			}
 		} finally {
 			busy = false;
 			sendingIndex = -1;
@@ -2046,6 +2062,7 @@
 
 	/** Arrow presses must reach the terminal in order, even on a fast repeat. */
 	let pickerKeyQueue: Promise<unknown> = Promise.resolve();
+	const pickerPane = $derived(detail.paneId);
 
 	function ownsPickerKey(target: EventTarget | null, key: string): boolean {
 		if (!(target instanceof Element)) return false;
@@ -2071,7 +2088,7 @@
 	 * over the conversation: digits there are text, not an answer.
 	 */
 	$effect(() => {
-		const originPane = detail.paneId;
+		const originPane = pickerPane;
 		const originDialog = pickerKey;
 		if (
 			!wideScreen ||
@@ -2107,7 +2124,7 @@
 				.then(async () => {
 					if (!valid()) return;
 					if (shortcut.kind === 'key') {
-						await sendKeys([shortcut.key], originPane);
+						if (!(await sendKeys([shortcut.key], originPane))) active = false;
 						return;
 					}
 					// Arrows finish first. Never confirm an index read before their POSTs.
@@ -4107,8 +4124,8 @@
 		:global(.transcript-rows > *) {
 			content-visibility: auto;
 			contain-intrinsic-block-size: auto 5rem;
-			padding-inline: 8px;
-			margin-inline: -8px;
+			padding-inline: 16px;
+			margin-inline: -16px;
 		}
 	}
 
