@@ -227,3 +227,31 @@ describe('cached permission identity (pre-existing defect)', () => {
 		}
 	});
 });
+
+it('revokes an already-live cached connection before reuse or command dispatch', async () => {
+	const { ensureConnection, connectionFor, runOn } = await import('./connections');
+	const pending = ensureConnection('a');
+	await vi.waitFor(() => expect(ssh.spawned).toHaveLength(1));
+	ssh.spawned[0].child.stdout.emit('data', '/fixture/home');
+	ssh.spawned[0].child.emit('exit', 0);
+	await vi.waitFor(() => expect(ssh.spawned).toHaveLength(2));
+	const forward = ssh.spawned[1];
+	const socket = forward.args[forward.args.indexOf('-L') + 1].split(':')[0];
+	writeFileSync(socket, 'fixture socket');
+	forward.child.emit('exit', 0);
+	expect(await pending).not.toBeNull();
+	expect(connectionFor('a')).toBeDefined();
+	const previous = policy.machines;
+	try {
+		policy.machines = [{ ...MACHINE, enabled: false }];
+		expect(await ensureConnection('a')).toBeNull();
+		expect(await runOn(MACHINE, 'true')).toBeNull();
+		policy.machines = [{ ...MACHINE, target: 'replacement' }];
+		expect(connectionFor('a')).toBeUndefined();
+		policy.machines = [{ ...MACHINE, session: 'replacement' }];
+		expect(connectionFor('a')).toBeUndefined();
+		expect(ssh.spawned).toHaveLength(2);
+	} finally {
+		policy.machines = previous;
+	}
+});
