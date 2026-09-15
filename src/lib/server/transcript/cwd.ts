@@ -31,7 +31,8 @@ const MAX_LINES = 2000;
  */
 function cwdOf(line: unknown): string {
 	if (typeof line !== 'object' || line === null) return '';
-	const row = line as { cwd?: unknown; payload?: { cwd?: unknown } };
+	const row = line as { isSidechain?: boolean; cwd?: unknown; payload?: { cwd?: unknown } };
+	if (row.isSidechain === true) return '';
 	if (typeof row.cwd === 'string' && row.cwd) return row.cwd;
 	const nested = row.payload?.cwd;
 	return typeof nested === 'string' && nested ? nested : '';

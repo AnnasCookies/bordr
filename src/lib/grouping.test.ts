@@ -357,3 +357,22 @@ describe('list filters', () => {
 		expect(partitionAgents(REPOS, 'none', 'status-title', null).groups[0].agents).toHaveLength(3);
 	});
 });
+
+it('does not hold a same-word approval for a different subject or write-in meaning', () => {
+	const picker = {
+		question: 'Proceed?',
+		context: ['tool A'],
+		multi: false,
+		options: [{ index: 1, label: 'Yes', selected: true }]
+	};
+	const mark = { key: pickerKey(picker), at: 1000, label: 'Yes' };
+	expect(answerSettled(mark, { ...picker, context: ['tool B'] }, 2000, 8000)).toBe(false);
+	expect(
+		answerSettled(
+			mark,
+			{ ...picker, options: [{ index: 1, label: 'Yes', selected: true, writeIn: true }] },
+			2000,
+			8000
+		)
+	).toBe(false);
+});

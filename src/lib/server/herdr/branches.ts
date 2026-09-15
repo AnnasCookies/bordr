@@ -1,7 +1,7 @@
 import { resolve } from 'node:path';
 import { execFile, execFileSync } from 'node:child_process';
 import { readFileSync } from 'node:fs';
-import { runOn, shellQuote } from './connections';
+import { runOn, shellQuote, connectionKey } from './connections';
 import type { Machine } from './machines';
 
 /**
@@ -155,7 +155,7 @@ export async function branchesFor(
 	const now = Date.now();
 
 	for (const cwd of new Set(cwds.filter(Boolean))) {
-		const hit = cache.get(`${machine?.id ?? ''}\0${cwd}`);
+		const hit = cache.get(`${machine ? connectionKey(machine) : ''}\0${cwd}`);
 		if (hit && now - hit.at < TTL_MS) {
 			if (hit.info.branch) out.set(cwd, hit.info);
 		} else stale.push(cwd);
@@ -167,7 +167,7 @@ export async function branchesFor(
 		const info = found.get(cwd) ?? NO_BRANCH;
 		// Cached either way: "not a repo" is an answer, and re-proving it every
 		// four seconds is the same waste as re-reading a branch.
-		cache.set(`${machine?.id ?? ''}\0${cwd}`, { at: now, info });
+		cache.set(`${machine ? connectionKey(machine) : ''}\0${cwd}`, { at: now, info });
 		if (info.branch) out.set(cwd, info);
 	}
 	return out;

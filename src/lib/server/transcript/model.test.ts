@@ -87,3 +87,16 @@ it('recovers middle switches and invalidates for append, truncation and replacem
 		await rm(dir, { recursive: true, force: true });
 	}
 });
+
+it('ignores sidechain model records owned by a child conversation', () => {
+	expect(
+		parseModel(
+			[
+				{ type: 'assistant', message: { model: 'parent-opus' } },
+				{ type: 'assistant', isSidechain: true, message: { model: 'child-haiku' } }
+			]
+				.map((row) => JSON.stringify(row))
+				.join('\n')
+		)
+	).toBe('parent-opus');
+});

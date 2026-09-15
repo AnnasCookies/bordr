@@ -53,3 +53,11 @@ describe('agentCwd', () => {
 		expect(agentCwd(line({ type: 'user', cwd: 42 }))).toBe('');
 	});
 });
+
+it('ignores a sidechain worktree when selecting the parent cwd', () => {
+	expect(
+		agentCwd(
+			[{ cwd: '/parent-repo' }, { cwd: '/child-repo', isSidechain: true }].map(line).join('\n')
+		)
+	).toBe('/parent-repo');
+});

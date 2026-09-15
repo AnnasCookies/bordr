@@ -27,6 +27,9 @@
 		dictating = false,
 		onkeys,
 		onmic,
+		onsubmit,
+		onrestore,
+		input = $bindable(),
 		busy = false
 	}: {
 		paneId: string;
@@ -41,14 +44,16 @@
 		lines?: number;
 		mono?: number;
 		dictating?: boolean;
-		onkeys: (keys: string[]) => Promise<void> | void;
+		onkeys: (keys: string[], paneId: string) => Promise<boolean>;
+		onsubmit?: () => Promise<void>;
+		onrestore: (paneId: string, text: string) => void;
+		input?: HTMLInputElement;
 		onmic?: () => void;
 		busy?: boolean;
 	} = $props();
 
 	let text = $state('');
 	let screen = $state<HTMLElement | undefined>();
-	let input = $state<HTMLInputElement | undefined>();
 	let stuck = $state(true);
 
 	/** The pane the screen on show belongs to. */
@@ -190,54 +195,60 @@
 	let queue: Promise<void> = Promise.resolve();
 	let failed = $state(false);
 
-	/** Serialised: two keystrokes racing would arrive in either order. */
-	function enqueue(work: () => Promise<boolean>) {
+	// Pane changes invalidate every queued continuation, including an A → B → A trip.
+	let generation = 0;
+	$effect(() => {
+		void paneId;
+		generation++;
+		return () => {
+			generation++;
+		};
+	});
+
+	function dispatch(keys: string[], flush = false) {
+		if (composing || busy) return;
+		const origin = paneId;
+		const epoch = generation;
+		const chunk = flush ? draft : '';
+		if (flush) draft = '';
+		const valid = () => generation === epoch && paneId === origin;
 		queue = queue.then(async () => {
-			failed = !(await work());
+			if (!valid()) {
+				if (chunk) onrestore(origin, chunk);
+				return;
+			}
+			let typed = !chunk;
+			try {
+				if (chunk) {
+					const res = await fetch(`/api/agents/${encodeURIComponent(origin)}/type`, {
+						method: 'POST',
+						headers: { 'content-type': 'application/json' },
+						body: JSON.stringify({ text: chunk })
+					});
+					if (!res.ok) throw new Error('type refused');
+					typed = true;
+				}
+				if (valid()) {
+					const ok = await onkeys(keys, origin);
+					if (valid()) {
+						failed = !ok;
+						if (!ok) generation++;
+					}
+				}
+			} catch {
+				if (!typed) onrestore(origin, chunk);
+				if (valid()) {
+					failed = true;
+					generation++;
+				}
+			}
 		});
-		return queue;
-	}
-
-	async function type(chunk: string): Promise<boolean> {
-		try {
-			const res = await fetch(`/api/agents/${encodeURIComponent(paneId)}/type`, {
-				method: 'POST',
-				headers: { 'content-type': 'application/json' },
-				body: JSON.stringify({ text: chunk })
-			});
-			return res.ok;
-		} catch {
-			return false;
-		}
-	}
-
-	/**
-	 * Put what has been typed into the pane, once.
-	 *
-	 * Typing used to go through a character at a time so it appeared in the
-	 * harness's own box. It did — and every keystroke waited on a round trip,
-	 * which is unusable on a phone. The box now sits WHERE that line is drawn
-	 * instead, so the text is already in the right place on screen and only
-	 * has to reach the pane when the pane needs it: on Enter, and before Tab
-	 * or history, which cannot work on text the pane has never seen.
-	 */
-	async function flush(): Promise<boolean> {
-		if (composing || !draft) return true;
-		const chunk = draft;
-		draft = '';
-		let ok = true;
-		await enqueue(async () => {
-			ok = await type(chunk);
-			// Back in the box rather than lost.
-			if (!ok) draft = chunk + draft;
-			return ok;
-		});
-		return ok;
 	}
 
 	async function submit() {
-		if (!(await flush())) return;
-		await onkeys(['enter']);
+		if (composing || busy) return;
+		if (onsubmit) await onsubmit();
+		else dispatch(['enter'], true);
 		input?.focus();
 	}
 
@@ -251,7 +262,7 @@
 		// meant for whatever the pane already has on its line.
 		if (event.key === 'Backspace' && !draft) {
 			event.preventDefault();
-			void onkeys(['backspace']);
+			dispatch(['backspace']);
 			return;
 		}
 		// Arrows and tab belong to the pane while the prompt line is empty —
@@ -269,10 +280,7 @@
 		event.preventDefault();
 		// Completion and history act on the pane's line, so it has to be the
 		// pane's line first.
-		void (async () => {
-			if (key === 'tab' || key === 'up' || key === 'down') await flush();
-			await onkeys([key]);
-		})();
+		dispatch([key], key === 'tab' || key === 'up' || key === 'down');
 	}
 
 	/**
@@ -388,7 +396,7 @@
 				class="shrink-0 rounded-md border border-hairline px-1.5 py-0.5 font-mono text-[11px] text-muted"
 				title={key.k === 'shift+tab' ? 'Cycle the harness mode (Shift+Tab)' : key.k}
 				aria-label={key.k === 'shift+tab' ? 'Cycle the harness mode' : key.k}
-				onclick={() => onkeys([key.k])}>{key.l}</button
+				onclick={() => dispatch([key.k], key.k === 'tab')}>{key.l}</button
 			>
 		{/each}
 		{#if onmic}

@@ -41,7 +41,10 @@ export interface AgentSummary {
 	 * buttons without a per-pane fetch. Nullable because `AgentDetail`
 	 * narrows this to a full `Picker | null` and must stay assignable.
 	 */
-	picker?: Pick<Picker, 'question' | 'options' | 'multi'> | null;
+	picker?:
+		| (Pick<Picker, 'question' | 'options' | 'multi'> &
+				Partial<Pick<Picker, 'context' | 'axis' | 'answer'>>)
+		| null;
 	/**
 	 * A menu or panel is open on the terminal that bordr could not turn into
 	 * a picker (omp's model browser, Claude Code's /config): its footer, so

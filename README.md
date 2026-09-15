@@ -287,11 +287,16 @@ Already-installed units must be upgraded too: copy the updated
 path edits, run `systemctl --user daemon-reload`, then restart after publishing.
 For a custom `BORDR_LIVE_DIR`, set the unit's `ExecStart` to Bun plus
 `<BORDR_LIVE_DIR>/index.js`; changing the environment variable alone does not move
-the unit. The first publish migrates an existing directory; later symlink switches
-are atomic. Failed staging/installation leaves the active release untouched.
+the unit. An existing real directory requires the one-time command
+`bun scripts/publish-build.ts --migrate`: it stages first, stops the user `bordr`
+service, switches, and starts it. A failed activation restores the previous pathname
+and restarts the old release. Use the same stop/switch/start sequence for custom
+service managers. Normal publication refuses real directories; later symlink
+switches are atomic. Failed staging/installation leaves the active release untouched.
 Previous self-contained releases remain beside it in `<BORDR_LIVE_DIR>.releases`
 for rollback/running processes; remove old releases only after verifying no service
-uses them. Old hashed client assets are retained for up to seven days.
+uses them. Retired hashed client assets are retained for seven days after retirement, not
+from build time. Emitted-asset manifests keep inherited chunks from being renewed.
 
 Local OMP slash-command discovery remains automatic and invokes `OMP_BIN` (default
 `omp`) directly. This can execute installed extensions and session-start hooks;

@@ -15,7 +15,7 @@ Review every open PR independently of previous commentary, reconcile findings wi
 - [x] Relevant lint, type, unit and offline mobile/desktop gates.
 - [ ] Independent acceptance review (parent owns reviewer launch).
 - [ ] Post one consolidated comment only where useful; no empty approval comments.
-- [ ] Give overall findings and dependency-correct merge order.
+- [ ] Give overall findings and squash-compatible integration/fix PR plan targeting main.
 
 ## Baseline evidence
 
@@ -49,7 +49,7 @@ Review every open PR independently of previous commentary, reconcile findings wi
 - D1 resolved by parent: retain automatic local OMP discovery; document startup execution and retain remote prohibition.
 - D5 resolved: latest recorded model, cached by file identity/change metadata; append/truncation/replacement regressions. Remote tail limitations remain explicit.
 - D6 source inspection (installed public Pi 0.85.1 only): `setWorkingVisible(false)` can hide work while streaming; `IdleStatus.render()` emits blanks; editor accepts steering while active. Parent accepted discrepancy diagnostic rather than unsafe idle override. No live panes/config/sessions inspected.
-- D4 has no existing Waiting enum/label in source. Parent instructed not to invent one; explicit Waiting requirement remains pending clarification. Quiet unresolved children stay unfinished; Off keeps existing archive and All includes finished children.
+- D4 has no existing Waiting enum/label in source. Parent instructed not to invent one; default Herdr lifecycle explicitly accepted; no bespoke Waiting state. Quiet unresolved children stay unfinished; Off keeps existing archive and All includes finished children.
 - Final combined gates: typecheck 0 errors/warnings; full unit 850/850 across 103 files; lint passed; isolated adapter build passed; offline browser suite passed 22/22 across two repetitions (11 tests), plus strengthened 80-line diff check passed.
 - No push, PR creation/comment, GitHub merge, deployment or live-agent action performed.
 
@@ -66,12 +66,12 @@ Review every open PR independently of previous commentary, reconcile findings wi
 - Preserved #34 thinking timing, #37 grouped/priority ordering, width choices, #39 pointer ownership plus #38 RAF, existing machine inheritance and local/shared attachment ceiling. No stale fixes duplicated.
 - Additional offline checks exposed and corrected two implementation gaps: same-dialog refresh was invalidating queued Enter, and the bounded header's own >2,000 rows hid cwd. Native tail geometry needed 16px containment allowance, confirmed by browser bounding boxes.
 - Browser command: `bunx playwright test --config playwright.cold.config.ts --repeat-each=2` after `BORDR_BUILD_OUT=.e2e-build bun run build`; 22/22 passes on the 11-test suite at last run. Only invented route-intercepted payloads; HERDR_SOCKET and HERDR_ENDPOINTS are invalid fixture paths. Original live-dependent suites retained but not driven against live panes.
-- D4 follow-up: no Waiting field/label exists in the source/protocol mapping. Parent explicitly instructed not to invent one or infer it from silence; preserve actual Herdr working/idle/done. Parent is handling remaining user clarification.
+- D4 follow-up: no Waiting field/label exists in the source/protocol mapping. Parent explicitly instructed not to invent one or infer it from silence; preserve actual Herdr working/idle/done. User accepted this lifecycle; no open Waiting question.
 - Independent review and parent acceptance remain required before any push/new PR/comment; no staged leftovers at handoff.
 
 - Final corrective refs: `4d3e43f` publication/attic/docs; `2b28685` server metadata/lifecycle/queue/PR fixes; `c3a4940` UI/draft/swipe/drawer fixes; `2db1ba8` historical reload confirmations; `5ecb28a` dense-header cwd plus real detail-route regressions; `aadb79e` dialog refresh ownership, tails and offline browser fixtures. Integration and older-defect refs are recorded above.
 - Logs: `/tmp/bordr-check.log`, `/tmp/bordr-lint.log`, `/tmp/bordr-unit.log`, `/tmp/bordr-build.log`, `/tmp/bordr-browser.log`, `/tmp/bordr-browser-layout.log`. Intermediate failing checks were corrected, not counted as passing evidence.
 - Residual ceilings: model metadata streams changed local files in full (cached when unchanged); remote transcript/model metadata remains bounded; ambiguous queue occurrences stay unconfirmed; prior self-contained releases require operator cleanup after verifying no process uses them. No active service release was touched.
-- Final source/diff inspection: `git diff --check e19089a` clean; all original feature ancestry retained. Proposed eventual GitHub merge order remains #22 → #23 → … → #40, with no deployment of intermediate prefixes. Nothing published by this worker.
+- Final source/diff inspection: `git diff --check e19089a` clean; all original feature ancestry retained. Repository permits squash merges only: the integration/fix PR must target main and supersede the original stack merges; do not sequentially squash-merge #22–#40. Nothing published by this worker.
 
 - Additional direct regressions: the real service-worker activation handler is executed with invented hidden/visible clients and must never navigate either; an offline delayed tab-close proves captured split membership survives a refreshed empty tree. Final browser suite: 22/22, full unit: 850/850.

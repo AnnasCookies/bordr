@@ -123,3 +123,25 @@ it('tours interleaved split tabs repeatedly without a current-pane-dependent tra
 	}
 	expect(visited).toEqual(['a', 'c', 'b', 'a', 'c', 'b']);
 });
+
+it('keeps shells but never resurrects agents excluded by the list filter', () => {
+	expect(
+		swipeSequence(
+			['a'],
+			[
+				{
+					tabs: [
+						{
+							panes: [
+								{ paneId: 'a', hasAgent: true },
+								{ paneId: 'b', hasAgent: true },
+								{ paneId: 'shell', hasAgent: false }
+							]
+						},
+						{ panes: [{ paneId: 'c', hasAgent: true }] }
+					]
+				}
+			]
+		)
+	).toEqual(['a', 'shell']);
+});

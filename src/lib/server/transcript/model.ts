@@ -58,11 +58,14 @@ export function parseModel(jsonl: string): string {
 		}
 		if (parsed === null || typeof parsed !== 'object') continue;
 		const entry = parsed as {
+			isSidechain?: boolean;
 			type?: string;
 			model?: unknown;
 			modelId?: unknown;
 			message?: { model?: unknown; role?: string };
 		};
+
+		if (entry.isSidechain === true) continue;
 
 		// omp: an entry whose whole purpose is to record the change.
 		const changed = entry.modelId ?? entry.model;

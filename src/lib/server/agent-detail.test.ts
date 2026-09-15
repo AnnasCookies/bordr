@@ -33,7 +33,7 @@ vi.mock('$lib/server/herdr/connections', () => ({
 }));
 import { GET } from '../../routes/api/agents/[pane]/+server';
 import { toSummary } from '$lib/server/herdr';
-import { enrichAgents } from './enrich';
+import { enrichAgents, resetScreenCache } from './enrich';
 
 const dirs: string[] = [];
 afterEach(async () => {
@@ -117,4 +117,20 @@ it('preserves lifecycle on degraded snapshots and suppresses non-live OMP asks i
 	expect(fallback.degraded).toBe('no-adapter');
 	expect(fallback.status).toBe('working');
 	expect(fallback.statusDiagnostic).toBeUndefined();
+});
+
+it('preserves approval subject identity in Home summary projection', async () => {
+	resetScreenCache();
+	await local('claude', '');
+	fixture.visible = [
+		'╭──────────────────────────────────────────────╮',
+		'│ Bash command                                 │',
+		'│ echo synthetic-subject                       │',
+		'│ Do you want to proceed?                       │',
+		'│ ❯ 1. Yes                                     │',
+		'│   2. No                                      │',
+		'╰──────────────────────────────────────────────╯'
+	].join('\n');
+	const [summary] = await enrichAgents([toSummary(fixture.raw)]);
+	expect(summary.picker?.context).toContain('echo synthetic-subject');
 });

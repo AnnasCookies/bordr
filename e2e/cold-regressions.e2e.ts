@@ -48,9 +48,22 @@ const workspaces = [
 	}
 ];
 
-async function fixture(page: Page, prefs: Record<string, unknown> = {}) {
+async function fixture(
+	page: Page,
+	prefs: Record<string, unknown> = {},
+	fleet: typeof agents = agents
+) {
 	const state = {
+		agentData: fleet,
 		treeData: workspaces,
+		multi: false,
+		typeCalls: [] as { pane: string; text: string }[],
+		typeDelay: null as Promise<void> | null,
+		typeStatus: 200,
+		keyPanes: [] as string[],
+		promptCalls: [] as string[],
+		promptDelay: null as Promise<void> | null,
+		command: null as { name: string; message: string } | null,
 		controlDelay: null as Promise<void> | null,
 		controlCalls: 0,
 		extraBlocks: [] as unknown[],
@@ -103,6 +116,11 @@ async function fixture(page: Page, prefs: Record<string, unknown> = {}) {
 				onerror = null;
 				constructor() {
 					super();
+					window.addEventListener('fixture-agents', (event) =>
+						this.dispatchEvent(
+							new MessageEvent('agents', { data: JSON.stringify((event as CustomEvent).detail) })
+						)
+					);
 					setTimeout(
 						() => this.dispatchEvent(new MessageEvent('agents', { data: JSON.stringify(agents) })),
 						50
@@ -112,7 +130,7 @@ async function fixture(page: Page, prefs: Record<string, unknown> = {}) {
 			}
 			Object.defineProperty(window, 'EventSource', { value: FixtureSource });
 		},
-		{ agents, prefs }
+		{ agents: fleet, prefs }
 	);
 	await page.route('**/api/**', async (route) => {
 		const url = new URL(route.request().url());
@@ -123,13 +141,14 @@ async function fixture(page: Page, prefs: Record<string, unknown> = {}) {
 			state.trees++;
 			return respond({ workspaces: state.treeData });
 		}
-		if (path === '/api/agents') return respond({ agents });
+		if (path === '/api/agents') return respond({ agents: state.agentData });
 		if (path === '/api/control') {
 			state.controlCalls++;
 			await state.controlDelay;
 			return respond({ ok: true });
 		}
 		if (path.endsWith('/keys')) {
+			state.keyPanes.push(path.split('/')[3]);
 			state.keys.push(route.request().postDataJSON().keys);
 			await state.keyDelay;
 			state.selected = 2;
@@ -139,6 +158,16 @@ async function fixture(page: Page, prefs: Record<string, unknown> = {}) {
 			state.answers.push(route.request().postDataJSON());
 			await state.answerDelay;
 			return respond({ outcome: 'accepted', message: 'fixture refusal' }, state.answerStatus);
+		}
+		if (path.endsWith('/type')) {
+			state.typeCalls.push({ pane: path.split('/')[3], text: route.request().postDataJSON().text });
+			await state.typeDelay;
+			return respond({ message: 'fixture type refusal' }, state.typeStatus);
+		}
+		if (path.endsWith('/prompt') || path.endsWith('/image')) {
+			state.promptCalls.push(path);
+			await state.promptDelay;
+			return respond({ ok: true, command: state.command });
 		}
 		if (path.endsWith('/watch')) return respond({ watched: false });
 		if (path.endsWith('/read')) return respond({ text: 'fixture terminal\nline two' });
@@ -192,7 +221,7 @@ async function fixture(page: Page, prefs: Record<string, unknown> = {}) {
 							context: [],
 							numbered: true,
 							options: state.options.map((o) => ({ ...o, selected: o.index === state.selected })),
-							multi: false
+							multi: state.multi
 						}
 					: null
 			});
@@ -501,4 +530,276 @@ test('closing a hidden split tab captures membership before asynchronous tree ch
 	await page.evaluate(() => new Promise(requestAnimationFrame));
 	release();
 	await expect.poll(() => new URL(page.url()).pathname).toBe('/a/b');
+});
+
+test('terminal serializes empty Enter behind typing and cancels old-pane continuations', async ({
+	page
+}) => {
+	const state = await fixture(page, { paneView: 'terminal' });
+	state.picker = false;
+	await openPane(page);
+	const input = page.getByRole('textbox', { name: 'Send to this pane' });
+	let release!: () => void;
+	state.typeDelay = new Promise((r) => {
+		release = r;
+	});
+	await input.fill('first terminal text');
+	await input.press('Enter');
+	await input.press('Enter');
+	await expect.poll(() => state.typeCalls.length).toBe(1);
+	await page.waitForTimeout(100);
+	expect(state.keys).toEqual([]);
+	release();
+	await expect.poll(() => state.keys.length).toBe(2);
+	expect(state.keyPanes).toEqual(['a', 'a']);
+	state.typeDelay = new Promise((r) => {
+		release = r;
+	});
+	await input.fill('old pane text');
+	await input.press('Enter');
+	await input.fill('queued old draft');
+	await input.press('Tab');
+	await expect.poll(() => state.typeCalls.length).toBe(2);
+	await openPane(page, 'b');
+	await input.fill('new pane text');
+	release();
+	await page.waitForTimeout(200);
+	expect(state.typeCalls).toHaveLength(2);
+	expect(state.keys).toHaveLength(2);
+	await expect(input).toHaveValue('new pane text');
+	await expect
+		.poll(() => page.evaluate(() => localStorage.getItem('bordr-draft:a')))
+		.toContain('queued old draft');
+});
+
+test('terminal failed flush restores the original draft and never sends its key', async ({
+	page
+}) => {
+	const state = await fixture(page, { paneView: 'terminal' });
+	state.picker = false;
+	await openPane(page);
+	const input = page.getByRole('textbox', { name: 'Send to this pane' });
+	let release!: () => void;
+	state.typeDelay = new Promise((r) => {
+		release = r;
+	});
+	state.typeStatus = 409;
+	await input.fill('refused terminal');
+	await input.press('Tab');
+	await expect.poll(() => state.typeCalls.length).toBe(1);
+	await openPane(page, 'b');
+	await input.fill('new draft');
+	release();
+	await expect
+		.poll(() => page.evaluate(() => localStorage.getItem('bordr-draft:a')))
+		.toContain('refused terminal');
+	await expect(input).toHaveValue('new draft');
+	expect(state.keys).toEqual([]);
+});
+
+test('terminal write-in focuses its input and submits the selected row via answer', async ({
+	page
+}) => {
+	const state = await fixture(page, { paneView: 'terminal' });
+	await openPane(page);
+	await page.getByRole('button', { name: /Other/ }).click();
+	const input = page.getByRole('textbox', { name: 'Send to this pane' });
+	await expect(input).toBeFocused();
+	await input.fill('terminal write-in');
+	await input.press('Enter');
+	await expect.poll(() => state.answers).toEqual([{ index: 3, text: 'terminal write-in' }]);
+	expect(state.typeCalls).toEqual([]);
+	expect(state.keys).toEqual([]);
+});
+
+test('successful type into a question preserves newer unsent composer text', async ({ page }) => {
+	const state = await fixture(page);
+	await openPane(page);
+	const input = page.locator('textarea').first();
+	let release!: () => void;
+	state.typeDelay = new Promise((r) => {
+		release = r;
+	});
+	await input.fill('sent into question');
+	await input.press('Control+Enter');
+	await expect.poll(() => state.typeCalls.length).toBe(1);
+	await input.fill('NEWER UNSENT TEXT');
+	release();
+	await expect(page.getByRole('button', { name: 'Send', exact: true })).toBeEnabled();
+	await expect(input).toHaveValue('NEWER UNSENT TEXT');
+	await expect
+		.poll(() => page.evaluate(() => localStorage.getItem('bordr-draft:a')))
+		.toBe('NEWER UNSENT TEXT');
+});
+
+for (const kind of ['prompt', 'command', 'image', 'answer']) {
+	test(`acknowledged off-screen ${kind} persists its outcome on the originating pane`, async ({
+		page
+	}) => {
+		const state = await fixture(page);
+		state.picker = kind === 'answer';
+		if (kind === 'command') state.command = { name: 'reload', message: 'Fixture reload confirmed' };
+		await openPane(page);
+		let release!: () => void;
+		const held = new Promise<void>((r) => {
+			release = r;
+		});
+		if (kind === 'answer') {
+			state.answerDelay = held;
+			await page.getByRole('button', { name: /1 One/ }).click();
+		} else {
+			state.promptDelay = held;
+			if (kind === 'image')
+				await page.locator('input[type=file]').setInputFiles({
+					name: 'fixture.txt',
+					mimeType: 'text/plain',
+					buffer: Buffer.from('fixture')
+				});
+			await page
+				.locator('textarea')
+				.first()
+				.fill(kind === 'command' ? '/reload' : 'off-screen fixture send');
+			await page.locator('textarea').first().press('Control+Enter');
+		}
+		await expect
+			.poll(() => (kind === 'answer' ? state.answers.length : state.promptCalls.length))
+			.toBe(1);
+		await openPane(page, 'b');
+		release();
+		const stored = () =>
+			page.evaluate(() => JSON.parse(localStorage.getItem('bordr-pending:a') ?? '[]'));
+		await expect
+			.poll(async () => (await stored())[0]?.state)
+			.toBe(kind === 'command' ? 'accepted' : 'queued');
+		if (kind === 'command') expect((await stored())[0].receipt).toBe('Fixture reload confirmed');
+		await openPane(page, 'a');
+		expect((await stored())[0].state).not.toBe('unconfirmed');
+	});
+}
+
+test('multi-select Submit uses the verified submit operation, not the checkbox toggle key', async ({
+	page
+}) => {
+	const state = await fixture(page);
+	state.multi = true;
+	await openPane(page);
+	await page.getByRole('button', { name: 'Submit selection', exact: true }).click();
+	await expect.poll(() => state.answers).toEqual([{ submit: true }]);
+	expect(state.keys).toEqual([]);
+});
+
+for (const width of ['comfortable', 'wide', 'full']) {
+	test(`retained ${width} conversation width respects its cap while resizing`, async ({ page }) => {
+		const state = await fixture(page, { conversationWidth: width });
+		state.picker = false;
+		state.treeData = [
+			{
+				...workspaces[0],
+				tabs: [{ ...workspaces[0].tabs[0], panes: [workspaces[0].tabs[0].panes[0]] }]
+			}
+		];
+		await openPane(page);
+		const main = page.locator('.transcript-rows').locator('xpath=ancestor::main[1]');
+		for (const viewport of [1400, 1600]) {
+			await page.setViewportSize({ width: viewport, height: 900 });
+			const cap =
+				width === 'full'
+					? Infinity
+					: width === 'wide'
+						? viewport >= 1536
+							? 1280
+							: 1152
+						: viewport >= 1536
+							? 1024
+							: 896;
+			await expect
+				.poll(async () => main.evaluate((el) => el.getBoundingClientRect().width))
+				.toBeGreaterThan(0);
+			const sizes = await main.evaluate((el) => ({
+				main: el.getBoundingClientRect().width,
+				available: el.parentElement!.getBoundingClientRect().width
+			}));
+			expect(Math.abs(sizes.main - Math.min(sizes.available, cap))).toBeLessThan(2);
+		}
+	});
+}
+
+test('terminal failure cancels empty confirmations queued behind the failed text', async ({
+	page
+}) => {
+	const state = await fixture(page, { paneView: 'terminal' });
+	state.picker = false;
+	await openPane(page);
+	const input = page.getByRole('textbox', { name: 'Send to this pane' });
+	let release!: () => void;
+	state.typeDelay = new Promise((r) => {
+		release = r;
+	});
+	state.typeStatus = 409;
+	await input.fill('refused text');
+	await input.press('Enter');
+	await input.press('Enter');
+	await expect.poll(() => state.typeCalls.length).toBe(1);
+	release();
+	await expect(input).toHaveValue('refused text');
+	await page.waitForTimeout(100);
+	expect(state.keys).toEqual([]);
+	state.typeDelay = null;
+	state.typeStatus = 200;
+	await input.press('Enter');
+	await expect.poll(() => state.keys.length).toBe(1);
+});
+
+test('Home does not hide a same-word approval for a new subject during the receipt hold', async ({
+	page
+}) => {
+	const picker = {
+		question: 'Proceed?',
+		context: ['tool A'],
+		multi: false,
+		options: [
+			{ index: 1, label: 'Yes', selected: true },
+			{ index: 2, label: 'No', selected: false }
+		]
+	};
+	const fleet = [{ ...agents[0], status: 'blocked', picker }];
+	await fixture(page, {}, fleet);
+	await move(page, '/');
+	await page.getByRole('button', { name: '1. Yes', exact: true }).click();
+	await expect(page.getByText('sent “Yes”', { exact: true })).toBeVisible();
+	await page.evaluate(
+		(agents) => window.dispatchEvent(new CustomEvent('fixture-agents', { detail: agents })),
+		[{ ...fleet[0], seq: 2, picker: { ...picker, context: ['tool B'] } }]
+	);
+	await expect(page.getByRole('button', { name: '1. Yes', exact: true })).toBeVisible();
+});
+
+test.describe('filtered mobile navigation', () => {
+	test.use({ viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true });
+	test('swipes include shells but exclude idle agents outside the working list', async ({
+		page
+	}) => {
+		const state = await fixture(
+			page,
+			{ listFilter: 'working' },
+			agents.map((a) => ({ ...a, status: a.paneId === 'b' ? 'idle' : 'working' }))
+		);
+		state.picker = false;
+		await openPane(page);
+		await expect.poll(() => state.trees).toBeGreaterThan(0);
+		const cdp = await page.context().newCDPSession(page);
+		for (const pane of ['c', 'shell', 'a']) {
+			await cdp.send('Input.dispatchTouchEvent', {
+				type: 'touchStart',
+				touchPoints: [{ x: 90, y: 350 }]
+			});
+			await cdp.send('Input.dispatchTouchEvent', {
+				type: 'touchMove',
+				touchPoints: [{ x: 310, y: 350 }]
+			});
+			await cdp.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] });
+			await expect.poll(() => new URL(page.url()).pathname).toBe(`/a/${pane}`);
+			await page.waitForTimeout(350);
+		}
+	});
 });

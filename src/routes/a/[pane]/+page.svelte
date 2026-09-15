@@ -999,6 +999,19 @@
 		}
 	});
 
+	/** A resolved request belongs to its original pane, even when it is no longer visible. */
+	function acknowledgePending(paneId: string, id: number, patch: Partial<Pending>) {
+		const update = (items: Pending[]) => items.map((p) => (p.id === id ? { ...p, ...patch } : p));
+		if (detail.paneId === paneId) pendingSends = update(pendingSends);
+		try {
+			const key = pendingStorageKey(paneId);
+			const stored = JSON.parse(localStorage.getItem(key) ?? '[]');
+			if (Array.isArray(stored)) localStorage.setItem(key, JSON.stringify(update(stored)));
+		} catch {
+			// Persistence is best effort; the visible echo still receives the acknowledgment.
+		}
+	}
+
 	/** Remove an optimistic send after its request failed on a pane now off-screen. */
 	function removeStoredPending(paneId: string, id: number) {
 		const key = pendingStorageKey(paneId);
@@ -1921,6 +1934,13 @@
 		}
 	});
 
+	let terminalInput = $state<HTMLInputElement>();
+
+	function restoreTerminalDraft(paneId: string, text: string) {
+		const restored = draftStore?.restore(paneId, text) ?? text;
+		if (detail.paneId === paneId) draft = restored;
+	}
+
 	function startWriteIn(option: { index: number; label: string }) {
 		writeIn = {
 			index: option.index,
@@ -1929,11 +1949,11 @@
 			dialog: pickerKey
 		};
 		uncertain = null;
-		textarea?.focus();
+		(terminalInput ?? textarea)?.focus();
 	}
 
 	/** Resolves to whether the answer left, so a write-in draft survives one that did not. */
-	async function answer(index: number, text?: string): Promise<boolean> {
+	async function answer(index: number, text?: string, submit = false): Promise<boolean> {
 		const paneId = detail.paneId;
 		if (busy) return false;
 		busy = true;
@@ -1981,7 +2001,7 @@
 				fetch(`/api/agents/${encodeURIComponent(paneId)}/answer`, {
 					method: 'POST',
 					headers: { 'content-type': 'application/json' },
-					body: JSON.stringify({ index, text })
+					body: JSON.stringify(submit ? { submit: true } : { index, text })
 				})
 			);
 			const body = (await r.json().catch(() => null)) as {
@@ -1990,7 +2010,10 @@
 				message?: string;
 			} | null;
 			if (detail.paneId !== paneId) {
-				if (!r.ok && echo !== null) removeStoredPending(paneId, echo);
+				if (echo !== null) {
+					if (r.ok) acknowledgePending(paneId, echo, { state: 'queued', deliveredAt: Date.now() });
+					else removeStoredPending(paneId, echo);
+				}
 				return r.ok;
 			}
 			// Never silently pretend: if the screen did not confirm the
@@ -2251,12 +2274,11 @@
 		// optimistic bubble either — nothing has been said yet.
 		if (detail.picker && attachments.length === 0) {
 			const text = draft;
+			draftStore?.clear(paneId);
+			draft = '';
 			const typed = await typeIntoQuestion(paneId, text);
-			if (typed && detail.paneId === paneId) {
-				draftStore?.clear(paneId);
-				draft = '';
-				typedInto = true;
-			}
+			if (!typed) restoreTerminalDraft(paneId, text);
+			if (typed && detail.paneId === paneId) typedInto = true;
 			busy = false;
 			refreshSoon();
 			return;
@@ -2321,25 +2343,18 @@
 				const body = (await sent.json().catch(() => null)) as {
 					command?: { name?: string; message?: string } | null;
 				} | null;
-				if (optimistic && detail.paneId === paneId) {
-					pendingSends = pendingSends.map((p) =>
-						p.id === optimistic
-							? {
-									...p,
-									state: body?.command ? ('accepted' as const) : ('queued' as const),
-									deliveredAt: Date.now(),
-									...(body?.command?.message && { receipt: body.command.message })
-								}
-							: p
-					);
-				}
+				if (optimistic)
+					acknowledgePending(paneId, optimistic, {
+						state: body?.command ? 'accepted' : 'queued',
+						deliveredAt: Date.now(),
+						...(body?.command?.message && { receipt: body.command.message })
+					});
 			}
-			// Image prompts have no command response but are still queued normally.
-			if (hadAttachments && optimistic && detail.paneId === paneId) {
-				pendingSends = pendingSends.map((p) =>
-					p.id === optimistic ? { ...p, state: 'queued' as const, deliveredAt: Date.now() } : p
-				);
-			}
+			if (hadAttachments && optimistic)
+				acknowledgePending(paneId, optimistic, {
+					state: 'queued',
+					deliveredAt: Date.now()
+				});
 		} catch (e) {
 			if (optimistic) {
 				removeStoredPending(paneId, optimistic);
@@ -2984,7 +2999,10 @@
 				mono={prefs.value.monoSize}
 				{dictating}
 				{busy}
-				onkeys={(keys) => void sendKeys(keys)}
+				onkeys={sendKeys}
+				onsubmit={writeIn ? send : undefined}
+				onrestore={restoreTerminalDraft}
+				bind:input={terminalInput}
 				onmic={speechSupported ? toggleDictation : undefined}
 			/>
 		{:else}
@@ -3914,7 +3932,7 @@
 					<button
 						class="mt-2.5 flex w-full items-center justify-center gap-2 rounded-lg bg-ink py-3 text-[14px] font-medium text-card disabled:opacity-50"
 						disabled={busy}
-						onclick={() => sendKeys(['enter'])}
+						onclick={() => answer(-1, undefined, true)}
 					>
 						{#if busy}<Spinner size={14} label="Sending your selection" />{/if}
 						Submit selection

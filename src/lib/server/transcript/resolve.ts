@@ -1,3 +1,4 @@
+import { isRemote } from '$lib/server/herdr/address';
 import { getClient } from '$lib/server/herdr';
 import { activeOmpTranscript, type PaneProcessInfo } from './omp-active';
 import type { Adapter } from './types';
@@ -13,6 +14,8 @@ export async function resolveLocalTranscript(
 	agentKind: string,
 	reportedSession: string
 ): Promise<string | null> {
+	// A reported remote path never grants access to this host's files or processes.
+	if (isRemote(paneId)) return null;
 	if (agentKind === 'omp') {
 		try {
 			const result = await getClient().request<ProcessInfoResult>('pane.process_info', {

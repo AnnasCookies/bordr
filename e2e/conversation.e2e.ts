@@ -26,10 +26,13 @@ test('the key strip offers exactly the eight allowed keys, including enter', asy
 	}
 });
 
-test('desktop conversation uses all space beside the sidebar while resizing', async ({ page }) => {
+test('desktop conversation uses all space beside the sidebar with Full width', async ({ page }) => {
 	await page.addInitScript(() => {
-		// An old saved cap must not keep winning after the choice was removed.
-		localStorage.setItem('bordr-prefs', JSON.stringify({ conversationWidth: 'comfortable' }));
+		// Full fills the available width; Comfortable and Wide remain deliberate caps.
+		localStorage.setItem(
+			'bordr-prefs',
+			JSON.stringify({ conversationWidth: 'full', splitLayout: false })
+		);
 	});
 	await page.setViewportSize({ width: 1400, height: 900 });
 	const href = await firstPane(page);

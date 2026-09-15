@@ -1,3 +1,4 @@
+import { pickerIdentity } from './picker-shortcut';
 import type { AgentStatus, AgentSummary } from '$lib/types';
 import type { GroupBy, SortBy } from '$lib/prefs.svelte';
 
@@ -245,9 +246,7 @@ export interface AnsweredMark {
 /** A picker's identity: its question and options, so the NEXT question is never mistaken for it. */
 export function pickerKey(picker: ListPicker): string {
 	if (!picker?.options?.length) return '';
-	return [picker.question ?? '', ...picker.options.map((o) => `${o.index}:${o.label}`)].join(
-		'\u0000'
-	);
+	return pickerIdentity(picker);
 }
 
 /**

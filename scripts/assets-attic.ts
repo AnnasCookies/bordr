@@ -23,7 +23,7 @@
  * belongs to a session that is long gone.
  */
 
-import { cp, mkdir, readdir, rm, stat, utimes } from 'node:fs/promises';
+import { cp, mkdir, readdir, rm, stat, utimes, readFile, writeFile } from 'node:fs/promises';
 import { existsSync } from 'node:fs';
 import { dirname, join, relative } from 'node:path';
 
@@ -41,7 +41,7 @@ const ATTIC = join('.attic', OUT.replace(/[^\w.-]/g, '_'), 'immutable');
 const KEEP_MS = 7 * 24 * 60 * 60 * 1000;
 
 /** Every file under a directory, as paths relative to it. */
-async function walk(root: string, base = root): Promise<string[]> {
+export async function walk(root: string, base = root): Promise<string[]> {
 	if (!existsSync(root)) return [];
 	const out: string[] = [];
 	for (const entry of await readdir(root, { withFileTypes: true })) {
@@ -52,14 +52,29 @@ async function walk(root: string, base = root): Promise<string[]> {
 	return out;
 }
 
+/** Emitted assets, not inherited attic files. Missing manifest is a one-time legacy release. */
+export async function emittedAssets(out: string): Promise<Set<string>> {
+	try {
+		return new Set(JSON.parse(await readFile(join(out, '.emitted-assets.json'), 'utf8')));
+	} catch (error) {
+		if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error;
+		return new Set(await walk(join(out, 'client', '_app', 'immutable')));
+	}
+}
+
 async function stash(): Promise<void> {
 	const files = await walk(LIVE);
+	const emitted = await emittedAssets(OUT);
 	let added = 0;
 	for (const file of files) {
 		const to = join(ATTIC, file);
 		await mkdir(dirname(to), { recursive: true });
-		if (!existsSync(to)) {
+		if (emitted.has(file) || !existsSync(to)) {
 			await cp(join(LIVE, file), to, { preserveTimestamps: true });
+			if (emitted.has(file)) {
+				const now = new Date();
+				await utimes(to, now, now);
+			}
 			added += 1;
 		}
 	}
@@ -76,6 +91,7 @@ async function stash(): Promise<void> {
 }
 
 async function restore(): Promise<void> {
+	await writeFile(join(OUT, '.emitted-assets.json'), JSON.stringify(await walk(LIVE)));
 	// Before restoring old chunks, refresh only files this build actually emitted.
 	for (const file of await walk(LIVE)) {
 		const to = join(ATTIC, file);
@@ -100,10 +116,12 @@ async function restore(): Promise<void> {
 	console.error(`assets-attic: put back ${put} asset(s) an open page may still want`);
 }
 
-const mode = process.argv[2];
-if (mode === 'stash') await stash();
-else if (mode === 'restore') await restore();
-else {
-	console.error('usage: assets-attic.ts stash|restore');
-	process.exit(2);
+if (import.meta.main) {
+	const mode = process.argv[2];
+	if (mode === 'stash') await stash();
+	else if (mode === 'restore') await restore();
+	else {
+		console.error('usage: assets-attic.ts stash|restore');
+		process.exit(2);
+	}
 }

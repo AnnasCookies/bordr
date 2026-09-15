@@ -1,3 +1,4 @@
+import { isRemote } from '$lib/server/herdr/address';
 import { error, json } from '@sveltejs/kit';
 import { rawAgent, rawPane, toSummary } from '$lib/server/herdr';
 import { adapterFor } from '$lib/server/transcript';
@@ -17,6 +18,7 @@ import type { RequestHandler } from './$types';
  * is ever open at a time, and a session can hold a dozen of them.
  */
 export const GET: RequestHandler = async ({ params }) => {
+	if (isRemote(params.pane)) throw error(404, 'remote sub-agent transcripts are not supported');
 	const raw = (await rawAgent(params.pane)) ?? (await rawPane(params.pane));
 	if (!raw) throw error(404, `no pane ${params.pane}`);
 	const summary = toSummary(raw);

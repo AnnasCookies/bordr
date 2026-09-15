@@ -1,9 +1,9 @@
 import { getClient } from './index';
 import type { HerdrClient } from './client';
-import { activeConnections } from './connections';
+import { activeConnections, connectionKey } from './connections';
 import { branchesFor } from './branches';
 import { layoutsFor } from './layout';
-import type { Machine } from './machines';
+import { listMachines, type Machine } from './machines';
 import { formatPane } from './address';
 import type { PaneNode, TabLayout, TabNode, WorkspaceNode } from '$lib/types';
 
@@ -37,30 +37,39 @@ function refreshMachines(): void {
 		} catch {
 			return;
 		}
-		const live = new Set(connections.map((c) => c.machine.id));
+		const live = new Set(connections.map((c) => connectionKey(c.machine)));
 		// Forget a machine that has gone away, so its panes stop being listed.
 		for (const id of [...cached.keys()]) if (!live.has(id)) cached.delete(id);
 
 		await Promise.all(
 			connections.map(async (c) => {
-				const entry = cached.get(c.machine.id);
+				const entry = cached.get(connectionKey(c.machine));
 				if (entry && Date.now() - entry.at < REFRESH_MS) return;
-				if (refreshing.has(c.machine.id)) return;
-				refreshing.add(c.machine.id);
+				if (refreshing.has(connectionKey(c.machine))) return;
+				refreshing.add(connectionKey(c.machine));
 				try {
 					const workspaces = await treeFor(c.client, c.machine.id, c.machine.label, c.machine);
-					cached.set(c.machine.id, { at: Date.now(), workspaces });
+					if (enabledKeys().has(connectionKey(c.machine)))
+						cached.set(connectionKey(c.machine), { at: Date.now(), workspaces });
 				} catch (e) {
 					// Named, not swallowed: a machine that answers the forward
 					// but not the protocol is a different problem from one that
 					// is off. Its last good tree stands until it is gone.
 					console.error(`bordr: machine ${c.machine.label} tree failed —`, String(e));
 				} finally {
-					refreshing.delete(c.machine.id);
+					refreshing.delete(connectionKey(c.machine));
 				}
 			})
 		);
 	})();
+}
+
+function enabledKeys(): Set<string> {
+	return new Set(
+		listMachines()
+			.filter((m) => m.enabled)
+			.map(connectionKey)
+	);
 }
 
 export async function paneTree(): Promise<WorkspaceNode[]> {
@@ -68,7 +77,10 @@ export async function paneTree(): Promise<WorkspaceNode[]> {
 	// one that has to be right.
 	const local = await treeFor(getClient(), '', '');
 	refreshMachines();
-	const remote = [...cached.values()].flatMap((entry) => entry.workspaces);
+	const enabled = enabledKeys();
+	const remote = [...cached]
+		.filter(([key]) => enabled.has(key))
+		.flatMap(([, entry]) => entry.workspaces);
 	return [...local, ...remote];
 }
 

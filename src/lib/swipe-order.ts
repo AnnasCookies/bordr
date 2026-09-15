@@ -19,7 +19,7 @@
 
 /** Only the shape this reads, so a test can build a tree without the rest. */
 interface TabShape {
-	panes: readonly { paneId: string }[];
+	panes: readonly { paneId: string; hasAgent?: boolean }[];
 }
 
 /**
@@ -51,7 +51,11 @@ export function swipeSequence(
 	order: readonly string[],
 	workspaces: readonly { tabs: readonly TabShape[] }[]
 ): string[] {
-	const groups = workspaces.flatMap((w) => w.tabs.map((t) => t.panes.map((p) => p.paneId)));
+	const groups = workspaces.flatMap((w) =>
+		w.tabs.map((t) =>
+			t.panes.filter((p) => !p.hasAgent || order.includes(p.paneId)).map((p) => p.paneId)
+		)
+	);
 	const byPane = new Map(groups.flatMap((group) => group.map((id) => [id, group] as const)));
 	const seen = new Set<string>();
 	const ring: string[] = [];

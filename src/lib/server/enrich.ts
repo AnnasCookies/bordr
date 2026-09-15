@@ -148,8 +148,7 @@ async function previewFor(summary: AgentSummary, sessionId: string | undefined):
 					idlePreview = previewFrom(messages, 'idle');
 					settled = piTranscriptSettled(messages);
 					const pending = pendingAsk(messages);
-					if (pending && summary.agent !== 'omp')
-						ask = { question: pending.question, options: pending.options, multi: false };
+					if (pending && summary.agent !== 'omp') ask = pending;
 				}
 			}
 		} catch {
@@ -259,7 +258,14 @@ export async function enrichAgents(agents: AgentSummary[]): Promise<AgentSummary
 					seq: summary.seq,
 					at: now,
 					picker: picker
-						? { question: picker.question, options: picker.options, multi: picker.multi }
+						? {
+								question: picker.question,
+								options: picker.options,
+								multi: picker.multi,
+								context: picker.context,
+								axis: picker.axis,
+								answer: picker.answer
+							}
 						: null,
 					// A menu the person opened is not a blocked agent, so the
 					// status stands; the row just says where to drive it.
