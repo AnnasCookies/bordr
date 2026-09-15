@@ -275,11 +275,34 @@ On macOS there is no systemd; a `launchd` agent or a herdr pane that runs
 
 To deploy a change, `bun run deploy` builds, copies the result to
 `~/.local/lib/bordr` (`BORDR_LIVE_DIR` moves it) with its own production
-dependencies, restarts the service and smoke tests it. The unit runs that copy
+dependencies, stages the release completely, then switches the release symlink,
+restarts the service and smoke tests it. The unit runs that copy
 rather than `build/`, so a build for a check never swaps files under the running
 app. A phone that has the app open keeps running the old code until it
 reloads, so the app checks for a new build every 30 seconds (and whenever it
 comes back to the foreground) and offers a "tap to reload" pill.
+
+Already-installed units must be upgraded too: copy the updated
+`deploy/bordr.service`, retain your `WorkingDirectory`/`EnvironmentFile` and Bun
+path edits, run `systemctl --user daemon-reload`, then restart after publishing.
+For a custom `BORDR_LIVE_DIR`, set the unit's `ExecStart` to Bun plus
+`<BORDR_LIVE_DIR>/index.js`; changing the environment variable alone does not move
+the unit. The first publish migrates an existing directory; later symlink switches
+are atomic. Failed staging/installation leaves the active release untouched.
+Previous self-contained releases remain beside it in `<BORDR_LIVE_DIR>.releases`
+for rollback/running processes; remove old releases only after verifying no service
+uses them. Old hashed client assets are retained for up to seven days.
+
+Local OMP slash-command discovery remains automatic and invokes `OMP_BIN` (default
+`omp`) directly. This can execute installed extensions and session-start hooks;
+it is not a read-only filesystem listing. Remote panes never run that probe or
+scan their project paths on this host.
+
+Model badges show the latest recorded model metadata, including local switches
+outside the visible transcript window. Remote reads remain bounded; if no model
+record is available, the badge is unknown rather than using an opening guess.
+Pi's customizable status display cannot prove idle. Herdr lifecycle remains
+authoritative; a stopped transcript conflicting with Working is diagnostic only.
 
 ### If something is wrong
 
@@ -322,8 +345,10 @@ There is no login. Served artifacts render in
 a sandboxed opaque origin and cannot call bordr's APIs; the file browser is
 traversal- and symlink-proofed to its configured roots and refuses dotfiles at
 the resolver, so `.env` cannot be listed or fetched; the keypad endpoint
-accepts only inert navigation keys; uploads are size-capped and their
-declared MIME type is allow-listed.
+accepts only inert navigation keys. Upload ingress accepts any file type within
+the size limit; same-origin download egress permits only verified raster images.
+Attachments are host-local/shared-storage paths: a remote pane must already
+share those paths. Bordr does not transfer files to a remote machine.
 If you ever expose bordr beyond your tailnet, add real authentication first.
 
 ## Development

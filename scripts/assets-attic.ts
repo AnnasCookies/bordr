@@ -59,13 +59,9 @@ async function stash(): Promise<void> {
 		const to = join(ATTIC, file);
 		await mkdir(dirname(to), { recursive: true });
 		if (!existsSync(to)) {
-			await cp(join(LIVE, file), to);
+			await cp(join(LIVE, file), to, { preserveTimestamps: true });
 			added += 1;
 		}
-		// Touched whether or not it was copied, so "last seen in a build" is
-		// what ages a file out, not when it was first written.
-		const now = new Date();
-		await utimes(to, now, now);
 	}
 
 	let pruned = 0;
@@ -80,12 +76,25 @@ async function stash(): Promise<void> {
 }
 
 async function restore(): Promise<void> {
+	// Before restoring old chunks, refresh only files this build actually emitted.
+	for (const file of await walk(LIVE)) {
+		const to = join(ATTIC, file);
+		await mkdir(dirname(to), { recursive: true });
+		await cp(join(LIVE, file), to);
+		const now = new Date();
+		await utimes(to, now, now);
+	}
 	let put = 0;
 	for (const file of await walk(ATTIC)) {
+		const from = join(ATTIC, file);
+		if (Date.now() - (await stat(from)).mtimeMs > KEEP_MS) {
+			await rm(from);
+			continue;
+		}
 		const to = join(LIVE, file);
 		if (existsSync(to)) continue;
 		await mkdir(dirname(to), { recursive: true });
-		await cp(join(ATTIC, file), to);
+		await cp(from, to, { preserveTimestamps: true });
 		put += 1;
 	}
 	console.error(`assets-attic: put back ${put} asset(s) an open page may still want`);
