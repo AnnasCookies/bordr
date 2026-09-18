@@ -205,6 +205,60 @@ test('desktop split owns the terminal grid and writes canonical dividers', async
 	await expect.poll(() => geometryReleases).toBeGreaterThan(0);
 });
 
+test('mobile leases a phone-sized grid without following the software keyboard', async ({
+	page
+}) => {
+	type GeometryWrite = {
+		action: 'claim' | 'update' | 'release';
+		cols?: number;
+		rows?: number;
+		leaseId?: string;
+	};
+	const writes: GeometryWrite[] = [];
+	await page.route('**/api/geometry', async (route) => {
+		const body = route.request().postDataJSON() as GeometryWrite;
+		writes.push(body);
+		if (body.action === 'release') {
+			await route.fulfill({ json: { type: 'tab_viewport_released', released: true } });
+			return;
+		}
+		await route.fulfill({
+			json: {
+				type: 'tab_viewport_lease',
+				lease_id: 'mobile-test-lease',
+				cols: body.cols,
+				rows: body.rows,
+				ttl_ms: 15_000
+			}
+		});
+	});
+
+	await page.setViewportSize({ width: 390, height: 844 });
+	const href = await firstPane(page);
+	if (!href) test.skip(true, 'no agents running');
+	await page.goto(href as string);
+	await expect
+		.poll(() => writes.find((write) => write.action === 'claim')?.cols ?? 0)
+		.toBeGreaterThan(0);
+	const portrait = writes.find((write) => write.action === 'claim')!;
+	expect(portrait.rows).toBeGreaterThan(10);
+
+	const updatesBeforeKeyboard = writes.filter((write) => write.action === 'update').length;
+	await page.setViewportSize({ width: 390, height: 500 });
+	await page.waitForTimeout(600);
+	expect(writes.filter((write) => write.action === 'update')).toHaveLength(updatesBeforeKeyboard);
+
+	await page.setViewportSize({ width: 844, height: 390 });
+	await expect
+		.poll(() => writes.filter((write) => write.action === 'update').length)
+		.toBeGreaterThan(updatesBeforeKeyboard);
+	const landscape = writes.filter((write) => write.action === 'update').at(-1)!;
+	expect(landscape.cols).not.toBe(portrait.cols);
+
+	await page.getByRole('link', { name: 'Back to agents', exact: true }).click();
+	await expect.poll(() => writes.some((write) => write.action === 'release')).toBe(true);
+});
+
 test('desktop picker questions take arrow and number keys from an empty composer', async ({
 	page
 }) => {
@@ -418,7 +472,7 @@ test('swipe to cycle can be turned off', async ({ page }) => {
  */
 async function swipe(page: import('@playwright/test').Page, dx: number) {
 	const before = new URL(page.url()).pathname;
-	await page.locator('header').evaluate((target, dx) => {
+	await page.locator('[data-viewport-header]').evaluate((target, dx) => {
 		const fire = (type: string, cx: number) => {
 			const touch = new Touch({ identifier: 1, target, clientX: cx, clientY: 430 });
 			target.dispatchEvent(

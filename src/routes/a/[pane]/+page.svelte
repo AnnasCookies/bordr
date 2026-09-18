@@ -141,26 +141,23 @@
 		return treeHolds(node.first, paneId) || treeHolds(node.second, paneId);
 	}
 
-	const splitLayout = $derived.by(() => {
-		if (!prefs.value.splitPanes) return undefined;
+	/** The current tab layout also drives mobile geometry when its split is not drawn. */
+	const viewportTab = $derived.by(() => {
 		for (const workspace of workspaces) {
 			for (const tab of workspace.tabs) {
 				if (!tab.panes.some((p) => p.paneId === detail.paneId)) continue;
-				if (tab.panes.length <= 1) return undefined;
-				// The split renders the conversation only in the tile whose leaf
-				// is this pane. If the rebuilt tree does not hold it — a layout
-				// herdr reported oddly, or a snapshot fetched a beat before a
-				// pane was added — that tile never renders and the screen has no
-				// transcript and no composer, silently. Falling back to the
-				// plain conversation loses the split and keeps the app usable.
 				const tabLayout = tab.layout;
 				return tabLayout && treeHolds(tabLayout.tree, detail.paneId)
-					? { ...tabLayout, tabId: tab.tabId }
+					? { ...tabLayout, tabId: tab.tabId, paneCount: tab.panes.length }
 					: undefined;
 			}
 		}
 		return undefined;
 	});
+
+	const splitLayout = $derived(
+		prefs.value.splitPanes && viewportTab && viewportTab.paneCount > 1 ? viewportTab : undefined
+	);
 
 	async function loadLayout() {
 		try {
@@ -2935,7 +2932,7 @@
 
 {#snippet conversation()}
 	<div class="flex min-h-dvh flex-col lg:h-full lg:min-h-0 lg:flex-1" bind:this={swipeRoot}>
-		<header class="sticky top-0 z-10 border-b border-hairline bg-page">
+		<header data-viewport-header class="sticky top-0 z-10 border-b border-hairline bg-page">
 			{#if !wideScreen}
 				{@render paneHeader()}
 			{/if}
@@ -3037,25 +3034,27 @@
 				prompt line under it. The transcript view is the one that
 				interprets; this one shows.
 			-->
-			<PaneTerminal
-				paneId={detail.paneId}
-				agent={detail.agent}
-				ask={detail.picker && detail.picker.options.length > 0 && !askHidden
-					? pickerCard
-					: undefined}
-				suggestion={detail.suggestion ?? ''}
-				bind:draft
-				mono={prefs.value.monoSize}
-				{dictating}
-				{busy}
-				onkeys={sendKeys}
-				dialog={pickerKey}
-				{writeIn}
-				onsubmit={sendTerminalAnswer}
-				onrestore={restoreTerminalDraft}
-				bind:input={terminalInput}
-				onmic={speechSupported ? toggleDictation : undefined}
-			/>
+			<div data-viewport-terminal-body class="flex min-h-0 flex-1 flex-col">
+				<PaneTerminal
+					paneId={detail.paneId}
+					agent={detail.agent}
+					ask={detail.picker && detail.picker.options.length > 0 && !askHidden
+						? pickerCard
+						: undefined}
+					suggestion={detail.suggestion ?? ''}
+					bind:draft
+					mono={prefs.value.monoSize}
+					{dictating}
+					{busy}
+					onkeys={sendKeys}
+					dialog={pickerKey}
+					{writeIn}
+					onsubmit={sendTerminalAnswer}
+					onrestore={restoreTerminalDraft}
+					bind:input={terminalInput}
+					onmic={speechSupported ? toggleDictation : undefined}
+				/>
+			</div>
 		{:else}
 			<!--
 				The TRANSCRIPT moves, not the scroll container: the header above is
@@ -3123,6 +3122,7 @@
 			-->
 			<div class="flex flex-1 flex-col lg:min-h-0 lg:overflow-y-auto" bind:this={scrollRoot}>
 				<main
+					data-viewport-content
 					class="relative mx-auto w-full flex-1 px-4 pt-3 pb-2 lg:mx-0 lg:px-6 {widths} {dragging
 						? 'bg-page'
 						: ''} {dragging || leaving
@@ -3588,7 +3588,7 @@
 				</main>
 			</div>
 
-			<div class="sticky bottom-0 z-10 w-full {widths}">
+			<div data-viewport-composer class="sticky bottom-0 z-10 w-full {widths}">
 				<!--
 						Above the whole composer stack, never on it: the suggestion chip
 						and the input are the two things you are reaching for, and a pill
@@ -4056,6 +4056,16 @@
 <div
 	class="lg:flex lg:h-dvh lg:flex-col lg:overflow-hidden"
 	data-sveltekit-replacestate={prefs.value.backTo === 'home' ? '' : 'false'}
+	use:tabViewport={{
+		enabled: !!viewportTab && (!wideScreen || !!splitLayout),
+		mobile: !wideScreen,
+		tabId: viewportTab?.tabId ?? detail.tabId,
+		paneId: detail.paneId,
+		tree: viewportTab?.tree,
+		mono: prefs.value.monoSize,
+		density: prefs.value.terminalDensity,
+		onactive: (active) => (viewportOwned = active)
+	}}
 >
 	{#if wideScreen}
 		<header class="shrink-0 border-b border-hairline bg-page">
@@ -4120,15 +4130,7 @@
 				pushed the whole split wider than the window rather than scrolling
 				inside its own tile.
 			-->
-			<div
-				class="flex min-h-0 min-w-0 flex-1 overflow-hidden"
-				use:tabViewport={{
-					tabId: splitLayout.tabId,
-					mono: prefs.value.monoSize,
-					density: prefs.value.terminalDensity,
-					onactive: (active) => (viewportOwned = active)
-				}}
-			>
+			<div data-viewport-surface class="flex min-h-0 min-w-0 flex-1 overflow-hidden">
 				<PaneSplit
 					node={splitLayout.tree}
 					active={detail.paneId}
