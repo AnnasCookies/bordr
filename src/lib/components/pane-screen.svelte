@@ -118,11 +118,26 @@
 				pending = false;
 			}
 		};
-		void load();
-		const timer = setInterval(() => void load(), 1000);
+		let timer: ReturnType<typeof setInterval> | undefined;
+		const stop = () => {
+			if (timer) clearInterval(timer);
+			timer = undefined;
+		};
+		const start = () => {
+			if (timer || document.visibilityState === 'hidden') return;
+			void load();
+			timer = setInterval(() => void load(), 1000);
+		};
+		const onVisibility = () => {
+			if (document.visibilityState === 'hidden') stop();
+			else start(); // Catch up immediately, then return to the one-second beat.
+		};
+		start();
+		document.addEventListener('visibilitychange', onVisibility);
 		return () => {
 			live = false;
-			clearInterval(timer);
+			stop();
+			document.removeEventListener('visibilitychange', onVisibility);
 		};
 	});
 </script>

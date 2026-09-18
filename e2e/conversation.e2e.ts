@@ -52,7 +52,9 @@ test('conversation controls expose common toggles at desktop widths', async ({ p
 	if (!href) test.skip(true, 'no agents running');
 	await page.goto(href as string);
 
-	await expect(page.getByRole('button', { name: 'Hide thinking', exact: true })).toBeVisible();
+	const thinkingHeader = page.getByRole('button', { name: 'Hide thinking', exact: true });
+	await expect(thinkingHeader).toBeVisible();
+	await expect(thinkingHeader).toHaveText(`thinking ${await page.locator('.thinking').count()}`);
 	await page.getByRole('button', { name: 'Pane and tab controls' }).click();
 	const thinking = page
 		.getByRole('dialog', { name: /controls/ })
@@ -72,6 +74,37 @@ test('conversation controls expose common toggles at desktop widths', async ({ p
 	).toBe(false);
 });
 
+test('an expanded tool stays open when the transcript refreshes', async ({ page }) => {
+	await page.addInitScript(() => {
+		localStorage.setItem(
+			'bordr-prefs',
+			JSON.stringify({ splitPanes: false, showWork: true, groupTools: false })
+		);
+	});
+	const href = await firstPane(page);
+	if (!href) test.skip(true, 'no agents running');
+	const panePath = new URL(href as string, 'http://bordr.test').pathname;
+	let refreshes = 0;
+	page.on('response', (response) => {
+		const url = new URL(response.url());
+		if (
+			decodeURIComponent(url.pathname) === `/api/agents/${decodeURIComponent(panePath.slice(3))}` &&
+			url.searchParams.has('bytes')
+		) {
+			refreshes++;
+		}
+	});
+	await page.goto(href as string);
+	// Use the newest visible call; the oldest can legitimately leave the 80-message window.
+	const tool = page.locator('details.tool').last();
+	if ((await tool.count()) === 0) test.skip(true, 'no tool call in the visible transcript');
+	await tool.locator('summary').click();
+	await expect(tool).toHaveJSProperty('open', true);
+	const before = refreshes;
+	await expect.poll(() => refreshes).toBeGreaterThan(before);
+	await expect(tool).toHaveJSProperty('open', true);
+});
+
 test('desktop conversation uses all space beside the sidebar while resizing', async ({ page }) => {
 	await page.addInitScript(() => {
 		// An old saved cap must not keep winning after the choice was removed.
@@ -82,9 +115,15 @@ test('desktop conversation uses all space beside the sidebar while resizing', as
 	if (!href) test.skip(true, 'no agents running');
 	await page.goto(href as string);
 
-	const row = page.locator('.transcript-rows > *').first();
+	const row = page.locator('.transcript-rows > *').last();
 	await expect(row).toBeAttached();
-	expect(await row.evaluate((element) => getComputedStyle(element).contentVisibility)).toBe('auto');
+	// The history sentinel intersects during first layout before scrollBottom lands.
+	// That is not a request for older transcript data and must not widen every poll.
+	await page.waitForTimeout(750);
+	expect(new URL(page.url()).searchParams.has('w')).toBe(false);
+	await expect
+		.poll(() => row.evaluate((element) => getComputedStyle(element).contentVisibility))
+		.toBe('auto');
 
 	const main = page.locator('.transcript-rows').locator('xpath=ancestor::main[1]');
 	const widths = await main.evaluate((element) => ({

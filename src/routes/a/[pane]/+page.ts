@@ -42,12 +42,17 @@ async function failureMessage(response: Response): Promise<string> {
  * evicted — it is one transcript each for the panes visited this session, and
  * a reload clears it.
  */
-const lastGood = new Map<string, { detail: AgentDetail; watched: boolean; megabytes: number }>();
+type Held = { detail: AgentDetail; watched: boolean; megabytes: number; etag: string };
+const lastGood = new Map<string, Held>();
+
+function heldResult(held: Held, megabytes: number, offline: boolean) {
+	return { detail: held.detail, watched: held.watched, megabytes, offline };
+}
 
 /** A fetch that distinguishes "the server said no" from "there is no server". */
-async function reach(run: typeof fetch, url: string): Promise<Response | null> {
+async function reach(run: typeof fetch, url: string, init?: RequestInit): Promise<Response | null> {
 	try {
-		return await run(url);
+		return await run(url, init);
 	} catch {
 		return null;
 	}
@@ -64,16 +69,20 @@ export const load: PageLoad = async ({ params, url, fetch }) => {
 	// Both requests in flight together. The watch flag seeds the header bell:
 	// without it the bell renders 🔕 for a pane the server is really watching,
 	// and the first tap then re-arms an existing watch instead of clearing it.
+	const held = lastGood.get(params.pane);
 	const [detail, watch] = await Promise.all([
-		reach(fetch, `/api/agents/${encodeURIComponent(params.pane)}?bytes=${megabytes * 1024 * 1024}`),
+		reach(
+			fetch,
+			`/api/agents/${encodeURIComponent(params.pane)}?bytes=${megabytes * 1024 * 1024}`,
+			held?.etag ? { headers: { 'if-none-match': held.etag } } : undefined
+		),
 		reach(fetch, `/api/agents/${encodeURIComponent(params.pane)}/watch`)
 	]);
 
 	// Unreachable, rather than refused. Keep what is on screen; the connection
 	// indicator is what says the app has lost touch, not a blank error page.
 	if (!detail) {
-		const held = lastGood.get(params.pane);
-		if (held) return { ...held, megabytes, offline: true };
+		if (held) return heldResult(held, megabytes, true);
 		// Nothing to hold — this pane has never loaded — so there is genuinely
 		// nothing to show and the error page is the honest answer.
 		throw error(503, 'bordr is unreachable. The transcript will return when it is back.');
@@ -84,14 +93,24 @@ export const load: PageLoad = async ({ params, url, fetch }) => {
 	// treatment as unreachable: hold what was on screen rather than replacing a
 	// live transcript and the draft in its composer with an error page.
 	if (detail.status >= 500) {
-		const held = lastGood.get(params.pane);
-		if (held) return { ...held, megabytes, offline: true };
+		if (held) return heldResult(held, megabytes, true);
+	}
+	if (detail.status === 304 && held) {
+		const watched = watch?.ok ? await readWatched(watch) : held.watched;
+		const next = { ...held, watched, megabytes };
+		lastGood.set(params.pane, next);
+		return heldResult(next, megabytes, false);
 	}
 	if (!detail.ok) throw error(detail.status, await failureMessage(detail));
 	// A failed watch lookup must not block the transcript; default to off and let
 	// the next SSE-driven invalidation correct it.
 	const watched = watch?.ok ? await readWatched(watch) : false;
-	const data = { detail: (await detail.json()) as AgentDetail, watched, megabytes };
+	const data = {
+		detail: (await detail.json()) as AgentDetail,
+		watched,
+		megabytes,
+		etag: detail.headers.get('etag') ?? ''
+	};
 	lastGood.set(params.pane, data);
-	return { ...data, offline: false };
+	return heldResult(data, megabytes, false);
 };

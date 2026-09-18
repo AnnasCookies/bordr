@@ -86,6 +86,39 @@ describe('pane load: how far back to read', () => {
 	});
 });
 
+describe('pane load: unchanged detail', () => {
+	it('sends the held ETag and reuses the same detail object on 304', async () => {
+		let detailCalls = 0;
+		let conditional = '';
+		const fetchStub = async (input: string | URL | Request, init?: RequestInit) => {
+			const path = String(input);
+			if (path.endsWith('/watch')) {
+				return new Response(JSON.stringify({ watched: false }), { status: 200 });
+			}
+			detailCalls++;
+			conditional = new Headers(init?.headers).get('if-none-match') ?? '';
+			if (detailCalls === 1) {
+				return new Response(JSON.stringify({ ...DETAIL, paneId: 'etag:p1' }), {
+					status: 200,
+					headers: { etag: '"same-detail"' }
+				});
+			}
+			return new Response(null, { status: 304 });
+		};
+		const event = {
+			params: { pane: 'etag:p1' },
+			url: new URL('http://x/a/etag:p1'),
+			fetch: fetchStub
+		} as unknown as LoadEvent;
+
+		const first = await load(event);
+		const second = await load(event);
+		if (!first || !second) throw new Error('load returned no data');
+		expect(conditional).toBe('"same-detail"');
+		expect(second.detail).toBe(first.detail);
+	});
+});
+
 describe('load: losing the connection', () => {
 	/** A fetch that throws the way a real one does with no network. */
 	const dead = () => Promise.reject(new TypeError('Failed to fetch'));

@@ -98,11 +98,28 @@
 
 	$effect(() => {
 		const id = paneId;
-		void load(id);
-		// A second is what the terminal itself feels like; the screen is small
-		// and the read is one socket round trip.
-		const timer = setInterval(() => void load(id), 1000);
-		return () => clearInterval(timer);
+		let timer: ReturnType<typeof setInterval> | undefined;
+		const stop = () => {
+			if (timer) clearInterval(timer);
+			timer = undefined;
+		};
+		const start = () => {
+			if (timer || document.visibilityState === 'hidden') return;
+			void load(id);
+			// A second is what the terminal itself feels like; the screen is small
+			// and the read is one socket round trip.
+			timer = setInterval(() => void load(id), 1000);
+		};
+		const onVisibility = () => {
+			if (document.visibilityState === 'hidden') stop();
+			else start();
+		};
+		start();
+		document.addEventListener('visibilitychange', onVisibility);
+		return () => {
+			stop();
+			document.removeEventListener('visibilitychange', onVisibility);
+		};
 	});
 
 	const parts = $derived(splitAtPrompt(text));

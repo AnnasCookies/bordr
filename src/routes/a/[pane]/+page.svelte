@@ -685,6 +685,13 @@
 	const hidden = $derived(Math.max(0, detail.messages.length - shown));
 	const canShowEarlier = $derived(hidden > 0 || detail.hasMore);
 	const toolCount = $derived(visibleMessages.reduce((n, m) => n + m.tools.length, 0));
+	const thinkingCount = $derived(
+		visibleMessages.reduce(
+			(total, message) =>
+				total + (message.blocks ?? []).filter((block) => block.kind === 'thinking').length,
+			0
+		)
+	);
 	/** Common conversation choices, kept one tap away at every screen width. */
 	const conversationToggles = $derived([
 		{
@@ -697,7 +704,7 @@
 			}
 		},
 		{
-			label: 'Show thinking',
+			label: thinkingCount > 0 ? `Show thinking (${thinkingCount})` : 'Show thinking',
 			hint: 'The agent’s thinking as separate, quiet rows.',
 			on: prefs.value.showThinking,
 			onchange: () => prefs.set('showThinking', !prefs.value.showThinking)
@@ -872,12 +879,25 @@
 		return out;
 	}
 
+	/**
+	 * A transcript window can grow backwards from 1 MiB to 4 MiB. Absolute
+	 * array indexes then change for every existing turn, remounting open tools.
+	 * Harness timestamps are stable across reparses; a tool identity separates
+	 * the vanishingly rare pair of records written in the same millisecond.
+	 */
+	function messageRowKey(message: (typeof visibleMessages)[number], fallback: string): string {
+		if (!message.at) return fallback;
+		const tool = work(message).find((block) => block.kind === 'tool');
+		const identity = tool ? `${tool.name}:${tool.summary}` : message.text.slice(0, 96);
+		return `m${message.at}:${message.role}:${identity}`;
+	}
+
 	const rows = $derived.by((): Row[] => {
 		const base = detail.messages.length - visibleMessages.length;
 		const out: Row[] = visibleMessages.map((message, i) => ({
 			kind: 'message' as const,
 			message,
-			key: `m${base + i}`,
+			key: messageRowKey(message, `m${base + i}`),
 			run: 'only' as RunPos,
 			thinkingJoin: false
 		}));
@@ -1410,7 +1430,12 @@
 			observer = new IntersectionObserver(
 				(entries) => {
 					if (!entries.some((e) => e.isIntersecting)) return;
-					if (loadingEarlier || !canShowEarlier) return;
+					// On first paint the top sentinel can intersect before scrollBottom lands.
+					// Loading then silently widens every later refresh from 1 MiB to 4 MiB.
+					// Following means the reader is at the live end, not asking for history.
+					// `historyScrollIntent` also stops layout shifts during startup from
+					// masquerading as a real trip towards the top.
+					if (!historyScrollIntent || following || loadingEarlier || !canShowEarlier) return;
 					void showEarlier();
 				},
 				{ root: scrollHost(), rootMargin: '600px 0px 0px 0px' }
@@ -1665,9 +1690,12 @@
 	 */
 	let following = $state(true);
 	let lastTop = 0;
+	/** Auto-history only follows a real upward reader scroll, never first-layout geometry. */
+	let historyScrollIntent = false;
 
 	function onScroll() {
 		const top = scrollTop();
+		if (!programmatic && top < lastTop) historyScrollIntent = true;
 		following = nextFollowing(following, {
 			top,
 			lastTop,
@@ -1852,6 +1880,7 @@
 		shown = TAIL;
 		scrollback = null;
 		following = true;
+		historyScrollIntent = false;
 		requestAnimationFrame(scrollBottom);
 	});
 
@@ -2887,7 +2916,7 @@
 			aria-pressed={prefs.value.showThinking}
 			onclick={() => prefs.set('showThinking', !prefs.value.showThinking)}
 		>
-			thinking
+			thinking {thinkingCount}
 		</button>
 	{/if}
 	{#if detail.status === 'working'}
@@ -3351,7 +3380,12 @@
 												</span>
 											</summary>
 											<div class="pl-2">
-												<MessageBlocks blocks={row.blocks} mono={prefs.value.monoSize} showTools />
+												<MessageBlocks
+													blocks={row.blocks}
+													mono={prefs.value.monoSize}
+													showTools
+													scope={`${detail.paneId}:${row.key}`}
+												/>
 											</div>
 										</details>
 									{/if}
@@ -3461,6 +3495,7 @@
 															<MessageBlocks
 																blocks={segment.blocks}
 																mono={prefs.value.monoSize}
+																scope={`${detail.paneId}:${row.key}:segment-${segmentIndex}`}
 																{showTools}
 																showThinking={prefs.value.showThinking}
 															/>
@@ -3475,6 +3510,7 @@
 														<MessageBlocks
 															blocks={message.blocks ?? []}
 															mono={prefs.value.monoSize}
+															scope={`${detail.paneId}:${row.key}`}
 															{showTools}
 															showThinking={prefs.value.showThinking}
 														/>
