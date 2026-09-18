@@ -2940,8 +2940,8 @@
 	{/if}
 {/snippet}
 
-<!-- One focused terminal, reused by the standalone terminal view and desktop split. -->
-{#snippet liveTerminal(source: 'recent' | 'visible', lines: number)}
+<!-- The focused terminal used when this pane's normal view mode calls for it. -->
+{#snippet liveTerminal()}
 	<div data-viewport-terminal-body class="flex min-h-0 flex-1 flex-col">
 		<PaneTerminal
 			paneId={detail.paneId}
@@ -2950,8 +2950,6 @@
 			suggestion={detail.suggestion ?? ''}
 			bind:draft
 			mono={prefs.value.monoSize}
-			{lines}
-			{source}
 			{dictating}
 			{busy}
 			onkeys={sendKeys}
@@ -3069,7 +3067,7 @@
 				prompt line under it. The transcript view is the one that
 				interprets; this one shows.
 			-->
-			{@render liveTerminal('recent', 200)}
+			{@render liveTerminal()}
 		{:else}
 			<!--
 				The TRANSCRIPT moves, not the scroll container: the header above is
@@ -4025,7 +4023,7 @@
 		<div
 			class="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden ring-1 ring-working/50 ring-inset"
 		>
-			{@render liveTerminal('visible', 20_000)}
+			{@render conversation()}
 		</div>
 	{:else}
 		<PaneScreen
@@ -4134,9 +4132,9 @@
 		{/if}
 		{#if wideScreen && splitLayout}
 			<!--
-			The tab as Herdr has it: every tile is its pane's live visible grid.
-			The focused pane also keeps the compact input controls; siblings are
-			click-to-focus surfaces. Mobile keeps the full conversation view.
+			The focused agent keeps its normal conversation view. Every sibling is
+			a live visible-grid terminal with click-to-focus navigation and no input
+			controls of its own. Mobile keeps the same single-pane view.
 		-->
 			<!--
 				min-w-0 matters here: without it this flex item sizes to its

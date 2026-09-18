@@ -19,7 +19,7 @@
 		tabId = ''
 	}: {
 		node: SplitNode;
-		/** The focused live terminal; its siblings fit their useful content. */
+		/** The pane carrying the conversation; its siblings fit their useful content. */
 		active: string;
 		tile: Snippet<[string]>;
 		/** Herdr owns the exact ratios while Bordr owns the canonical terminal grid. */

@@ -124,29 +124,29 @@ test('desktop split owns the terminal grid and writes canonical dividers', async
 	await page.goto('/');
 	const pane = await page.evaluate(async () => {
 		const data = (await (await fetch('/api/panes')).json()) as {
-			workspaces?: Array<{ tabs: Array<{ panes: Array<{ paneId: string }> }> }>;
+			workspaces?: Array<{
+				tabs: Array<{ panes: Array<{ paneId: string; agent?: string }> }>;
+			}>;
 		};
+		const tab = data.workspaces
+			?.flatMap((workspace) => workspace.tabs)
+			.find((candidate) => candidate.panes.length > 1);
 		return (
-			data.workspaces?.flatMap((workspace) => workspace.tabs).find((tab) => tab.panes.length > 1)
-				?.panes[0]?.paneId ?? ''
+			tab?.panes.find((candidate) => candidate.agent && candidate.agent !== 'unknown')?.paneId ?? ''
 		);
 	});
-	if (!pane) test.skip(true, 'no split panes running');
+	if (!pane) test.skip(true, 'no split tab with an agent pane running');
 	await page.goto(`/a/${encodeURIComponent(pane)}`);
 
 	const preview = page.getByRole('button', { name: 'Open this pane' }).first();
 	await expect(preview).toBeVisible();
-	// Every split tile is a live terminal. Only this focused one takes input.
-	await expect(page.getByRole('textbox', { name: 'Send to this pane' })).toBeVisible();
-	await expect(page.locator('[data-viewport-surface] .term')).toHaveCount(
-		await page
-			.getByRole('button', { name: 'Open this pane' })
-			.count()
-			.then((count) => count + 1)
-	);
+	// The focused agent keeps its conversation; every sibling is a full live terminal.
+	await expect(page.locator('.transcript-rows')).toBeAttached();
+	await expect(page.getByRole('textbox', { name: 'Message' })).toBeVisible();
+	await expect(preview.locator('.term')).toBeVisible();
 	await expect
 		.poll(() => terminalReads.filter((url) => url.searchParams.get('source') === 'visible').length)
-		.toBeGreaterThanOrEqual(2);
+		.toBeGreaterThanOrEqual(1);
 	const liveReads = terminalReads.filter((url) => url.searchParams.get('source') === 'visible');
 	expect(liveReads.every((url) => url.searchParams.get('lines') === '20000')).toBe(true);
 	await expect.poll(() => geometryWrites).toBeGreaterThan(0);

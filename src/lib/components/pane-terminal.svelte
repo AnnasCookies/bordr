@@ -34,7 +34,6 @@
 		ask,
 		suggestion = '',
 		lines = 200,
-		source = 'recent',
 		mono = 12,
 		dictating = false,
 		onkeys,
@@ -56,8 +55,6 @@
 		/** The harness's own ghost prompt, offered above the input. */
 		suggestion?: string;
 		lines?: number;
-		/** Live split tiles read the whole visible grid; standalone terminal mode keeps recent history. */
-		source?: 'recent' | 'visible';
 		mono?: number;
 		dictating?: boolean;
 		onkeys: (keys: string[], paneId: string) => Promise<boolean>;
@@ -85,7 +82,7 @@
 		}
 		try {
 			const res = await fetch(
-				`/api/agents/${encodeURIComponent(id)}/read?lines=${lines}&ansi=1&source=${source}`
+				`/api/agents/${encodeURIComponent(id)}/read?lines=${lines}&ansi=1&source=recent`
 			);
 			if (!res.ok) return;
 			const next = (await res.json()).text ?? '';
