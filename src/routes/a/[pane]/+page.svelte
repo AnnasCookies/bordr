@@ -18,7 +18,8 @@
 		dragTarget,
 		inEdgeZone,
 		inHorizontalScroller,
-		neighbourPane
+		neighbourPane,
+		swipeNavigationDelta
 	} from '$lib/swipe';
 	import {
 		CHECK_INK,
@@ -2501,9 +2502,13 @@
 	 */
 	const revealing = $derived.by(() => {
 		if (!dragging || Math.abs(dragX) < 4) return null;
-		// `dragX` keeps the sign of the finger's travel, so this names the pane
-		// `decideSwipe` will commit to on release — one mapping, in `$lib/swipe`.
-		const to = dragTarget(swipeOrder, detail.paneId, dragX);
+		// The card and the committed destination use the same optional inversion;
+		// dragX itself stays physical so the transcript follows the finger.
+		const to = dragTarget(
+			swipeOrder,
+			detail.paneId,
+			swipeNavigationDelta(dragX, prefs.value.swipeInverted)
+		);
 		if (!to) return null;
 		return (
 			store.agents.find((a) => a.paneId === to) ?? {
@@ -2575,7 +2580,11 @@
 		// anything; it is the wrong one in the middle, where the drag has to
 		// open a gap wide enough to actually read the card underneath before
 		// deciding to let go.
-		dragX = dx * (dragTarget(swipeOrder, detail.paneId, dx) ? 0.66 : 0.33);
+		dragX =
+			dx *
+			(dragTarget(swipeOrder, detail.paneId, swipeNavigationDelta(dx, prefs.value.swipeInverted))
+				? 0.66
+				: 0.33);
 	}
 
 	function onTouchCancel() {
@@ -2601,8 +2610,9 @@
 			dragX = 0;
 			return;
 		}
+		const physicalDx = touch.clientX - startX;
 		const direction = decideSwipe(
-			touch.clientX - startX,
+			swipeNavigationDelta(physicalDx, prefs.value.swipeInverted),
 			touch.clientY - startY,
 			startX,
 			window.innerWidth
@@ -2620,7 +2630,7 @@
 			// pane from the other side. Without this the content jumped from
 			// wherever the finger left it back to centre, which read as a glitch.
 			leaving = true;
-			dragX = direction === 'next' ? window.innerWidth : -window.innerWidth;
+			dragX = physicalDx > 0 ? window.innerWidth : -window.innerWidth;
 			await new Promise((r) => setTimeout(r, 140));
 		}
 		// REPLACE, never push: swiping is moving along one list, not walking
@@ -2630,7 +2640,7 @@
 		// go to the previous agent.
 		await goto(resolve('/a/[pane]', { pane }), { replaceState: true });
 		// Land from the opposite edge, then release to centre on the next frame.
-		dragX = direction === 'next' ? -window.innerWidth / 3 : window.innerWidth / 3;
+		dragX = physicalDx > 0 ? -window.innerWidth / 3 : window.innerWidth / 3;
 		leaving = false;
 		requestAnimationFrame(() => requestAnimationFrame(() => (dragX = 0)));
 	}

@@ -12,8 +12,8 @@
 </script>
 
 <script lang="ts">
-	import { ansiToHtml, terminalScreenColumns } from '$lib/ansi';
-	import { prefs } from '$lib/prefs.svelte';
+	import { terminalScreenColumns } from '$lib/ansi';
+	import TerminalSurface from './terminal-surface.svelte';
 
 	/**
 	 * A pane you are not in, showing what it is showing.
@@ -36,7 +36,6 @@
 	let failed = $state(false);
 	let shownFor = initialPaneId();
 	let tile = $state<HTMLButtonElement | undefined>();
-	const tight = $derived(prefs.value.terminalDensity === 'compact');
 
 	/**
 	 * A side preview should be as wide as the terminal grid Herdr rendered.
@@ -53,8 +52,10 @@
 		const style = getComputedStyle(pre);
 		const boxStyle = getComputedStyle(pre.parentElement as HTMLElement);
 		const context = document.createElement('canvas').getContext('2d');
-		if (context) context.font = style.font;
-		const cell = context?.measureText('0').width || Number.parseFloat(style.fontSize) * 0.6;
+		// TerminalSurface may visually fit the preview smaller. Auto-fit still
+		// reserves the source grid at the configured size, or it would shrink twice.
+		if (context) context.font = `${mono}px ${style.fontFamily}`;
+		const cell = context?.measureText('0').width || mono * 0.6;
 		const root = Number.parseFloat(getComputedStyle(document.documentElement).fontSize);
 		const padding =
 			Number.parseFloat(boxStyle.paddingLeft) + Number.parseFloat(boxStyle.paddingRight);
@@ -135,19 +136,5 @@
 	aria-label="Open this pane"
 	onclick={onopen}
 >
-	<div
-		class="term flex min-h-0 w-full flex-1 flex-col justify-end overflow-auto {tight
-			? 'px-1.5 py-0.5 leading-[1.15]'
-			: 'px-3 py-2 leading-[1.35]'}"
-		style="font-size: {mono}px"
-	>
-		{#if failed && !text}
-			<span class="text-faint">no screen</span>
-		{:else}
-			<!-- The branch follows Herdr's source column count. pre-wrap is only the
-			     fallback when 35% of the viewport cannot hold that grid. -->
-			<!-- eslint-disable-next-line svelte/no-at-html-tags -- ansiToHtml escapes -->
-			<pre class="[overflow-wrap:normal] whitespace-pre-wrap">{@html ansiToHtml(text, true)}</pre>
-		{/if}
-	</div>
+	<TerminalSurface {text} {mono} {failed} />
 </button>

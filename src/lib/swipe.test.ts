@@ -1,5 +1,12 @@
 import { describe, expect, it } from 'vitest';
-import { decideSwipe, dragTarget, inEdgeZone, neighbourPane, SWIPE } from './swipe';
+import {
+	decideSwipe,
+	dragTarget,
+	inEdgeZone,
+	neighbourPane,
+	swipeNavigationDelta,
+	SWIPE
+} from './swipe';
 
 const WIDE = 402;
 
@@ -23,6 +30,15 @@ describe('dragTarget', () => {
 	it('has nothing to preview when there is nowhere to go', () => {
 		expect(dragTarget(['a'], 'a', 80)).toBeNull();
 		expect(dragTarget(['a', 'b'], 'zz', 80)).toBeNull();
+	});
+});
+
+describe('swipeNavigationDelta', () => {
+	it('keeps the default mapping and reverses only when asked', () => {
+		expect(swipeNavigationDelta(120, false)).toBe(120);
+		expect(swipeNavigationDelta(-120, false)).toBe(-120);
+		expect(swipeNavigationDelta(120, true)).toBe(-120);
+		expect(swipeNavigationDelta(-120, true)).toBe(120);
 	});
 });
 

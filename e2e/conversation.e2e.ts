@@ -161,7 +161,8 @@ test('desktop split owns the terminal grid and writes canonical dividers', async
 	expect(sizing.style).toContain('flex:');
 	expect(sizing.style).not.toContain('max-width');
 	expect(sizing.style).not.toContain('max-height');
-	expect(sizing.whiteSpace).toBe('pre-wrap');
+	// Focused and sibling panes now share the same fixed-grid terminal surface.
+	expect(sizing.whiteSpace).toBe('pre');
 	expect(sizing.overflowWrap).toBe('normal');
 	expect(sizing.opacity).toBe('1');
 
@@ -463,6 +464,16 @@ test('swipe to cycle can be turned off', async ({ page }) => {
 		'false'
 	);
 	await page.getByRole('switch', { name: /Swipe to cycle agents/ }).click();
+
+	const inverted = page.getByRole('switch', { name: /Invert swipe direction/ });
+	await expect(inverted).toHaveAttribute('aria-checked', 'false');
+	await inverted.click();
+	await expect(inverted).toHaveAttribute('aria-checked', 'true');
+	await openSettings(page, 'input');
+	await expect(page.getByRole('switch', { name: /Invert swipe direction/ })).toHaveAttribute(
+		'aria-checked',
+		'true'
+	);
 });
 
 /**

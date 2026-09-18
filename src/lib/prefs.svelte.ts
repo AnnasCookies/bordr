@@ -320,6 +320,8 @@ export interface Prefs {
 	dictationHold: boolean;
 	/** Swipe across a conversation to cycle agents. Not everyone wants it. */
 	swipeAgents: boolean;
+	/** Reverse which list neighbour a left or right conversation swipe opens. */
+	swipeInverted: boolean;
 	/** Bubble styling for the transcript, WhatsApp-style, instead of prefixes. */
 	bubbles: boolean;
 	userBubble: string;
@@ -394,6 +396,7 @@ export const DEFAULTS: Prefs = {
 	dictationLang: 'en-GB',
 	dictationHold: true,
 	swipeAgents: true,
+	swipeInverted: false,
 	bubbles: false,
 	/**
 	 * Empty means "follow the theme" — see `bubbleColours`. No single hex works
@@ -575,6 +578,7 @@ export function normalisePrefs(raw: unknown): Prefs {
 				: DEFAULTS.dictationLang,
 		dictationHold: bool(stored.dictationHold, DEFAULTS.dictationHold),
 		swipeAgents: bool(stored.swipeAgents, DEFAULTS.swipeAgents),
+		swipeInverted: bool(stored.swipeInverted, DEFAULTS.swipeInverted),
 		bubbles: bool(stored.bubbles, DEFAULTS.bubbles),
 		userBubble: colour(stored.userBubble, DEFAULTS.userBubble),
 		userText: colour(stored.userText, DEFAULTS.userText),

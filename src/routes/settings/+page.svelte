@@ -857,7 +857,11 @@
 {#snippet swipePreview()}
 	<div class="rounded-lg bg-page p-2 text-[12px] text-muted">
 		{#if prefs.value.swipeAgents}
-			<span class="font-mono">← swipe →</span> moves to the next agent in the list.
+			{#if prefs.value.swipeInverted}
+				Swipe left: next · swipe right: previous.
+			{:else}
+				Swipe left: previous · swipe right: next.
+			{/if}
 		{:else}
 			A sideways swipe does nothing; use the list or the tree.
 		{/if}
@@ -1459,6 +1463,14 @@
 								hint="Swipe across a conversation for the next or previous agent in the list. Swiping from either screen edge still goes back."
 								checked={prefs.value.swipeAgents}
 								onchange={(v) => prefs.set('swipeAgents', v)}
+							>
+								{#snippet preview()}{@render swipePreview()}{/snippet}
+							</ToggleRow>
+							<ToggleRow
+								label="Invert swipe direction"
+								hint="Swap which neighbouring agent a left or right swipe opens. The page still follows your finger."
+								checked={prefs.value.swipeInverted}
+								onchange={(v) => prefs.set('swipeInverted', v)}
 							>
 								{#snippet preview()}{@render swipePreview()}{/snippet}
 							</ToggleRow>
