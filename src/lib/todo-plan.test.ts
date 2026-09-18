@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { parseTodoPlan, todoPlanFromDetails } from './todo-plan';
+import { parseTodoPlan, PiTodoTracker, todoPlanFromDetails } from './todo-plan';
 
 const DETAILS = {
 	op: 'done',
@@ -65,6 +65,35 @@ describe('todoPlanFromDetails', () => {
 				phases: [{ name: 'Bad', tasks: [{ content: 'Task', status: 'lost' }] }]
 			})
 		).toBeNull();
+	});
+});
+
+describe('PiTodoTracker', () => {
+	it('replays create and update calls into a complete plan', () => {
+		const tracker = new PiTodoTracker();
+		expect(
+			tracker.apply({ action: 'create', subject: 'Trace flicker' }, 'Created #9: Trace flicker')
+		).toMatchObject({ total: 1, closed: 0, open: 1 });
+		expect(
+			tracker.apply(
+				{ action: 'update', id: 9, status: 'completed' },
+				'Updated #9 (in_progress → completed)'
+			)
+		).toMatchObject({ total: 1, closed: 1, open: 0 });
+	});
+
+	it('seeds from Pi list output and strips only the active spinner label', () => {
+		const tracker = new PiTodoTracker();
+		const plan = tracker.apply(
+			{ action: 'list' },
+			'[completed] #9 Trace flicker\n[in_progress] #10 Wrap previews (wrapping previews)\n[pending] #11 Test (desktop)'
+		);
+		expect(plan).toMatchObject({ total: 3, closed: 1, open: 2 });
+		expect(plan?.phases[0].items).toEqual([
+			{ content: 'Trace flicker', status: 'completed' },
+			{ content: 'Wrap previews', status: 'in_progress' },
+			{ content: 'Test (desktop)', status: 'pending' }
+		]);
 	});
 });
 

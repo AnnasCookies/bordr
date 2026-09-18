@@ -66,8 +66,6 @@ export type ChromeWhen = 'always' | 'mobile' | 'off';
  * that happens there is nothing on the page to argue with, so the glide looks
  * broken rather than switched off.
  */
-export type ConversationWidth = 'comfortable' | 'wide' | 'full';
-
 export type Motion = 'auto' | 'full' | 'none';
 
 /**
@@ -272,7 +270,6 @@ export interface Prefs {
 	 * already moves between the same panes.
 	 */
 	tabStrip: ChromeWhen;
-	conversationWidth: ConversationWidth;
 	/** Whether "Latest" glides to the bottom or jumps there. */
 	motion: Motion;
 	/** The pull request and its CI, beside the branch in the header. */
@@ -378,7 +375,6 @@ export const DEFAULTS: Prefs = {
 	menuButton: 'always',
 	logoButton: 'always',
 	tabStrip: 'always',
-	conversationWidth: 'full',
 	motion: 'auto',
 	headerPull: 'checks',
 	headerModel: 'model-effort',
@@ -428,7 +424,6 @@ const BACKS: BackTo[] = ['home', 'history'];
 const MESSAGE_TIMES: MessageTime[] = ['off', 'runs', 'all'];
 const SUBAGENT_STRIPS: SubagentStrip[] = ['off', 'running', 'all'];
 const DRAWER_HOMES: DrawerHome[] = ['mark', 'icon', 'off'];
-const WIDTHS: ConversationWidth[] = ['comfortable', 'wide', 'full'];
 const CHROME_WHENS: ChromeWhen[] = ['always', 'mobile', 'off'];
 const MOTIONS: Motion[] = ['auto', 'full', 'none'];
 const HEADER_PULLS: HeaderPull[] = ['off', 'number', 'checks'];
@@ -552,7 +547,6 @@ export function normalisePrefs(raw: unknown): Prefs {
 		menuButton: pick(stored.menuButton, CHROME_WHENS, DEFAULTS.menuButton),
 		logoButton: pick(stored.logoButton, CHROME_WHENS, DEFAULTS.logoButton),
 		tabStrip: pick(stored.tabStrip, CHROME_WHENS, DEFAULTS.tabStrip),
-		conversationWidth: pick(stored.conversationWidth, WIDTHS, DEFAULTS.conversationWidth),
 		motion: pick(stored.motion, MOTIONS, DEFAULTS.motion),
 		headerPull: pick(stored.headerPull, HEADER_PULLS, DEFAULTS.headerPull),
 		headerModel: pick(stored.headerModel, HEADER_MODELS, DEFAULTS.headerModel),

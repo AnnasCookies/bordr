@@ -6,6 +6,8 @@
 	import { agentStore } from '$lib/agents.svelte';
 	import { mergeResults } from '$lib/dictation';
 	import { shrinkImage } from '$lib/shrink-image';
+	import { splitLayoutFingerprint } from '$lib/layout-fingerprint';
+	import { tabViewport } from '$lib/tab-viewport';
 
 	/** The upload route's per-file cap (`$lib/server/attachments`), which the page cannot import. */
 	const MAX_ATTACH_BYTES = 15 * 1024 * 1024;
@@ -76,7 +78,6 @@
 	import { glideInterrupted } from './glide-interrupt';
 	import { keepPending, restorePending, say, type PendingSend } from '$lib/pending-sends';
 	import { queueVerdict } from '$lib/queue';
-	import { widthClasses } from '$lib/conversation-width';
 	import { pickerShortcut, pickerIdentity } from '$lib/picker-shortcut';
 	import { parseModelLine } from '$lib/model-line';
 	import { shortModel } from '$lib/short-model';
@@ -130,6 +131,8 @@
 	 * in the terminal, not when this conversation moves on.
 	 */
 	let workspaces = $state<WorkspaceNode[]>([]);
+	let layoutFingerprint = '';
+	let viewportOwned = $state(false);
 
 	/** Whether the rebuilt split actually contains a given pane. */
 	function treeHolds(node: SplitNode | undefined, paneId: string): boolean {
@@ -150,22 +153,26 @@
 				// pane was added — that tile never renders and the screen has no
 				// transcript and no composer, silently. Falling back to the
 				// plain conversation loses the split and keeps the app usable.
-				return treeHolds(tab.layout?.tree, detail.paneId) ? tab.layout : undefined;
+				const tabLayout = tab.layout;
+				return tabLayout && treeHolds(tabLayout.tree, detail.paneId)
+					? { ...tabLayout, tabId: tab.tabId }
+					: undefined;
 			}
 		}
 		return undefined;
 	});
 
-	/** The tab id the split belongs to, which set_split_ratio needs. */
-	const splitTabId = $derived(
-		workspaces.flatMap((w) => w.tabs).find((t) => t.panes.some((p) => p.paneId === detail.paneId))
-			?.tabId ?? ''
-	);
-
 	async function loadLayout() {
 		try {
 			const res = await fetch('/api/panes');
-			if (res.ok) workspaces = (await res.json()).workspaces ?? [];
+			if (res.ok) {
+				const next: WorkspaceNode[] = (await res.json()).workspaces ?? [];
+				const fingerprint = splitLayoutFingerprint(next);
+				if (fingerprint !== layoutFingerprint) {
+					layoutFingerprint = fingerprint;
+					workspaces = next;
+				}
+			}
 		} catch {
 			// Keep the last layout rather than collapsing the split mid-turn.
 		}
@@ -176,21 +183,6 @@
 		const timer = setInterval(() => void loadLayout(), 5000);
 		return () => clearInterval(timer);
 	});
-
-	/** Move a divider — in herdr, not just here. */
-	async function setRatio(path: boolean[], ratio: number) {
-		if (!splitTabId) return;
-		try {
-			await fetch('/api/layout', {
-				method: 'POST',
-				headers: { 'content-type': 'application/json' },
-				body: JSON.stringify({ tabId: splitTabId, path, ratio })
-			});
-			await loadLayout();
-		} catch {
-			// herdr's real ratio comes back on the next poll either way.
-		}
-	}
 
 	/**
 	 * The drawer closes once the new pane has loaded, NOT when the link is
@@ -534,8 +526,8 @@
 	 * same lines as `statusLines` with their escapes intact; the fallback
 	 * covers a payload cached on a phone that has not reloaded yet.
 	 */
-	/** One width for the transcript, its banners and the composer. */
-	const widths = $derived(widthClasses(prefs.value.conversationWidth));
+	/** Transcript, banners and composer always take the space beside the sidebar. */
+	const widths = 'max-w-screen-sm lg:max-w-none';
 
 	const statusRows = $derived(detail.statusAnsi?.length ? detail.statusAnsi : detail.statusLines);
 
@@ -695,6 +687,30 @@
 	const hidden = $derived(Math.max(0, detail.messages.length - shown));
 	const canShowEarlier = $derived(hidden > 0 || detail.hasMore);
 	const toolCount = $derived(visibleMessages.reduce((n, m) => n + m.tools.length, 0));
+	/** Common conversation choices, kept one tap away at every screen width. */
+	const conversationToggles = $derived([
+		{
+			label: toolCount > 0 ? `Show tools (${toolCount})` : 'Show tools',
+			hint: 'Tool calls and results, inline in the transcript.',
+			on: showTools,
+			onchange: () => {
+				showTools = !showTools;
+				prefs.set('showWork', showTools);
+			}
+		},
+		{
+			label: 'Show thinking',
+			hint: 'The agent’s thinking as separate, quiet rows.',
+			on: prefs.value.showThinking,
+			onchange: () => prefs.set('showThinking', !prefs.value.showThinking)
+		},
+		{
+			label: 'Notify when this agent finishes',
+			hint: 'A push for every done, not only when it needs you.',
+			on: watched,
+			onchange: () => void toggleWatch()
+		}
+	]);
 
 	/**
 	 * The transcript, with any still-unclaimed prompts after it.
@@ -2839,11 +2855,12 @@
 		a state you set once, rather than a link you re-find at the bottom of a
 		growing conversation.
 	-->
-	{#if prefs.value.workControl === 'header' && toolCount > 0 && !layout.tight}
+	{#if (wideScreen || prefs.value.workControl === 'header') && toolCount > 0 && !layout.tight}
 		<button
 			class="flex h-9 shrink-0 items-center rounded-full border px-3 text-[12px] {showTools
 				? 'border-working-halo bg-working-bg text-working'
 				: 'border-edge text-muted'}"
+			aria-label={showTools ? 'Hide tools' : 'Show tools'}
 			aria-pressed={showTools}
 			onclick={() => {
 				showTools = !showTools;
@@ -2851,6 +2868,19 @@
 			}}
 		>
 			tools {toolCount}
+		</button>
+	{/if}
+	{#if wideScreen}
+		<button
+			class="flex h-9 shrink-0 items-center rounded-full border px-3 text-[12px] {prefs.value
+				.showThinking
+				? 'border-working-halo bg-working-bg text-working'
+				: 'border-edge text-muted'}"
+			aria-label={prefs.value.showThinking ? 'Hide thinking' : 'Show thinking'}
+			aria-pressed={prefs.value.showThinking}
+			onclick={() => prefs.set('showThinking', !prefs.value.showThinking)}
+		>
+			thinking
 		</button>
 	{/if}
 	{#if detail.status === 'working'}
@@ -2884,7 +2914,7 @@
 	</button>
 	{#if !layout.tight}
 		<!--
-			Both toggles move into the ⋯ sheet on a narrow screen. Measured on a
+			Secondary toggles move into the ⋯ sheet on a narrow screen. Measured on a
 			430px phone: the row's controls take 365px of it and the pane's own
 			title is left with 13 pixels — at 360 and 320 it gets none at all.
 			The title is the one thing there you cannot work out from anything
@@ -3985,6 +4015,7 @@
 	{:else}
 		<PaneScreen
 			{paneId}
+			mono={prefs.value.monoSize}
 			onopen={() =>
 				goto(resolve('/a/[pane]', { pane: paneId }), {
 					replaceState: prefs.value.backTo === 'home'
@@ -4089,8 +4120,22 @@
 				pushed the whole split wider than the window rather than scrolling
 				inside its own tile.
 			-->
-			<div class="flex min-h-0 min-w-0 flex-1 overflow-hidden">
-				<PaneSplit node={splitLayout.tree} tile={splitTile} onratio={setRatio} />
+			<div
+				class="flex min-h-0 min-w-0 flex-1 overflow-hidden"
+				use:tabViewport={{
+					tabId: splitLayout.tabId,
+					mono: prefs.value.monoSize,
+					density: prefs.value.terminalDensity,
+					onactive: (active) => (viewportOwned = active)
+				}}
+			>
+				<PaneSplit
+					node={splitLayout.tree}
+					active={detail.paneId}
+					tile={splitTile}
+					canonical={viewportOwned}
+					tabId={splitLayout.tabId}
+				/>
 			</div>
 		{:else}
 			{@render conversation()}
@@ -4103,29 +4148,7 @@
 				(closingContext = { current: detail.paneId, siblings: [...tabSiblings], all: [...order] })}
 			targets={controlTargets}
 			subagents={subs}
-			toggles={layout.tight
-				? [
-						...(prefs.value.workControl === 'header' && toolCount > 0
-							? [
-									{
-										label: `Show tools (${toolCount})`,
-										hint: 'Tool calls and results, inline in the transcript.',
-										on: showTools,
-										onchange: () => {
-											showTools = !showTools;
-											prefs.set('showWork', showTools);
-										}
-									}
-								]
-							: []),
-						{
-							label: 'Notify when this agent finishes',
-							hint: 'A push for every done, not only when it needs you.',
-							on: watched,
-							onchange: () => void toggleWatch()
-						}
-					]
-				: []}
+			toggles={conversationToggles}
 			onsubagent={(id) => {
 				controlling = false;
 				openSub = id;

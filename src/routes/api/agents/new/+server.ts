@@ -9,7 +9,8 @@ import {
 	rawAgent,
 	readVisible,
 	sendKeys,
-	settleScreen
+	settleScreen,
+	waitForActiveAgent
 } from '$lib/server/herdr';
 import { encodeOmpStartupPrompt } from '$lib/server/omp-startup-prompt';
 import { piAdapter } from '$lib/server/transcript/pi';
@@ -107,6 +108,13 @@ export const POST: RequestHandler = async ({ request }) => {
 				: {})
 		});
 		await settleScreen(paneId, { before: shell, budgetMs: 30_000, stableMs: 1_500 });
+
+		// A stable input screen is not enough: Pi can draw it before herdr has
+		// registered the pane as a named agent. Returning in that gap makes the
+		// first message fail with “not an active named agent”.
+		if (!(await waitForActiveAgent(paneId))) {
+			throw error(504, `${kind} started but is not ready to receive messages`);
+		}
 
 		if (kind === 'omp' && initialPrompt) {
 			// OMP trims text submitted by its terminal input controller. This

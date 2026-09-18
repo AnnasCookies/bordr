@@ -62,6 +62,16 @@ describe('message segments', () => {
 		expect(todoPlanForBlock(todo)?.phases[0].items[0].content).toBe('Keep visible');
 	});
 
+	it('hides Pi todo mutations superseded by the latest plan snapshot', () => {
+		const superseded: Block = { ...todo, supersededTodo: true };
+		expect(workBlocks([thinking, superseded, tool])).toEqual([thinking, tool]);
+		expect(messageSegments([first, superseded, last])).toEqual([
+			{ kind: 'prose', blocks: [first, last] }
+		]);
+		expect(onlyToolWork([superseded])).toBe(false);
+		expect(hasTodoPlan([superseded])).toBe(false);
+	});
+
 	it('joins only turns made entirely from thinking', () => {
 		expect(onlyThinking([thinking])).toBe(true);
 		expect(onlyThinking([thinking, { ...thinking, text: 'again' }])).toBe(true);

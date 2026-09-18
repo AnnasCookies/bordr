@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { ansiToHtml, stripAnsi } from './ansi';
+import { ansiToHtml, stripAnsi, terminalScreenColumns } from './ansi';
 
 const ESC = String.fromCharCode(27);
 const sgr = (codes: string) => `${ESC}[${codes}m`;
@@ -105,5 +105,15 @@ describe('stripAnsi', () => {
 	it('drops OSC sequences too, not just SGR', () => {
 		// BEL-terminated, which is the form a shell actually writes a title in.
 		expect(stripAnsi(`${E}]0;a title\u0007done`)).toBe('done');
+	});
+});
+
+describe('terminalScreenColumns', () => {
+	it('measures the padded source grid rather than its visible words', () => {
+		expect(terminalScreenColumns(`${ESC}[32mshort${ESC}[0m   \nlonger row`)).toBe(10);
+	});
+
+	it('counts wide glyphs as two cells and combining marks as none', () => {
+		expect(terminalScreenColumns('a界e\u0301')).toBe(4);
 	});
 });

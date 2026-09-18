@@ -36,6 +36,8 @@ const ACTIVE = /^Active phase\s+(\d+)\/(\d+)\s+"([^"]+)"\s+\(\d+\/\d+\)(?:\.|\s+
 const PHASE = /^ {2}([^-\s].*):$/;
 const ITEM = /^ {4}- \[([Xx ])\] (.+)$/;
 const STATE = / \((in progress|pending|dropped|blocked(?:: (.*))?)\)$/;
+const PI_CREATED = /^Created #(\d+)\b/m;
+const PI_LIST_ITEM = /^\[(pending|in_progress|completed|deleted)\]\s+#(\d+)\s+(.+)$/;
 
 function record(value: unknown): Record<string, unknown> | null {
 	return typeof value === 'object' && value !== null && !Array.isArray(value)
@@ -70,6 +72,69 @@ function summarise(phases: TodoPlanPhase[]): TodoPlan {
 		phaseCount: phases.length,
 		phases
 	};
+}
+
+/**
+ * Pi's todo tool records one mutation at a time, unlike OMP's full snapshot.
+ * Replay those calls while parsing the transcript so Bordr can render the same
+ * plan card instead of a run of generic `todo update` tool rows.
+ */
+export class PiTodoTracker {
+	private tasks = new Map<number, TodoPlanItem>();
+
+	apply(input: Record<string, unknown> | null, result: string): TodoPlan | null {
+		if (!input || typeof input.action !== 'string') return this.plan();
+		const action = input.action;
+
+		if (action === 'create') {
+			const id = Number(PI_CREATED.exec(result)?.[1]);
+			const content = typeof input.subject === 'string' ? input.subject.trim() : '';
+			if (Number.isInteger(id) && content) this.tasks.set(id, { content, status: 'pending' });
+		} else if (action === 'update') {
+			const id = typeof input.id === 'number' ? input.id : Number(input.id);
+			const current = this.tasks.get(id);
+			if (current) {
+				const content =
+					typeof input.subject === 'string' && input.subject.trim()
+						? input.subject.trim()
+						: current.content;
+				const status = input.status;
+				if (status === 'deleted') this.tasks.delete(id);
+				else if (status === 'pending' || status === 'in_progress' || status === 'completed') {
+					this.tasks.set(id, { content, status });
+				} else if (content !== current.content) {
+					this.tasks.set(id, { ...current, content });
+				}
+			}
+		} else if (action === 'delete') {
+			const id = typeof input.id === 'number' ? input.id : Number(input.id);
+			if (Number.isInteger(id)) this.tasks.delete(id);
+		} else if (action === 'clear') {
+			this.tasks.clear();
+		} else if (action === 'list') {
+			const listed = new Map<number, TodoPlanItem>();
+			for (const line of result.split('\n')) {
+				const match = PI_LIST_ITEM.exec(line.trim());
+				if (!match || match[1] === 'deleted') continue;
+				const status = match[1] as Exclude<TodoStatus, 'blocked' | 'abandoned'>;
+				// In-progress list rows append the spinner label in parentheses.
+				const content =
+					status === 'in_progress' ? match[3].replace(/\s+\([^()]+\)$/, '') : match[3];
+				listed.set(Number(match[2]), { content, status });
+			}
+			// An unfiltered list is authoritative. Filtered lists only add what
+			// they know, otherwise asking for pending work would erase completed work.
+			if (input.status === undefined) this.tasks = listed;
+			else for (const [id, item] of listed) this.tasks.set(id, item);
+		}
+
+		return this.plan();
+	}
+
+	private plan(): TodoPlan | null {
+		if (this.tasks.size === 0) return null;
+		return summarise([{ name: 'Tasks', items: [...this.tasks.values()] }]);
+	}
 }
 
 /** Validate and normalise the canonical TodoToolDetails stored by OMP. */

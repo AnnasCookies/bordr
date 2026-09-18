@@ -204,3 +204,19 @@ export function ansiToHtml(input: string, gridded = false): string {
 export function stripAnsi(input: string): string {
 	return input.replace(CSI, '').replace(OSC, '');
 }
+
+/** Widest row in terminal cells, after colour and control sequences are removed. */
+export function terminalScreenColumns(input: string): number {
+	let widest = 0;
+	for (const line of stripAnsi(input).split('\n')) {
+		let columns = 0;
+		for (const character of line) {
+			const code = character.codePointAt(0) as number;
+			// Combining marks occupy the previous cell rather than another one.
+			if ((code >= 0x300 && code <= 0x36f) || (code >= 0xfe00 && code <= 0xfe0f)) continue;
+			columns += isWide(code) ? 2 : 1;
+		}
+		widest = Math.max(widest, columns);
+	}
+	return widest;
+}

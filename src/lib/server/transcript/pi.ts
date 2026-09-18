@@ -2,7 +2,7 @@ import { closeSync, constants, fstatSync, openSync, readFileSync } from 'node:fs
 import { access } from 'node:fs/promises';
 import { homedir } from 'node:os';
 import { join } from 'node:path';
-import { todoPlanFromDetails } from '$lib/todo-plan';
+import { PiTodoTracker, todoPlanFromDetails } from '$lib/todo-plan';
 import {
 	fromBlocks,
 	type Adapter,
@@ -306,6 +306,8 @@ export const piAdapter: Adapter = {
 	parse(jsonl: string): Message[] {
 		const messages: Message[] = [];
 		const pending = new Map<string, Block>();
+		const piTodos = new PiTodoTracker();
+		let latestPiTodo: Extract<Block, { kind: 'tool' }> | undefined;
 		const asked: Array<{ at: number; tool: Block }> = [];
 		const imageBudget = { remaining: MAX_IMAGES_BYTES };
 
@@ -336,8 +338,20 @@ export const piAdapter: Adapter = {
 						if (diffs.length > 0) tool.diffs = diffs;
 					}
 					if (tool.name.toLowerCase() === 'todo') {
-						const todo = todoPlanFromDetails(message.details);
-						if (todo) tool.todo = todo;
+						const canonical = todoPlanFromDetails(message.details);
+						if (canonical) {
+							tool.todo = canonical;
+						} else {
+							const todo = piTodos.apply(tool.input, tool.result.text);
+							if (todo) {
+								if (latestPiTodo) {
+									delete latestPiTodo.todo;
+									latestPiTodo.supersededTodo = true;
+								}
+								tool.todo = todo;
+								latestPiTodo = tool;
+							}
+						}
 					}
 					pending.delete(message.toolCallId as string);
 				}

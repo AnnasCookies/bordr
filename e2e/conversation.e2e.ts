@@ -15,6 +15,23 @@ async function firstPane(page: import('@playwright/test').Page): Promise<string 
 	return await link.getAttribute('href');
 }
 
+/** Pick an actual transcript, not a live shell pane with no chat bubbles. */
+async function firstTranscriptPane(page: import('@playwright/test').Page): Promise<string | null> {
+	if (!(await firstPane(page))) return null;
+	const hrefs = await page
+		.locator('main a[href^="/a/"]')
+		.evaluateAll((links) => [
+			...new Set(
+				links.map((link) => link.getAttribute('href')).filter((href): href is string => !!href)
+			)
+		]);
+	for (const href of hrefs) {
+		await page.goto(href);
+		if ((await page.locator('main [style*="background"]').count()) > 0) return href;
+	}
+	return null;
+}
+
 test('the key strip offers exactly the eight allowed keys, including enter', async ({ page }) => {
 	const href = await firstPane(page);
 	if (!href) test.skip(true, 'no agents running');
@@ -26,13 +43,39 @@ test('the key strip offers exactly the eight allowed keys, including enter', asy
 	}
 });
 
-test('desktop conversation uses all space beside the sidebar with Full width', async ({ page }) => {
+test('conversation controls expose common toggles at desktop widths', async ({ page }) => {
 	await page.addInitScript(() => {
-		// Full fills the available width; Comfortable and Wide remain deliberate caps.
-		localStorage.setItem(
-			'bordr-prefs',
-			JSON.stringify({ conversationWidth: 'full', splitLayout: false })
-		);
+		localStorage.setItem('bordr-prefs', JSON.stringify({ showThinking: true }));
+	});
+	await page.setViewportSize({ width: 1400, height: 900 });
+	const href = await firstPane(page);
+	if (!href) test.skip(true, 'no agents running');
+	await page.goto(href as string);
+
+	await expect(page.getByRole('button', { name: 'Hide thinking', exact: true })).toBeVisible();
+	await page.getByRole('button', { name: 'Pane and tab controls' }).click();
+	const thinking = page
+		.getByRole('dialog', { name: /controls/ })
+		.getByRole('button', { name: /Show thinking/ });
+	await expect(thinking).toHaveAttribute('aria-pressed', 'true');
+	await expect(page.getByRole('button', { name: /Show tools/ })).toBeVisible();
+	await expect(page.getByRole('button', { name: /Notify when this agent finishes/ })).toBeVisible();
+
+	await thinking.click();
+	await expect(thinking).toHaveAttribute('aria-pressed', 'false');
+	expect(
+		await page.evaluate(
+			() =>
+				(JSON.parse(localStorage.getItem('bordr-prefs') ?? '{}') as { showThinking?: boolean })
+					.showThinking
+		)
+	).toBe(false);
+});
+
+test('desktop conversation uses all space beside the sidebar while resizing', async ({ page }) => {
+	await page.addInitScript(() => {
+		// An old saved cap must not keep winning after the choice was removed.
+		localStorage.setItem('bordr-prefs', JSON.stringify({ conversationWidth: 'comfortable' }));
 	});
 	await page.setViewportSize({ width: 1400, height: 900 });
 	const href = await firstPane(page);
@@ -49,6 +92,117 @@ test('desktop conversation uses all space beside the sidebar with Full width', a
 		available: element.parentElement?.getBoundingClientRect().width ?? 0
 	}));
 	expect(Math.abs(widths.main - widths.available)).toBeLessThan(2);
+});
+
+test('desktop split owns the terminal grid and writes canonical dividers', async ({ page }) => {
+	let geometryWrites = 0;
+	let geometryClaimStatus = 0;
+	let geometryReleases = 0;
+	let layoutWrites = 0;
+	let previewReads = 0;
+	page.on('request', (request) => {
+		const pathname = new URL(request.url()).pathname;
+		if (pathname === '/api/geometry' && request.method() === 'POST') {
+			geometryWrites++;
+			if ((request.postDataJSON() as { action?: string }).action === 'release') geometryReleases++;
+		}
+		if (pathname === '/api/layout' && request.method() === 'POST') layoutWrites++;
+		if (pathname.endsWith('/read') && request.method() === 'GET') previewReads++;
+	});
+	page.on('response', (response) => {
+		if (new URL(response.url()).pathname !== '/api/geometry') return;
+		if ((response.request().postDataJSON() as { action?: string }).action === 'claim') {
+			geometryClaimStatus = response.status();
+		}
+	});
+	await page.setViewportSize({ width: 1400, height: 900 });
+	await page.goto('/');
+	const pane = await page.evaluate(async () => {
+		const data = (await (await fetch('/api/panes')).json()) as {
+			workspaces?: Array<{ tabs: Array<{ panes: Array<{ paneId: string }> }> }>;
+		};
+		return (
+			data.workspaces?.flatMap((workspace) => workspace.tabs).find((tab) => tab.panes.length > 1)
+				?.panes[0]?.paneId ?? ''
+		);
+	});
+	if (!pane) test.skip(true, 'no split panes running');
+	await page.goto(`/a/${encodeURIComponent(pane)}`);
+
+	const preview = page.getByRole('button', { name: 'Open this pane' }).first();
+	await expect(preview).toBeVisible();
+	await expect.poll(() => geometryWrites).toBeGreaterThan(0);
+	await expect.poll(() => geometryClaimStatus).not.toBe(0);
+	if (geometryClaimStatus === 409) test.skip(true, 'another browser holds the viewport lease');
+	expect(geometryClaimStatus).toBe(200);
+	await expect
+		.poll(() => preview.evaluate((element) => element.parentElement?.dataset.autoFit ?? ''))
+		.toBe('');
+	const sizing = await preview.evaluate((element) => {
+		const branch = element.parentElement!;
+		const split = branch.parentElement!;
+		const pre = element.querySelector('pre');
+		const branchBox = branch.getBoundingClientRect();
+		const splitBox = split.getBoundingClientRect();
+		return {
+			style: branch.getAttribute('style') ?? '',
+			auto: branch.dataset.autoFit,
+			branchWidth: branchBox.width,
+			branchHeight: branchBox.height,
+			splitWidth: splitBox.width,
+			splitHeight: splitBox.height,
+			whiteSpace: pre ? getComputedStyle(pre).whiteSpace : '',
+			overflowWrap: pre ? getComputedStyle(pre).overflowWrap : '',
+			opacity: getComputedStyle(element).opacity,
+			terminalColumns: Number(branch.dataset.terminalColumns ?? 0)
+		};
+	});
+	expect(sizing.auto).toBeUndefined();
+	expect(sizing.style).toContain('flex:');
+	expect(sizing.style).not.toContain('max-width');
+	expect(sizing.style).not.toContain('max-height');
+	expect(sizing.whiteSpace).toBe('pre-wrap');
+	expect(sizing.overflowWrap).toBe('normal');
+	expect(sizing.opacity).toBe('1');
+
+	await preview.evaluate((element) => {
+		const pre = element.querySelector('pre');
+		(window as typeof window & { __previewBlanked?: boolean }).__previewBlanked = false;
+		if (!pre) return;
+		new MutationObserver(() => {
+			if (!pre.textContent) {
+				(window as typeof window & { __previewBlanked?: boolean }).__previewBlanked = true;
+			}
+		}).observe(pre, { childList: true, subtree: true, characterData: true });
+	});
+	// /api/panes refreshes every five seconds. It used to remount the preview,
+	// leaving an empty <pre> for one frame before the same screen came back.
+	await page.waitForTimeout(5_500);
+	expect(
+		await page.evaluate(
+			() => (window as typeof window & { __previewBlanked?: boolean }).__previewBlanked
+		)
+	).toBe(false);
+	const settled = await preview.evaluate((element) => {
+		const box = element.parentElement!.getBoundingClientRect();
+		return { width: box.width, height: box.height };
+	});
+	expect(Math.abs(settled.width - sizing.branchWidth)).toBeLessThan(1);
+	expect(Math.abs(settled.height - sizing.branchHeight)).toBeLessThan(1);
+	expect(previewReads).toBeGreaterThanOrEqual(4);
+
+	const divider = page.getByRole('button', { name: /Resize this split/ }).first();
+	const before = await divider.getAttribute('aria-label');
+	await divider.focus();
+	// One key matches a side-by-side divider, the other a stacked one.
+	await divider.press('ArrowLeft');
+	await divider.press('ArrowUp');
+	await expect(divider).not.toHaveAttribute('aria-label', before ?? '');
+	await expect.poll(() => layoutWrites).toBeGreaterThan(0);
+
+	await page.getByRole('link', { name: 'Back to agents', exact: true }).click();
+	await expect(page).toHaveURL(/\/$/);
+	await expect.poll(() => geometryReleases).toBeGreaterThan(0);
 });
 
 test('desktop picker questions take arrow and number keys from an empty composer', async ({
@@ -229,7 +383,7 @@ test('the manual-controls button toggles the key strip', async ({ page }) => {
 });
 
 test('chat bubbles replace the prefixed transcript when switched on', async ({ page }) => {
-	const href = await firstPane(page);
+	const href = await firstTranscriptPane(page);
 	if (!href) test.skip(true, 'no agents running');
 
 	await openSettings(page, 'chat bubbles');

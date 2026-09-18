@@ -84,6 +84,63 @@ describe('piAdapter.parse', () => {
 		});
 	});
 
+	it('turns Pi todo actions into plan snapshots', () => {
+		const jsonl = [
+			JSON.stringify({
+				type: 'message',
+				message: {
+					role: 'assistant',
+					content: [
+						{ type: 'toolCall', id: 'todo-list', name: 'todo', arguments: { action: 'list' } }
+					]
+				}
+			}),
+			JSON.stringify({
+				type: 'message',
+				message: {
+					role: 'toolResult',
+					toolCallId: 'todo-list',
+					content: [
+						{ type: 'text', text: '[completed] #1 Find cause\n[in_progress] #2 Fix it (fixing it)' }
+					]
+				}
+			}),
+			JSON.stringify({
+				type: 'message',
+				message: {
+					role: 'assistant',
+					content: [
+						{
+							type: 'toolCall',
+							id: 'todo-update',
+							name: 'todo',
+							arguments: { action: 'update', id: 2, status: 'completed' }
+						}
+					]
+				}
+			}),
+			JSON.stringify({
+				type: 'message',
+				message: {
+					role: 'toolResult',
+					toolCallId: 'todo-update',
+					content: [{ type: 'text', text: 'Updated #2 (in_progress → completed)' }]
+				}
+			})
+		].join('\n');
+
+		const messages = piAdapter.parse(jsonl);
+		expect(messages[0].blocks?.[0]).toMatchObject({
+			kind: 'tool',
+			supersededTodo: true
+		});
+		expect(messages[0].blocks?.[0]).not.toHaveProperty('todo');
+		expect(messages[1].blocks?.[0]).toMatchObject({
+			kind: 'tool',
+			todo: { total: 2, closed: 2, open: 0 }
+		});
+	});
+
 	it('keeps timestamps for pending-prompt ordering', () => {
 		expect(piAdapter.parse(SESSION)[0].at).toBe(Date.parse('2026-09-11T12:00:00.000Z'));
 	});

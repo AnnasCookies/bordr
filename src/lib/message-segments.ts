@@ -17,12 +17,15 @@ export function proseBlocks(blocks: Block[] | undefined): Block[] {
 
 /** Tool calls, results and thinking, which sit outside speech bubbles. */
 export function workBlocks(blocks: Block[] | undefined): Block[] {
-	return (blocks ?? []).filter((block) => segmentKind(block) === 'work');
+	return (blocks ?? []).filter(
+		(block) => segmentKind(block) === 'work' && !(block.kind === 'tool' && block.supersededTodo)
+	);
 }
 
 /** The todo card carried by an OMP todo tool call, including old transcripts. */
 export function todoPlanForBlock(block: Block): TodoPlan | null {
-	if (block.kind !== 'tool' || block.name.toLowerCase() !== 'todo') return null;
+	if (block.kind !== 'tool' || block.supersededTodo || block.name.toLowerCase() !== 'todo')
+		return null;
 	if (block.todo) return block.todo;
 	if (!block.result) return null;
 	return parseTodoPlan(block.result.text);
@@ -41,6 +44,7 @@ export function onlyToolWork(blocks: Block[] | undefined): boolean {
 	let hasTool = false;
 	for (const block of blocks ?? []) {
 		if (segmentKind(block) === 'prose') continue;
+		if (block.kind === 'tool' && block.supersededTodo) continue;
 		if (block.kind !== 'tool' || todoPlanForBlock(block) !== null) return false;
 		hasTool = true;
 	}
@@ -61,6 +65,7 @@ export function onlyThinking(blocks: Block[] | undefined): boolean {
 export function messageSegments(blocks: Block[] | undefined): MessageSegment[] {
 	const segments: MessageSegment[] = [];
 	for (const block of blocks ?? []) {
+		if (block.kind === 'tool' && block.supersededTodo) continue;
 		const kind = segmentKind(block);
 		const previous = segments.at(-1);
 		if (previous?.kind === kind) {

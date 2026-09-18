@@ -93,9 +93,10 @@ describe('normalisePrefs', () => {
 		expect(normalisePrefs({ toolDetail: 'xml' }).toolDetail).toBe(DEFAULTS.toolDetail);
 	});
 
-	it('retains every user-selected conversation width', () => {
-		for (const width of ['comfortable', 'wide', 'full'])
-			expect(normalisePrefs({ conversationWidth: width }).conversationWidth).toBe(width);
+	it('drops the old conversation width cap', () => {
+		expect(normalisePrefs({ conversationWidth: 'comfortable' })).not.toHaveProperty(
+			'conversationWidth'
+		);
 	});
 
 	it('follows the OS only for system', () => {
