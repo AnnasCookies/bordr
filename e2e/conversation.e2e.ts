@@ -78,7 +78,7 @@ test('an expanded tool stays open when the transcript refreshes', async ({ page 
 	await page.addInitScript(() => {
 		localStorage.setItem(
 			'bordr-prefs',
-			JSON.stringify({ splitPanes: false, showWork: true, groupTools: false })
+			JSON.stringify({ splitPanes: false, showWork: true, groupTools: true })
 		);
 	});
 	const href = await firstPane(page);
@@ -95,13 +95,22 @@ test('an expanded tool stays open when the transcript refreshes', async ({ page 
 		}
 	});
 	await page.goto(href as string);
-	// Use the newest visible call; the oldest can legitimately leave the 80-message window.
-	const tool = page.locator('details.tool').last();
+	// Use the newest visible run; the oldest can legitimately leave the 80-message window.
+	const group = page.locator('.transcript-rows > details.group').last();
+	const hasGroup = (await group.count()) > 0;
+	if (hasGroup) {
+		await group.locator(':scope > summary').click();
+		await expect(group).toHaveJSProperty('open', true);
+	}
+	const tool = hasGroup
+		? group.locator('details.tool').last()
+		: page.locator('details.tool').last();
 	if ((await tool.count()) === 0) test.skip(true, 'no tool call in the visible transcript');
 	await tool.locator('summary').click();
 	await expect(tool).toHaveJSProperty('open', true);
 	const before = refreshes;
 	await expect.poll(() => refreshes).toBeGreaterThan(before);
+	if (hasGroup) await expect(group).toHaveJSProperty('open', true);
 	await expect(tool).toHaveJSProperty('open', true);
 });
 

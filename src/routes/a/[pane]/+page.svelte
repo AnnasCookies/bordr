@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { onMount, tick } from 'svelte';
+	import { SvelteSet } from 'svelte/reactivity';
 	import { goto, invalidateAll } from '$app/navigation';
 	import { navigating, page } from '$app/state';
 	import { resolve } from '$app/paths';
@@ -890,6 +891,36 @@
 		const tool = work(message).find((block) => block.kind === 'tool');
 		const identity = tool ? `${tool.name}:${tool.summary}` : message.text.slice(0, 96);
 		return `m${message.at}:${message.role}:${identity}`;
+	}
+
+	const openToolGroups = new SvelteSet<string>();
+	function toggleToolGroup(event: MouseEvent, key: string) {
+		event.preventDefault();
+		const details = (event.currentTarget as HTMLElement).parentElement as HTMLDetailsElement;
+		details.open = !details.open;
+		if (details.open) {
+			openToolGroups.add(key);
+			if (openToolGroups.size > 512) {
+				openToolGroups.delete(openToolGroups.values().next().value as string);
+			}
+		} else openToolGroups.delete(key);
+	}
+
+	function toolGroupDisclosure(node: HTMLDetailsElement, initialKey: string) {
+		let key = initialKey;
+		const remember = () => {
+			if (node.open) openToolGroups.add(key);
+			else openToolGroups.delete(key);
+		};
+		node.open = openToolGroups.has(key);
+		node.addEventListener('toggle', remember);
+		return {
+			update(nextKey: string) {
+				key = nextKey;
+				node.open = openToolGroups.has(key);
+			},
+			destroy: () => node.removeEventListener('toggle', remember)
+		};
 	}
 
 	const rows = $derived.by((): Row[] => {
@@ -3365,9 +3396,10 @@
 									a message row; the toggle is checked inside it.
 								-->
 									{#if showTools}
-										<details class="group">
+										<details class="group" use:toolGroupDisclosure={`${detail.paneId}:${row.key}`}>
 											<summary
 												class="flex cursor-pointer items-baseline gap-2 rounded-lg px-2 py-1.5 font-mono text-[11.5px] text-muted transition-colors hover:bg-chip/60"
+												onclick={(event) => toggleToolGroup(event, `${detail.paneId}:${row.key}`)}
 											>
 												<span
 													class="shrink-0 self-center text-faint transition-transform group-open:rotate-90 motion-reduce:transition-none"
