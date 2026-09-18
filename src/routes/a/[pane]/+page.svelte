@@ -2940,6 +2940,31 @@
 	{/if}
 {/snippet}
 
+<!-- One focused terminal, reused by the standalone terminal view and desktop split. -->
+{#snippet liveTerminal(source: 'recent' | 'visible', lines: number)}
+	<div data-viewport-terminal-body class="flex min-h-0 flex-1 flex-col">
+		<PaneTerminal
+			paneId={detail.paneId}
+			agent={detail.agent}
+			ask={detail.picker && detail.picker.options.length > 0 && !askHidden ? pickerCard : undefined}
+			suggestion={detail.suggestion ?? ''}
+			bind:draft
+			mono={prefs.value.monoSize}
+			{lines}
+			{source}
+			{dictating}
+			{busy}
+			onkeys={sendKeys}
+			dialog={pickerKey}
+			{writeIn}
+			onsubmit={sendTerminalAnswer}
+			onrestore={restoreTerminalDraft}
+			bind:input={terminalInput}
+			onmic={speechSupported ? toggleDictation : undefined}
+		/>
+	</div>
+{/snippet}
+
 {#snippet conversation()}
 	<div class="flex min-h-dvh flex-col lg:h-full lg:min-h-0 lg:flex-1" bind:this={swipeRoot}>
 		<header data-viewport-header class="sticky top-0 z-10 border-b border-hairline bg-page">
@@ -3044,27 +3069,7 @@
 				prompt line under it. The transcript view is the one that
 				interprets; this one shows.
 			-->
-			<div data-viewport-terminal-body class="flex min-h-0 flex-1 flex-col">
-				<PaneTerminal
-					paneId={detail.paneId}
-					agent={detail.agent}
-					ask={detail.picker && detail.picker.options.length > 0 && !askHidden
-						? pickerCard
-						: undefined}
-					suggestion={detail.suggestion ?? ''}
-					bind:draft
-					mono={prefs.value.monoSize}
-					{dictating}
-					{busy}
-					onkeys={sendKeys}
-					dialog={pickerKey}
-					{writeIn}
-					onsubmit={sendTerminalAnswer}
-					onrestore={restoreTerminalDraft}
-					bind:input={terminalInput}
-					onmic={speechSupported ? toggleDictation : undefined}
-				/>
-			</div>
+			{@render liveTerminal('recent', 200)}
 		{:else}
 			<!--
 				The TRANSCRIPT moves, not the scroll container: the header above is
@@ -4020,7 +4025,7 @@
 		<div
 			class="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden ring-1 ring-working/50 ring-inset"
 		>
-			{@render conversation()}
+			{@render liveTerminal('visible', 20_000)}
 		</div>
 	{:else}
 		<PaneScreen
@@ -4129,10 +4134,9 @@
 		{/if}
 		{#if wideScreen && splitLayout}
 			<!--
-			The tab as herdr has it: the pane you are in holds the transcript and
-			the composer, and every other pane in the split shows its own screen.
-			A tile IS the pane, not a picture of it — which is the whole point of
-			showing the split rather than a row of chips.
+			The tab as Herdr has it: every tile is its pane's live visible grid.
+			The focused pane also keeps the compact input controls; siblings are
+			click-to-focus surfaces. Mobile keeps the full conversation view.
 		-->
 			<!--
 				min-w-0 matters here: without it this flex item sizes to its

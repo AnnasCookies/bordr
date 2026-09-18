@@ -100,14 +100,19 @@ test('desktop split owns the terminal grid and writes canonical dividers', async
 	let geometryReleases = 0;
 	let layoutWrites = 0;
 	let previewReads = 0;
+	const terminalReads: URL[] = [];
 	page.on('request', (request) => {
-		const pathname = new URL(request.url()).pathname;
+		const requestUrl = new URL(request.url());
+		const pathname = requestUrl.pathname;
 		if (pathname === '/api/geometry' && request.method() === 'POST') {
 			geometryWrites++;
 			if ((request.postDataJSON() as { action?: string }).action === 'release') geometryReleases++;
 		}
 		if (pathname === '/api/layout' && request.method() === 'POST') layoutWrites++;
-		if (pathname.endsWith('/read') && request.method() === 'GET') previewReads++;
+		if (pathname.endsWith('/read') && request.method() === 'GET') {
+			previewReads++;
+			terminalReads.push(requestUrl);
+		}
 	});
 	page.on('response', (response) => {
 		if (new URL(response.url()).pathname !== '/api/geometry') return;
@@ -131,6 +136,19 @@ test('desktop split owns the terminal grid and writes canonical dividers', async
 
 	const preview = page.getByRole('button', { name: 'Open this pane' }).first();
 	await expect(preview).toBeVisible();
+	// Every split tile is a live terminal. Only this focused one takes input.
+	await expect(page.getByRole('textbox', { name: 'Send to this pane' })).toBeVisible();
+	await expect(page.locator('[data-viewport-surface] .term')).toHaveCount(
+		await page
+			.getByRole('button', { name: 'Open this pane' })
+			.count()
+			.then((count) => count + 1)
+	);
+	await expect
+		.poll(() => terminalReads.filter((url) => url.searchParams.get('source') === 'visible').length)
+		.toBeGreaterThanOrEqual(2);
+	const liveReads = terminalReads.filter((url) => url.searchParams.get('source') === 'visible');
+	expect(liveReads.every((url) => url.searchParams.get('lines') === '20000')).toBe(true);
 	await expect.poll(() => geometryWrites).toBeGreaterThan(0);
 	await expect.poll(() => geometryClaimStatus).not.toBe(0);
 	if (geometryClaimStatus === 409) test.skip(true, 'another browser holds the viewport lease');

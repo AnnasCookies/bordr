@@ -26,7 +26,9 @@
 	 */
 	let {
 		paneId,
-		lines = 40,
+		// Herdr still returns only the live viewport. A high cap stops a tall pane
+		// being cut to an arbitrary 40 rows without dragging scrollback over the wire.
+		lines = 20_000,
 		mono = 12,
 		onopen
 	}: { paneId: string; lines?: number; mono?: number; onopen: () => void } = $props();
