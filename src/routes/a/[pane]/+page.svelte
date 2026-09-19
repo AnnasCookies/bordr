@@ -63,7 +63,8 @@
 	import StatusBlock from '$lib/components/status-block.svelte';
 	import NewAgentSheet from '$lib/components/new-agent-sheet.svelte';
 	import ControlSheet from '$lib/components/control-sheet.svelte';
-	import type { ControlScope } from '$lib/components/control-sheet.svelte';
+	import type { ControlTarget } from '$lib/components/control-sheet.svelte';
+	import ResourceContextMenu from '$lib/components/resource-context-menu.svelte';
 	import WorktreeSheet from '$lib/components/worktree-sheet.svelte';
 	import SubagentSheet from '$lib/components/subagent-sheet.svelte';
 	import Spinner from '$lib/components/spinner.svelte';
@@ -442,17 +443,52 @@
 		if (dictating) void holdScreen();
 	}
 	let closingContext = { current: '', siblings: [] as string[], all: [] as string[] };
-	/** Which scope the controls sheet is open for, if any. */
-	async function afterControl(action: 'focus' | 'rename' | 'close', scope: ControlScope) {
+	let resourceMenu = $state<{ target: ControlTarget; x: number; y: number } | null>(null);
+	let contextControlTarget = $state<ControlTarget | null>(null);
+	let controlIntent = $state<'rename' | 'close' | null>(null);
+
+	function openResourceMenu(target: ControlTarget, event: MouseEvent) {
+		event.preventDefault();
+		// Keep the fixed-size menu inside the viewport even at the bottom-right edge.
+		resourceMenu = {
+			target,
+			x: Math.max(8, Math.min(event.clientX || 8, window.innerWidth - 184)),
+			y: Math.max(8, Math.min(event.clientY || 8, window.innerHeight - 88))
+		};
+	}
+
+	function chooseResourceAction(action: 'rename' | 'close') {
+		if (!resourceMenu) return;
+		contextControlTarget = resourceMenu.target;
+		controlIntent = action;
+		resourceMenu = null;
+		controlling = true;
+	}
+
+	function closeControls() {
+		controlling = false;
+		contextControlTarget = null;
+		controlIntent = null;
+	}
+
+	async function afterControl(action: 'focus' | 'rename' | 'close', target: ControlTarget) {
 		if (action !== 'close') {
 			await invalidateAll();
 			if (action === 'focus') await focusPaneInput();
 			return;
 		}
+		const affectsCurrent =
+			(target.scope === 'pane' && target.id === detail.paneId) ||
+			(target.scope === 'tab' && target.id === detail.tabId);
+		// Closing a background tab or sibling pane leaves this conversation valid.
+		if (!affectsCurrent) {
+			await invalidateAll();
+			return;
+		}
 		// Replace rather than push: the pane behind this entry is gone, so back
 		// would land on a 404 for something the reader closed on purpose.
 		const next = afterClose({
-			scope,
+			scope: target.scope,
 			...closingContext
 		});
 		await goto(next ? resolve('/a/[pane]', { pane: next }) : resolve('/'), {
@@ -468,6 +504,9 @@
 			{ scope: 'pane' as const, id: detail.paneId, label: detail.title || detail.paneId },
 			detail.tabId ? { scope: 'tab' as const, id: detail.tabId, label: detail.tabLabel } : null
 		].filter((target) => target !== null)
+	);
+	const shownControlTargets = $derived(
+		contextControlTarget ? [contextControlTarget] : controlTargets
 	);
 
 	let statusOpen = $state(false);
@@ -2600,6 +2639,31 @@
 	let navigationTree = $state<import('$lib/types').WorkspaceNode[]>([]);
 	const swipeOrder = $derived(swipeSequence(order, navigationTree));
 
+	function paneControlTarget(paneId: string): ControlTarget {
+		for (const workspace of navigationTree) {
+			for (const tab of workspace.tabs) {
+				const pane = tab.panes.find((candidate) => candidate.paneId === paneId);
+				if (pane) {
+					return { scope: 'pane', id: paneId, label: pane.title || pane.paneId };
+				}
+			}
+		}
+		return {
+			scope: 'pane',
+			id: paneId,
+			label: paneId === detail.paneId ? detail.title || paneId : paneId
+		};
+	}
+
+	function openPaneMenu(event: MouseEvent, paneId: string, protectContent = false) {
+		if (protectContent) {
+			const target = event.target as HTMLElement;
+			if (target.closest('a, button, input, textarea, select, pre, code, [contenteditable="true"]'))
+				return;
+		}
+		openResourceMenu(paneControlTarget(paneId), event);
+	}
+
 	/**
 	 * The pane a swipe is currently heading towards, as a card under this one.
 	 *
@@ -3022,7 +3086,11 @@
 	<button
 		class="flex h-9 w-9 shrink-0 items-center justify-center rounded-full border border-edge text-faint"
 		aria-label="Pane and tab controls"
-		onclick={() => (controlling = true)}
+		onclick={() => {
+			contextControlTarget = null;
+			controlIntent = null;
+			controlling = true;
+		}}
 	>
 		<span class="text-[17px] leading-none">&#x22EF;</span>
 	</button>
@@ -3087,6 +3155,7 @@
 				current={detail.paneId}
 				panes={!(wideScreen && splitLayout)}
 				onselect={(paneId) => void openSplitPane(paneId)}
+				oncontext={(target, event) => openResourceMenu(target, event)}
 				onsiblings={(list) => (tabSiblings = list)}
 			/>
 
@@ -4141,11 +4210,19 @@
 	{#if paneId === detail.paneId}
 		<div
 			class="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden ring-1 ring-working/50 ring-inset"
+			role="group"
+			aria-label="Current pane"
+			oncontextmenu={(event) => openPaneMenu(event, paneId, true)}
 		>
 			{@render conversation()}
 		</div>
 	{:else}
-		<PaneScreen {paneId} mono={prefs.value.monoSize} onopen={() => void openSplitPane(paneId)} />
+		<PaneScreen
+			{paneId}
+			mono={prefs.value.monoSize}
+			onopen={() => void openSplitPane(paneId)}
+			oncontext={(event) => openPaneMenu(event, paneId)}
+		/>
 	{/if}
 {/snippet}
 
@@ -4268,20 +4345,30 @@
 		{/if}
 	</div>
 	<NewAgentSheet open={showNewAgent} onclose={() => (showNewAgent = false)} />
+	{#if resourceMenu}
+		<ResourceContextMenu
+			target={resourceMenu.target}
+			x={resourceMenu.x}
+			y={resourceMenu.y}
+			onchoose={chooseResourceAction}
+			onclose={() => (resourceMenu = null)}
+		/>
+	{/if}
 	{#if controlling}
 		<ControlSheet
 			onstart={() =>
 				(closingContext = { current: detail.paneId, siblings: [...tabSiblings], all: [...order] })}
-			targets={controlTargets}
-			subagents={subs}
-			toggles={conversationToggles}
+			targets={shownControlTargets}
+			initialAction={controlIntent}
+			subagents={contextControlTarget ? [] : subs}
+			toggles={contextControlTarget ? [] : conversationToggles}
 			onsubagent={(id) => {
 				controlling = false;
 				openSub = id;
 			}}
-			onclose={() => (controlling = false)}
+			onclose={closeControls}
 			ondone={afterControl}
-			onworktrees={detail.cwd
+			onworktrees={!contextControlTarget && detail.cwd
 				? () => {
 						controlling = false;
 						worktrees = true;

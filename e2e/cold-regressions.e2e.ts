@@ -68,6 +68,12 @@ async function fixture(
 		command: null as { name: string; message: string } | null,
 		controlDelay: null as Promise<void> | null,
 		controlCalls: 0,
+		controlBodies: [] as Array<{
+			action: 'focus' | 'rename' | 'close';
+			scope: 'pane' | 'tab' | 'workspace';
+			id: string;
+			label: string;
+		}>,
 		extraBlocks: [] as unknown[],
 		trees: 0,
 		selected: 1,
@@ -146,6 +152,7 @@ async function fixture(
 		if (path === '/api/agents') return respond({ agents: state.agentData });
 		if (path === '/api/control') {
 			state.controlCalls++;
+			state.controlBodies.push(route.request().postDataJSON());
 			await state.controlDelay;
 			return respond({ ok: true });
 		}
@@ -277,6 +284,54 @@ for (const paneView of ['conversation', 'terminal']) {
 		await expect(input).toBeFocused();
 	});
 }
+
+test('right-clicking a tab opens rename for that tab', async ({ page }) => {
+	const state = await fixture(page, { tabStrip: 'always' });
+	state.picker = false;
+	await openPane(page);
+	const tab = page.getByRole('tab', { name: /Split/ }).first();
+	await tab.click({ button: 'right' });
+	const menu = page.getByRole('menu', { name: 'tab options for Split' });
+	await expect(menu).toBeVisible();
+	await menu.getByRole('menuitem', { name: 'Rename tab' }).click();
+	const dialog = page.getByRole('dialog', { name: 'tab controls' });
+	const name = dialog.getByRole('textbox', { name: 'Name' });
+	await expect(name).toBeFocused();
+	await name.fill('Release');
+	await dialog.getByRole('button', { name: 'Rename' }).click();
+	await expect
+		.poll(() => state.controlBodies.at(-1))
+		.toEqual({
+			action: 'rename',
+			scope: 'tab',
+			id: 't1',
+			label: 'Release'
+		});
+});
+
+test('right-clicking a sibling pane closes that pane without leaving the current one', async ({
+	page
+}) => {
+	const state = await fixture(page, { tabStrip: 'always' });
+	state.picker = false;
+	await openPane(page);
+	await page.locator('a[href="/a/c"][role="tab"]').click({ button: 'right' });
+	const menu = page.getByRole('menu', { name: 'pane options for Fixture a' });
+	await expect(menu).toBeVisible();
+	await menu.getByRole('menuitem', { name: 'Close pane' }).click();
+	const dialog = page.getByRole('dialog', { name: 'pane controls' });
+	await expect(dialog.getByText('Close this pane?')).toBeVisible();
+	await dialog.getByRole('button', { name: 'Close it' }).click();
+	await expect
+		.poll(() => state.controlBodies.at(-1))
+		.toEqual({
+			action: 'close',
+			scope: 'pane',
+			id: 'c',
+			label: 'Fixture a'
+		});
+	await expect.poll(() => new URL(page.url()).pathname).toBe('/a/a');
+});
 
 test('an exited current pane moves to a surviving sibling instead of the 404 page', async ({
 	page

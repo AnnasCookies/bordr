@@ -11,6 +11,7 @@
 	import HarnessMark from './harness-mark.svelte';
 	import { currentTabPanes } from '$lib/swipe-order';
 	import type { WorkspaceNode } from '$lib/types';
+	import type { ControlTarget } from './control-sheet.svelte';
 
 	let {
 		current,
@@ -18,7 +19,8 @@
 		visible = true,
 		ontree,
 		onsiblings,
-		onselect
+		onselect,
+		oncontext
 	}: {
 		current: string;
 		panes?: boolean;
@@ -26,6 +28,8 @@
 		ontree?: (workspaces: WorkspaceNode[]) => void;
 		/** Select through the owning page so it can focus the new pane's input. */
 		onselect?: (paneId: string) => void;
+		/** Open the desktop right-click menu for exactly the resource under the pointer. */
+		oncontext?: (target: ControlTarget, event: MouseEvent) => void;
 		/**
 		 * Every pane of the tab holding `current`, in tab order: what a swipe
 		 * walks through and what closing the pane falls back to.
@@ -88,6 +92,12 @@
 		if (!onselect || event.button !== 0 || event.ctrlKey || event.metaKey || event.shiftKey) return;
 		event.preventDefault();
 		onselect(paneId);
+	}
+
+	function context(event: MouseEvent, target: ControlTarget) {
+		if (!oncontext) return;
+		event.preventDefault();
+		oncontext(target, event);
 	}
 
 	/**
@@ -214,6 +224,8 @@
 					href={resolve('/a/[pane]', { pane: target })}
 					role="tab"
 					onclick={(event) => select(event, target)}
+					oncontextmenu={(event) =>
+						context(event, { scope: 'tab', id: tab.tabId, label: label(tab) })}
 					aria-selected={open}
 					class="flex shrink-0 items-center gap-1.5 border-b-2 px-1.5 py-1.5 text-[12.5px] {open
 						? 'border-working text-ink'
@@ -269,6 +281,12 @@
 					href={resolve('/a/[pane]', { pane: pane.paneId })}
 					role="tab"
 					onclick={(event) => select(event, pane.paneId)}
+					oncontextmenu={(event) =>
+						context(event, {
+							scope: 'pane',
+							id: pane.paneId,
+							label: pane.title || paneLabel(pane)
+						})}
 					aria-selected={open}
 					class="flex shrink-0 items-center gap-1.5 rounded-md border px-2 py-0.5 text-[12px] {open
 						? 'border-working/60 bg-card text-ink'

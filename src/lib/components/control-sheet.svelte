@@ -33,7 +33,8 @@
 		onclose,
 		ondone,
 		onworktrees,
-		onstart
+		onstart,
+		initialAction = null
 	}: {
 		/**
 		 * What this sheet can act on, in the order they are offered.
@@ -63,12 +64,14 @@
 		toggles?: { label: string; hint?: string; on: boolean; onchange: () => void }[];
 		onclose: () => void;
 		onstart?: () => void;
+		/** A context-menu choice can land directly on rename or close confirmation. */
+		initialAction?: 'rename' | 'close' | null;
 		/**
 		 * Something changed. The action is passed on because a close leaves
 		 * the page looking at something that no longer exists, and only the
 		 * caller knows where to go instead.
 		 */
-		ondone: (action: 'focus' | 'rename' | 'close', scope: ControlScope) => void;
+		ondone: (action: 'focus' | 'rename' | 'close', target: ControlTarget) => void;
 		/** Offered only when the caller knows a repository to look in. */
 		onworktrees?: () => void;
 	} = $props();
@@ -88,19 +91,32 @@
 	 */
 	let name = $state('');
 	let shownFor = $state('');
+	let busy = $state('');
+	let failed = $state<string | null>(null);
+	let confirming = $state(false);
+	let nameInput = $state<HTMLInputElement>();
 	$effect(() => {
 		if (shownFor === id) return;
 		shownFor = id;
 		name = label;
+		confirming = initialAction === 'close';
 	});
-	let busy = $state('');
-	let failed = $state<string | null>(null);
-	let confirming = $state(false);
+	let focusedRenameFor = '';
+
+	$effect(() => {
+		if (initialAction !== 'rename' || focusedRenameFor === id || !nameInput) return;
+		focusedRenameFor = id;
+		const frame = requestAnimationFrame(() => {
+			nameInput?.focus({ preventScroll: true });
+			nameInput?.select();
+		});
+		return () => cancelAnimationFrame(frame);
+	});
 
 	async function send(action: 'focus' | 'rename' | 'close') {
 		if (busy) return;
 		onstart?.();
-		const sentScope = scope;
+		const sentTarget = target;
 		busy = action;
 		failed = null;
 		try {
@@ -119,7 +135,7 @@
 				busy = '';
 				return;
 			}
-			ondone(action, sentScope);
+			ondone(action, sentTarget);
 			onclose();
 		} catch (e) {
 			failed = `Nothing was sent: ${(e as Error).message}`;
@@ -172,6 +188,7 @@
 				<span class="mb-1 block text-[12px] text-muted">Name</span>
 				<div class="flex gap-2">
 					<input
+						bind:this={nameInput}
 						bind:value={name}
 						placeholder={scope === 'pane' ? 'Leave empty to clear' : `Name this ${scope}`}
 						class="min-w-0 flex-1 rounded-lg border border-edge bg-page px-3 py-2 text-[16px]"

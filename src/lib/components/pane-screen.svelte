@@ -30,8 +30,21 @@
 		// being cut to an arbitrary 40 rows without dragging scrollback over the wire.
 		lines = 20_000,
 		mono = 12,
-		onopen
-	}: { paneId: string; lines?: number; mono?: number; onopen: () => void } = $props();
+		onopen,
+		oncontext
+	}: {
+		paneId: string;
+		lines?: number;
+		mono?: number;
+		onopen: () => void;
+		oncontext?: (event: MouseEvent) => void;
+	} = $props();
+
+	function context(event: MouseEvent) {
+		if (!oncontext) return;
+		event.preventDefault();
+		oncontext(event);
+	}
 
 	const initialPaneId = () => paneId;
 	let text = $state(screenCache.get(initialPaneId()) ?? '');
@@ -152,6 +165,7 @@
 	class="flex min-h-0 min-w-0 flex-1 cursor-pointer flex-col overflow-hidden bg-page text-left"
 	aria-label="Open this pane"
 	onclick={onopen}
+	oncontextmenu={context}
 >
 	<TerminalSurface {text} {mono} {failed} />
 </button>
