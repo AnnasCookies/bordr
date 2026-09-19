@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { keysForOption, menuFooter, parsePicker, suggestionFrom } from './picker';
+import { asyncQuestionKey, keysForOption, menuFooter, parsePicker, suggestionFrom } from './picker';
 
 const ASK_USER_QUESTION = `
 ❯ Use the AskUserQuestion tool to ask me to pick a colour.
@@ -631,5 +631,62 @@ describe('parsePicker: what the approval is about', () => {
 		const bare = ['Pick one', '❯ 1. Red', '  2. Blue'].join('\n');
 		const picker = parsePicker(bare)!;
 		expect(picker.context).toEqual([]);
+	});
+});
+
+/**
+ * codex 0.155's `request_user_input_async`: the question waits collapsed above
+ * the composer until its key opens it. Shapes from codex's own render
+ * snapshots (tui/src/bottom_pane), with the Linux key names it prints.
+ */
+const CODEX_COLLAPSED = [
+	'• Explored the deploy config.',
+	'',
+	'  ? 1 question · 45s',
+	'    alt + ↑ to answer',
+	'',
+	'› Ask Codex to do anything',
+	'',
+	'  gpt-6-astra max fast · 62% left · ~/Documents/Dev/GitHub/sera'
+].join('\n');
+const CODEX_OPENED = [
+	'  Where will you test Sera? If you use an existing site, include its URL',
+	'  so I can verify the build you’ll actually see.',
+	'',
+	'  › 1. Existing staging site',
+	'    2. Local preview',
+	'    3. Other (write an answer)',
+	'',
+	'  enter submit   ctrl + ] skip',
+	'  alt + ↓ main prompt'
+].join('\n');
+
+describe('codex async questions', () => {
+	it('finds the key that opens a collapsed question, in either key spelling', () => {
+		expect(asyncQuestionKey(CODEX_COLLAPSED)).toBe('alt+up');
+		expect(asyncQuestionKey(CODEX_COLLAPSED.replace('alt + ↑', '⌥ + ↑'))).toBe('alt+up');
+		expect(asyncQuestionKey(CODEX_COLLAPSED.replace('alt + ↑', 'shift + ←'))).toBe('shift+left');
+		expect(asyncQuestionKey(CODEX_COLLAPSED.replace('? 1 question', '? 2 questions'))).toBe(
+			'alt+up'
+		);
+	});
+
+	it('does not open anything without the collapsed summary, or with a key it cannot send', () => {
+		expect(asyncQuestionKey('› Ask Codex to do anything')).toBeNull();
+		// A remapped binding is codex's own business; guessing would type into it.
+		expect(asyncQuestionKey(CODEX_COLLAPSED.replace('alt + ↑', 'ctrl + o'))).toBeNull();
+		// The hint belongs to the summary line above it, not to prose elsewhere.
+		expect(asyncQuestionKey('Reply to answer\n    alt + ↑ to answer')).toBeNull();
+	});
+
+	it('reads the opened question as a numbered, keyed picker', () => {
+		const picker = parsePicker(CODEX_OPENED)!;
+		expect(picker.options.map((o) => o.label)).toEqual([
+			'Existing staging site',
+			'Local preview',
+			'Other (write an answer)'
+		]);
+		expect(picker.numbered).toBe(true);
+		expect(picker.answer).toBeUndefined();
 	});
 });
