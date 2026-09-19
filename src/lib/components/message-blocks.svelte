@@ -28,7 +28,10 @@
 		showTools?: boolean;
 		showThinking?: boolean;
 		plain?: boolean;
-		/** Stable transcript row identity, so open tools survive a data refresh. */
+		/**
+		 * Stable transcript row identity, so open tools survive a data refresh.
+		 * Without one, open state is left to the element and not remembered.
+		 */
 		scope?: string;
 	} = $props();
 
@@ -60,25 +63,37 @@
 		return block.input !== null || block.result !== null || block.diffs.length > 0;
 	}
 
-	function toolKey(block: Extract<Block, { kind: 'tool' }>, index: number): string {
+	/**
+	 * Where a tool's open state is remembered, or null when it is not.
+	 *
+	 * Only a scoped caller names a row. Unscoped, the key was just index, name
+	 * and summary, which every unscoped caller shares — so opening one tool in
+	 * a sub-agent opened every unscoped call at the same index with the same
+	 * summary: in another sub-agent, in your own messages, in the settings
+	 * preview. Those callers keep the element's own open state instead.
+	 */
+	function toolKey(block: Extract<Block, { kind: 'tool' }>, index: number): string | null {
+		if (scope === '') return null;
 		return `${scope}\0${index}\0${block.name}\0${block.summary}`;
 	}
 
-	function rememberToolClick(event: MouseEvent, key: string) {
+	function rememberToolClick(event: MouseEvent, key: string | null) {
 		event.preventDefault();
 		const details = (event.currentTarget as HTMLElement).parentElement as HTMLDetailsElement;
 		// Set the property now rather than waiting for the native queued toggle.
 		// A transcript refresh can remove this node in the same click turn.
 		details.open = !details.open;
+		if (key === null) return;
 		if (details.open) {
 			openTools.add(key);
 			if (openTools.size > 512) openTools.delete(openTools.values().next().value as string);
 		} else openTools.delete(key);
 	}
 
-	function toolDisclosure(node: HTMLDetailsElement, initialKey: string) {
+	function toolDisclosure(node: HTMLDetailsElement, initialKey: string | null) {
 		let key = initialKey;
 		const remember = () => {
+			if (key === null) return;
 			if (node.open) {
 				openTools.add(key);
 				// A long-running browser can visit thousands of calls. Keep recent intent,
@@ -86,12 +101,12 @@
 				if (openTools.size > 512) openTools.delete(openTools.values().next().value as string);
 			} else openTools.delete(key);
 		};
-		node.open = openTools.has(key);
+		if (key !== null) node.open = openTools.has(key);
 		node.addEventListener('toggle', remember);
 		return {
-			update(nextKey: string) {
+			update(nextKey: string | null) {
 				key = nextKey;
-				node.open = openTools.has(key);
+				if (key !== null) node.open = openTools.has(key);
 			},
 			destroy: () => node.removeEventListener('toggle', remember)
 		};

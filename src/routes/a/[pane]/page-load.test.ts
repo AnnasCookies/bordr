@@ -1,5 +1,20 @@
-import { describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { load } from './+page';
+
+/**
+ * The load sends its held ETag from the browser only, and these tests run
+ * under Node, where the real `browser` is false. A getter rather than a value
+ * so one test can play the server's first render.
+ */
+const environment = vi.hoisted(() => ({ browser: true }));
+vi.mock('$app/environment', () => ({
+	get browser() {
+		return environment.browser;
+	}
+}));
+afterEach(() => {
+	environment.browser = true;
+});
 
 type LoadEvent = Parameters<typeof load>[0];
 
@@ -116,6 +131,35 @@ describe('pane load: unchanged detail', () => {
 		if (!first || !second) throw new Error('load returned no data');
 		expect(conditional).toBe('"same-detail"');
 		expect(second.detail).toBe(first.detail);
+	});
+
+	it('never makes the server render conditional', async () => {
+		// An ETag on the SSR fetch made the inlined response unmatchable: the
+		// browser, with nothing held, could not repeat that request, missed the
+		// inlined response and fetched it again.
+		const conditionals: string[] = [];
+		const fetchStub = async (input: string | URL | Request, init?: RequestInit) => {
+			const path = String(input);
+			if (path.endsWith('/watch')) {
+				return new Response(JSON.stringify({ watched: false }), { status: 200 });
+			}
+			conditionals.push(new Headers(init?.headers).get('if-none-match') ?? '');
+			return new Response(JSON.stringify({ ...DETAIL, paneId: 'ssr:p1' }), {
+				status: 200,
+				headers: { etag: '"ssr-detail"' }
+			});
+		};
+		const event = {
+			params: { pane: 'ssr:p1' },
+			url: new URL('http://x/a/ssr:p1'),
+			fetch: fetchStub
+		} as unknown as LoadEvent;
+
+		environment.browser = false;
+		await load(event);
+		await load(event);
+		// The second render has the first one's ETag held, and still sends none.
+		expect(conditionals).toEqual(['', '']);
 	});
 });
 

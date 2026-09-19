@@ -79,6 +79,7 @@
 	import { echoesAnswer, holdsAnswer } from './answer-echo';
 	import { glideInterrupted } from './glide-interrupt';
 	import { keepPending, restorePending, say, type PendingSend } from '$lib/pending-sends';
+	import { uniqueKeys } from '$lib/row-keys';
 	import { queueVerdict } from '$lib/queue';
 	import { pickerShortcut, pickerIdentity } from '$lib/picker-shortcut';
 	import { parseModelLine } from '$lib/model-line';
@@ -884,7 +885,9 @@
 	 * A transcript window can grow backwards from 1 MiB to 4 MiB. Absolute
 	 * array indexes then change for every existing turn, remounting open tools.
 	 * Harness timestamps are stable across reparses; a tool identity separates
-	 * the vanishingly rare pair of records written in the same millisecond.
+	 * most records written in the same millisecond, and `uniqueKeys` numbers
+	 * the ones it cannot — parallel calls with the same summary, or an entry
+	 * written twice — because a repeated key stops the whole list rendering.
 	 */
 	function messageRowKey(message: (typeof visibleMessages)[number], fallback: string): string {
 		if (!message.at) return fallback;
@@ -923,12 +926,19 @@
 		};
 	}
 
+	// Numbered over the whole transcript, not the visible slice: the slice's top
+	// edge moves with every new message, and a repeat numbered within it would
+	// renumber — and remount — as its twin scrolled off the top.
+	const messageKeys = $derived(
+		uniqueKeys(detail.messages.map((message, i) => messageRowKey(message, `m${i}`)))
+	);
+
 	const rows = $derived.by((): Row[] => {
 		const base = detail.messages.length - visibleMessages.length;
 		const out: Row[] = visibleMessages.map((message, i) => ({
 			kind: 'message' as const,
 			message,
-			key: messageRowKey(message, `m${base + i}`),
+			key: messageKeys[base + i],
 			run: 'only' as RunPos,
 			thinkingJoin: false
 		}));
@@ -1091,6 +1101,27 @@
 		}
 	}
 
+	/**
+	 * A clock for the grace period below, ticking only while a prompt waits.
+	 *
+	 * The effect that retires prompts used to re-run on every poll, because
+	 * every poll brought a new `detail`. An unchanged transcript now comes back
+	 * as a 304 carrying the SAME detail object, so nothing re-ran it — and the
+	 * grace period is measured in time, which was not one of its inputs, so a
+	 * prompt the agent never took said "queued" forever.
+	 */
+	const PENDING_TICK_MS = 5_000;
+	let pendingClock = $state(Date.now());
+	const awaiting = $derived(pendingSends.length > 0);
+	$effect(() => {
+		if (!awaiting) return;
+		pendingClock = Date.now();
+		const timer = setInterval(() => {
+			pendingClock = Date.now();
+		}, PENDING_TICK_MS);
+		return () => clearInterval(timer);
+	});
+
 	$effect(() => {
 		if (pendingSends.length === 0) return;
 
@@ -1132,7 +1163,9 @@
 		// The rule itself is in $lib/pending-sends.ts, with its tests — it is the
 		// one that lost messages, and it is easier to get wrong than it looks.
 		const settled = detail.status === 'idle' || detail.status === 'done';
-		const still = keepPending(pendingSends, landed, settled, Date.now());
+		// The clock, not Date.now(): reading it is what re-runs this as time
+		// passes. It trails real time by at most one tick.
+		const still = keepPending(pendingSends, landed, settled, pendingClock);
 		if (still.length !== pendingSends.length) pendingSends = still;
 	});
 
@@ -3448,6 +3481,7 @@
 													<MessageBlocks
 														blocks={message.blocks ?? []}
 														mono={prefs.value.monoSize}
+														scope={`${detail.paneId}:${row.key}`}
 														plain
 													/>
 													{#snippet meta()}
@@ -3465,6 +3499,7 @@
 													<MessageBlocks
 														blocks={message.blocks ?? []}
 														mono={prefs.value.monoSize}
+														scope={`${detail.paneId}:${row.key}`}
 														plain
 													/>
 												</span>
@@ -3511,6 +3546,7 @@
 																<MessageBlocks
 																	blocks={segment.blocks}
 																	mono={prefs.value.monoSize}
+																	scope={`${detail.paneId}:${row.key}:segment-${segmentIndex}`}
 																/>
 																{#snippet meta()}
 																	<!--

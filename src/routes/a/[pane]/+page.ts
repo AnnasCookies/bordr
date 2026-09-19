@@ -1,4 +1,5 @@
 import { error } from '@sveltejs/kit';
+import { browser } from '$app/environment';
 import type { AgentDetail } from '$lib/types';
 import type { PageLoad } from './$types';
 
@@ -41,6 +42,13 @@ async function failureMessage(response: Response): Promise<string> {
  * stays exactly as it was and the connection dot goes red. Per pane and never
  * evicted — it is one transcript each for the panes visited this session, and
  * a reload clears it.
+ *
+ * The ETag is sent from the browser only. This module also runs on the server
+ * for the first render, where a conditional fetch made the response inlined
+ * into the page carry an `if-none-match` the browser's empty map could not
+ * repeat — hydration missed it and fetched the transcript again. The server
+ * still keeps its copy, so a reload during an outage holds the last transcript
+ * instead of an error page.
  */
 type Held = { detail: AgentDetail; watched: boolean; megabytes: number; etag: string };
 const lastGood = new Map<string, Held>();
@@ -74,7 +82,7 @@ export const load: PageLoad = async ({ params, url, fetch }) => {
 		reach(
 			fetch,
 			`/api/agents/${encodeURIComponent(params.pane)}?bytes=${megabytes * 1024 * 1024}`,
-			held?.etag ? { headers: { 'if-none-match': held.etag } } : undefined
+			browser && held?.etag ? { headers: { 'if-none-match': held.etag } } : undefined
 		),
 		reach(fetch, `/api/agents/${encodeURIComponent(params.pane)}/watch`)
 	]);

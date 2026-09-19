@@ -1,18 +1,64 @@
 import { mkdirSync, realpathSync, statSync } from 'node:fs';
-import { resolve, sep } from 'node:path';
+import { relative, resolve, sep } from 'node:path';
 
 /** A directory-picker refusal with the HTTP status its route should return. */
 export class DirectoryError extends Error {
 	constructor(
 		message: string,
-		readonly status = 400
+		readonly status = 400,
+		options?: ErrorOptions
 	) {
-		super(message);
+		super(message, options);
 	}
 }
 
+/** Linux and macOS both cap one path segment at 255 bytes, not characters. */
+const MAX_NAME_BYTES = 255;
+// eslint-disable-next-line no-control-regex -- refusing control characters is the point
+const CONTROL = /[\x00-\x1f\x7f]/;
+
 function inside(root: string, path: string): boolean {
 	return path === root || path.startsWith(root + sep);
+}
+
+/**
+ * Whether any folder below `root` on the way to `path` is hidden. The picker
+ * never lists a dot folder, so it must not create in one either: a typed
+ * `~/.ssh` would otherwise reach a folder the walker keeps out of sight.
+ * Only segments below home count, so a home that sits in a dot folder works.
+ */
+function hiddenBelow(root: string, path: string): boolean {
+	return relative(root, path)
+		.split(sep)
+		.some((segment) => segment.startsWith('.'));
+}
+
+/**
+ * A real path as the picker shows it. Built from the REAL home, because the
+ * paths here are real paths: when home is a symlink, replacing the unresolved
+ * home never matched and the phone showed the whole absolute path.
+ */
+export function homeDisplay(realHome: string, path: string): string {
+	if (path === realHome) return '~';
+	if (path.startsWith(realHome + sep)) return `~${path.slice(realHome.length)}`;
+	return path;
+}
+
+/**
+ * A mkdir failure as the phone should see it. The raw message names the
+ * absolute path, so only the reason goes back; the error stays as `cause`
+ * for the server log.
+ */
+function mkdirRefusal(cause: unknown): DirectoryError {
+	switch ((cause as NodeJS.ErrnoException).code) {
+		case 'EACCES':
+		case 'EPERM':
+			return new DirectoryError('permission denied', 403, { cause });
+		case 'ENAMETOOLONG':
+			return new DirectoryError('folder name is too long', 400, { cause });
+		default:
+			return new DirectoryError('could not create folder', 500, { cause });
+	}
 }
 
 /**
@@ -36,7 +82,10 @@ export function createHomeDirectory(
 	if (folder.startsWith('.')) {
 		throw new DirectoryError('hidden folder names are not shown here');
 	}
-	if (folder.includes('\0')) throw new DirectoryError('folder name is not valid');
+	if (CONTROL.test(folder)) throw new DirectoryError('folder name is not valid');
+	if (Buffer.byteLength(folder) > MAX_NAME_BYTES) {
+		throw new DirectoryError('folder name is too long');
+	}
 
 	let realHome: string;
 	let realParent: string;
@@ -47,6 +96,7 @@ export function createHomeDirectory(
 		throw new DirectoryError('parent folder does not exist');
 	}
 	if (!inside(realHome, realParent)) throw new DirectoryError('parent folder is outside home');
+	if (hiddenBelow(realHome, realParent)) throw new DirectoryError('parent folder is hidden');
 	if (!statSync(realParent).isDirectory()) throw new DirectoryError('parent is not a folder');
 
 	const target = resolve(realParent, folder);
@@ -54,19 +104,21 @@ export function createHomeDirectory(
 	try {
 		mkdirSync(target);
 	} catch (cause) {
-		if ((cause as NodeJS.ErrnoException).code !== 'EEXIST') {
-			throw new DirectoryError(`could not create folder: ${(cause as Error).message}`, 500);
-		}
+		if ((cause as NodeJS.ErrnoException).code !== 'EEXIST') throw mkdirRefusal(cause);
 		created = false;
 	}
 
 	let realTarget: string;
 	try {
 		realTarget = realpathSync(target);
-	} catch {
-		throw new DirectoryError('could not open the new folder', 500);
+	} catch (cause) {
+		throw new DirectoryError('could not open the new folder', 500, { cause });
 	}
 	if (!inside(realHome, realTarget)) throw new DirectoryError('new folder resolves outside home');
+	// An existing symlink with a plain name can still lead into a dot folder.
+	if (hiddenBelow(realHome, realTarget)) {
+		throw new DirectoryError('new folder resolves to a hidden folder');
+	}
 	if (!statSync(realTarget).isDirectory())
 		throw new DirectoryError('a file already has that name', 409);
 	return { path: realTarget, created };

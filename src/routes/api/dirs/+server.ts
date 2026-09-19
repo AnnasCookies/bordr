@@ -2,7 +2,7 @@ import { readdirSync, realpathSync, statSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { join, resolve, sep } from 'node:path';
 import { json } from '@sveltejs/kit';
-import { createHomeDirectory, DirectoryError } from '$lib/server/home-directories';
+import { createHomeDirectory, DirectoryError, homeDisplay } from '$lib/server/home-directories';
 import type { RequestHandler } from './$types';
 
 const HOME = homedir();
@@ -45,7 +45,7 @@ export const GET: RequestHandler = async ({ url }) => {
 
 	return json({
 		path: absolute,
-		display: absolute.replace(HOME, '~'),
+		display: homeDisplay(realHome, absolute),
 		parent: absolute === realHome ? null : join(absolute, '..'),
 		dirs
 	});
@@ -68,14 +68,14 @@ export const POST: RequestHandler = async ({ request }) => {
 	try {
 		const parent = body.parent?.replace(/^~(?=\/|$)/, HOME);
 		const result = createHomeDirectory(HOME, parent, body.name);
-		return json({
-			...result,
-			display: result.path.replace(HOME, '~')
-		});
+		return json({ ...result, display: homeDisplay(realpathSync(HOME), result.path) });
 	} catch (cause) {
+		// The phone gets a reason without a path; the log keeps the real error.
 		if (cause instanceof DirectoryError) {
+			if (cause.status >= 500) console.error('POST /api/dirs:', cause.cause ?? cause);
 			return json({ message: cause.message }, { status: cause.status });
 		}
+		console.error('POST /api/dirs:', cause);
 		return json({ message: 'could not create folder' }, { status: 500 });
 	}
 };

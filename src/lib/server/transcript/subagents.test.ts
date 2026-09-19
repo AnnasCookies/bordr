@@ -1,8 +1,16 @@
-import { describe, expect, it } from 'vitest';
-import { mkdirSync, mkdtempSync, writeFileSync } from 'node:fs';
+import { describe, expect, it, vi } from 'vitest';
+import { appendFileSync, mkdirSync, mkdtempSync, writeFileSync } from 'node:fs';
+import { readFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { listSubagents, readSubagent, subagentsDir } from './subagents';
+
+// The real readFile, counted: the Pi scan cache is only worth having if an
+// unchanged transcript is not read again, and a count is what can show that.
+vi.mock('node:fs/promises', async (importOriginal) => {
+	const actual = await importOriginal<typeof import('node:fs/promises')>();
+	return { ...actual, readFile: vi.fn(actual.readFile) };
+});
 
 /** A session transcript with a subagents directory beside it, as Claude Code lays it out. */
 function session(agents: { id: string; meta?: object; lines?: string[] }[]): string {
@@ -22,7 +30,19 @@ function session(agents: { id: string; meta?: object; lines?: string[] }[]): str
 const entry = (at: string) => JSON.stringify({ type: 'assistant', timestamp: at });
 
 const PI_CHILD = '4e88d2cd-c852-4fed-ba74-4e59344a8582';
+
+/** The child's final assistant turn: a reply, or a tool call still waiting. */
+const PI_REPLY = { content: [{ type: 'text', text: 'Found it.' }], stopReason: 'stop' };
+const PI_CALL = {
+	content: [{ type: 'toolCall', id: 'call-1', name: 'read', arguments: { path: '/tmp/x' } }],
+	stopReason: 'toolUse'
+};
+
 function piSession(done: boolean): string {
+	return piSessionEnding(done ? PI_REPLY : PI_CALL);
+}
+
+function piSessionEnding(last: { content: unknown[]; stopReason: string }): string {
 	const project = mkdtempSync(join(tmpdir(), 'bordr-pi-sub-'));
 	const id = 'sess-pi';
 	const transcript = join(project, `${id}.jsonl`);
@@ -46,13 +66,7 @@ function piSession(done: boolean): string {
 		{
 			type: 'message',
 			timestamp: '2026-09-18T16:28:00.000Z',
-			message: {
-				role: 'assistant',
-				content: done
-					? [{ type: 'text', text: 'Found it.' }]
-					: [{ type: 'toolCall', id: 'call-1', name: 'read', arguments: { path: '/tmp/x' } }],
-				stopReason: done ? 'stop' : 'toolUse'
-			}
+			message: { role: 'assistant', ...last }
 		}
 	];
 	writeFileSync(
@@ -133,6 +147,77 @@ describe('listSubagents', () => {
 	it('keeps a Pi child with an unanswered tool call running', async () => {
 		const [agent] = await listSubagents(piSession(false));
 		expect(agent.done).toBe(false);
+	});
+
+	it('finishes a Pi child whose last turn failed, even mid tool call', async () => {
+		// Pi ends the run on `error` before running any call in that message,
+		// so the unanswered call is never going to be answered.
+		const [agent] = await listSubagents(piSessionEnding({ ...PI_CALL, stopReason: 'error' }));
+		expect(agent.done).toBe(true);
+	});
+
+	it('finishes a Pi child that was aborted', async () => {
+		const [agent] = await listSubagents(piSessionEnding({ ...PI_CALL, stopReason: 'aborted' }));
+		expect(agent.done).toBe(true);
+	});
+
+	it('finishes a Pi child cut off by length, unless the cut-off turn asked for tools', async () => {
+		const [cut] = await listSubagents(piSessionEnding({ ...PI_REPLY, stopReason: 'length' }));
+		expect(cut.done).toBe(true);
+		// Pi fails truncated tool calls and asks the model again: still running.
+		const [retrying] = await listSubagents(piSessionEnding({ ...PI_CALL, stopReason: 'length' }));
+		expect(retrying.done).toBe(false);
+	});
+
+	it.each(['length', 'stop'])(
+		'keeps a Pi child running after its %s turn asked for tools, answered or not',
+		async (stopReason) => {
+			// Once the results land nothing is unanswered, but Pi hands them back to
+			// the model for another turn, so the run is not over.
+			const transcript = piSessionEnding({ ...PI_CALL, stopReason });
+			const file = join(transcript.replace(/\.jsonl$/, ''), PI_CHILD, 'run-0', 'session.jsonl');
+			appendFileSync(
+				file,
+				'\n' +
+					JSON.stringify({
+						type: 'message',
+						timestamp: '2026-09-18T16:29:00.000Z',
+						message: { role: 'toolResult', toolCallId: 'call-1', content: [] }
+					})
+			);
+			const [agent] = await listSubagents(transcript);
+			expect(agent.done).toBe(false);
+		}
+	);
+
+	it('does not read an unchanged Pi child transcript again', async () => {
+		const transcript = piSession(false);
+		const file = join(transcript.replace(/\.jsonl$/, ''), PI_CHILD, 'run-0', 'session.jsonl');
+		const reads = () => vi.mocked(readFile).mock.calls.filter(([path]) => path === file).length;
+
+		expect((await listSubagents(transcript))[0].done).toBe(false);
+		expect((await listSubagents(transcript))[0].done).toBe(false);
+		expect(reads()).toBe(1);
+
+		// A change to the file is seen on the very next poll.
+		appendFileSync(
+			file,
+			'\n' +
+				JSON.stringify({
+					type: 'message',
+					timestamp: '2026-09-18T16:29:00.000Z',
+					message: { role: 'toolResult', toolCallId: 'call-1', content: [] }
+				}) +
+				'\n' +
+				JSON.stringify({
+					type: 'message',
+					timestamp: '2026-09-18T16:29:30.000Z',
+					message: { role: 'assistant', ...PI_REPLY }
+				})
+		);
+		const [agent] = await listSubagents(transcript);
+		expect(reads()).toBe(2);
+		expect(agent).toMatchObject({ done: true, entries: 5 });
 	});
 
 	it('says nothing for a session that never spawned one', async () => {

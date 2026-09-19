@@ -1,5 +1,5 @@
 import type { Dirent } from 'node:fs';
-import { readdir, readFile } from 'node:fs/promises';
+import { readdir, readFile, stat } from 'node:fs/promises';
 import { basename, dirname, join } from 'node:path';
 import { isDone, resolvedToolUses } from './subagent-done';
 
@@ -94,6 +94,22 @@ function messageText(content: unknown): string {
 		.join('\n');
 }
 
+/**
+ * Whether a Pi child's last assistant turn ended its run.
+ *
+ * pi-ai's StopReason is more than `stop`. `error` and `aborted` end the agent
+ * loop on the spot, before any tool call in that message is run, so a call
+ * left unanswered there never will be; treating only `stop` as finished showed
+ * a failed child as running forever. `length` ends it too unless the cut-off
+ * message asked for tools: Pi then fails those calls and asks the model again,
+ * exactly as `stop` would carry on after a tool call.
+ */
+function piRunEnded(stopReason: string, calledTools: boolean, unanswered: number): boolean {
+	if (stopReason === 'error' || stopReason === 'aborted') return true;
+	if (stopReason === 'stop' || stopReason === 'length') return !calledTools && unanswered === 0;
+	return false;
+}
+
 /** Read only the lifecycle fields needed for the strip; the full adapter runs only when opened. */
 function scanPiSession(text: string) {
 	let agentType = 'Pi subagent';
@@ -103,6 +119,8 @@ function scanPiSession(text: string) {
 	let lastAt = 0;
 	let lastRole = '';
 	let stopReason = '';
+	/** Whether the latest assistant message asked for any tool. */
+	let calledTools = false;
 	const pending = new Set<string>();
 	for (const line of text.split('\n')) {
 		if (!line.trim()) continue;
@@ -132,13 +150,16 @@ function scanPiSession(text: string) {
 			if (message.role !== 'user' && message.role !== 'assistant') continue;
 			lastRole = message.role;
 			stopReason = message.stopReason ?? '';
+			calledTools = false;
 			if (message.role === 'user' && !description)
 				description = brief(messageText(message.content));
 			if (message.role === 'assistant' && Array.isArray(message.content)) {
 				for (const part of message.content) {
 					if (typeof part !== 'object' || part === null) continue;
 					const block = part as { type?: string; id?: string };
-					if (block.type === 'toolCall' && block.id) pending.add(block.id);
+					if (block.type !== 'toolCall') continue;
+					calledTools = true;
+					if (block.id) pending.add(block.id);
 				}
 			}
 		} catch {
@@ -151,8 +172,39 @@ function scanPiSession(text: string) {
 		description,
 		entries,
 		lastAt,
-		done: lastRole === 'assistant' && stopReason === 'stop' && pending.size === 0
+		done: lastRole === 'assistant' && piRunEnded(stopReason, calledTools, pending.size)
 	};
+}
+
+type PiScan = ReturnType<typeof scanPiSession>;
+
+/**
+ * Scans of Pi child transcripts, keyed by path and trusted while the file's
+ * size and modification time are unchanged.
+ *
+ * The strip is rebuilt on every detail poll, every two seconds, and a session
+ * can hold many finished runs that will never change again; reading and
+ * parsing each of them in full on every poll was the same work for nothing.
+ * Least recently used goes first, so a long-lived server that has seen many
+ * sessions keeps the runs it is still being asked about.
+ */
+const PI_SCAN_LIMIT = 256;
+const piScans = new Map<string, { size: number; mtimeMs: number; scan: PiScan }>();
+
+async function scanPiFile(path: string): Promise<PiScan> {
+	const { size, mtimeMs } = await stat(path);
+	const cached = piScans.get(path);
+	piScans.delete(path);
+	if (cached && cached.size === size && cached.mtimeMs === mtimeMs) {
+		piScans.set(path, cached);
+		return cached.scan;
+	}
+	// Stat first, then read: a write landing in between leaves the stored size
+	// behind the content, which only costs one extra read on the next poll.
+	const scan = scanPiSession(await readFile(path, 'utf8'));
+	piScans.set(path, { size, mtimeMs, scan });
+	if (piScans.size > PI_SCAN_LIMIT) piScans.delete(piScans.keys().next().value as string);
+	return scan;
 }
 
 /** Pi stores each child in `<session>/<child uuid>/run-N/session.jsonl`. */
@@ -177,8 +229,7 @@ async function listPiSubagents(transcriptPath: string): Promise<SubagentSummary[
 		for (const run of runs) {
 			if (!run.isDirectory() || !PI_RUN.test(run.name)) continue;
 			try {
-				const text = await readFile(join(root, child.name, run.name, 'session.jsonl'), 'utf8');
-				const session = scanPiSession(text);
+				const session = await scanPiFile(join(root, child.name, run.name, 'session.jsonl'));
 				out.push({
 					id: `pi-${child.name}-${run.name}`,
 					agentType: session.agentType,

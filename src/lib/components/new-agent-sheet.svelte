@@ -49,20 +49,23 @@
 		try {
 			const url = path ? `/api/dirs?path=${encodeURIComponent(path)}` : '/api/dirs';
 			const response = await fetch(url);
-			const body = (await response.json()) as {
-				path: string;
+			const body = (await response.json().catch(() => ({}))) as {
+				path?: string;
 				display?: string;
-				parent: string | null;
-				dirs: string[];
+				parent?: string | null;
+				dirs?: string[];
 				error?: string;
 				message?: string;
 			};
 			// The walker answers 200 with an `error` for a refused path ("outside
-			// home", "not readable"); a bare status is the fallback for anything else.
-			if (!response.ok) throw new Error(body.message ?? `dirs failed: ${response.status}`);
+			// home", "not readable"); a bare status is the fallback for anything
+			// else, including a body that is not JSON at all.
+			if (!response.ok || !body.path || !Array.isArray(body.dirs)) {
+				throw new Error(body.message ?? `dirs failed: ${response.status}`);
+			}
 			cwd = body.display ?? body.path;
 			dirs = body.dirs;
-			parent = body.parent;
+			parent = body.parent ?? null;
 			if (body.error) dirError = `Could not list it: ${body.error}.`;
 		} catch (e) {
 			dirs = [];
@@ -81,7 +84,11 @@
 				headers: { 'content-type': 'application/json' },
 				body: JSON.stringify({ parent: cwd || undefined, name: folderName })
 			});
-			const body = (await response.json()) as { path?: string; message?: string };
+			// A proxy's HTML error page is not JSON; its status says more than a SyntaxError.
+			const body = (await response.json().catch(() => ({}))) as {
+				path?: string;
+				message?: string;
+			};
 			if (!response.ok || !body.path) {
 				throw new Error(body.message ?? `create folder failed: ${response.status}`);
 			}
@@ -120,8 +127,13 @@
 					})
 				})
 			);
-			const result = (await response.json()) as { paneId?: string; message?: string };
-			if (!response.ok || !result.paneId) throw new Error(result.message ?? 'spawn failed');
+			const result = (await response.json().catch(() => ({}))) as {
+				paneId?: string;
+				message?: string;
+			};
+			if (!response.ok || !result.paneId) {
+				throw new Error(result.message ?? `spawn failed: ${response.status}`);
+			}
 			// Pushed from the list, replaced from anywhere else: see $lib/back.
 			await goto(resolve('/a/[pane]', { pane: result.paneId }), {
 				replaceState: replacesHistory(prefs.value.backTo, page.url.pathname)
@@ -216,15 +228,22 @@
 							void createFolder();
 						}}
 					>
+						<!--
+							16px or iOS zooms the sheet on focus. Folder names are
+							case-sensitive, so the keyboard must not capitalise or correct them.
+						-->
 						<input
 							bind:value={folderName}
-							class="min-w-0 flex-1 rounded-lg border border-edge bg-card px-2.5 py-2 text-[15px]"
+							class="min-w-0 flex-1 rounded-lg border border-edge bg-card px-2.5 py-2 text-[16px]"
 							placeholder="New folder name"
 							aria-label="New folder name"
+							autocapitalize="off"
+							autocorrect="off"
+							spellcheck="false"
 						/>
 						<button
 							type="submit"
-							class="flex min-h-10 shrink-0 items-center gap-1.5 rounded-lg bg-ink px-3 text-[12.5px] font-medium text-card disabled:opacity-50"
+							class="flex min-h-11 shrink-0 items-center gap-1.5 rounded-lg bg-ink px-3 text-[12.5px] font-medium text-card disabled:opacity-50"
 							disabled={!folderName.trim() || creatingFolder}
 						>
 							{#if creatingFolder}<Spinner size={12} label="Creating folder" />{/if}
