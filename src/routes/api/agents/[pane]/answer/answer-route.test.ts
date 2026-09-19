@@ -17,9 +17,32 @@ const herdr = vi.hoisted(() => ({
 	}),
 	sendText: vi.fn(async (_pane: string, text: string) => {
 		herdr.sent.push([`text:${text}`]);
+	}),
+	promptAgent: vi.fn(async (_pane: string, text: string) => {
+		herdr.sent.push([`prompt:${text}`]);
 	})
 }));
 vi.mock('$lib/server/herdr', () => herdr);
+
+/**
+ * A codex transcript whose newest record is an unanswered question. Only the
+ * codex tests reach these: every other test's pane has no agent record, so
+ * the route never looks for a transcript.
+ */
+const CODEX_ASK = {
+	question: 'Where will you test Sera?',
+	options: ['Existing staging site', 'Local preview']
+};
+vi.mock('$lib/server/transcript', () => ({
+	adapterFor: () => ({ parse: () => [{ role: 'assistant', text: '', ask: CODEX_ASK }] })
+}));
+vi.mock('$lib/server/transcript/resolve', () => ({
+	resolveLocalTranscript: async () => '/tmp/codex-session.jsonl'
+}));
+vi.mock('$lib/server/transcript/tail', () => ({
+	readTranscriptTail: async () => ({ text: '' }),
+	DEFAULT_TAIL_BYTES: 1
+}));
 
 const DIALOG = [
 	' Which colour?',
@@ -66,6 +89,9 @@ beforeEach(() => {
 	herdr.screens.length = 0;
 	herdr.sent.length = 0;
 	herdr.rawAgent.mockResolvedValue(null);
+	herdr.promptAgent.mockImplementation(async (_pane: string, text: string) => {
+		herdr.sent.push([`prompt:${text}`]);
+	});
 });
 
 describe('answer route: dialects', () => {
@@ -145,5 +171,93 @@ describe('answer route: write-in rows', () => {
 		herdr.screens.push(WRITE_IN_DIALOG);
 		await expect(post({ index: 3, text: 'red[2J' })).rejects.toMatchObject({ status: 400 });
 		expect(herdr.sent).toEqual([]);
+	});
+});
+
+/**
+ * codex 0.155's `request_user_input_async`. Shapes from codex's own render
+ * snapshots, with the key names it prints on Linux.
+ */
+const CODEX_COLLAPSED = [
+	'• Explored the deploy config.',
+	'',
+	'  ? 1 question · 45s',
+	'    alt + ↑ to answer',
+	'',
+	'› Ask Codex to do anything'
+].join('\n');
+const CODEX_OPENED = [
+	'  Where will you test Sera?',
+	'',
+	'  › 1. Existing staging site',
+	'    2. Local preview',
+	'    3. Other (write an answer)',
+	'',
+	'  enter submit   ctrl + ] skip',
+	'  alt + ↓ main prompt'
+].join('\n');
+const CODEX_IDLE = '› Ask Codex to do anything';
+
+describe('answer route: codex questions', () => {
+	beforeEach(() => {
+		herdr.rawAgent.mockResolvedValue({
+			agent: 'codex',
+			agent_session: { value: 'session-1' }
+		} as never);
+	});
+
+	it('opens a collapsed question and answers it with its digit, not a typed prompt', async () => {
+		// herdr refuses a typed prompt while the question waits (seen 2026-09-19),
+		// so the answer must go through the question itself.
+		herdr.screens.push(CODEX_COLLAPSED, CODEX_COLLAPSED, CODEX_OPENED, CODEX_IDLE);
+		const result = await answer(2);
+		expect(herdr.sent).toEqual([['alt+up'], ['2']]);
+		expect(result).toMatchObject({ chose: 'Local preview', outcome: 'accepted' });
+	});
+
+	it('still types the answer when nothing on screen is waiting to be opened', async () => {
+		herdr.screens.push(CODEX_IDLE, CODEX_IDLE);
+		const result = await answer(2);
+		expect(herdr.sent).toEqual([['prompt:Local preview']]);
+		expect(result.chose).toBe('Local preview');
+	});
+
+	it('reports a question herdr will not take typed input for as a conflict, not a crash', async () => {
+		herdr.screens.push(CODEX_IDLE, CODEX_IDLE);
+		herdr.promptAgent.mockRejectedValueOnce(
+			Object.assign(new Error('agent w1:p1 is blocked and requires interactive input'), {
+				code: 'agent_blocked'
+			})
+		);
+		await expect(answer(2)).rejects.toMatchObject({ status: 409 });
+	});
+
+	it('sends nothing more when the opened question cannot be read', async () => {
+		herdr.screens.push(CODEX_COLLAPSED, CODEX_COLLAPSED, 'unreadable', 'unreadable', 'unreadable');
+		await expect(answer(2)).rejects.toMatchObject({ status: 409 });
+		expect(herdr.sent).toEqual([['alt+up']]);
+	});
+
+	it('finds a long option that wrapped onto a second row by its first line', async () => {
+		const wrapped = CODEX_OPENED.replace(
+			'    2. Local preview',
+			'    2. Local preview on this machine,\n       served from the main worktree'
+		);
+		CODEX_ASK.options[1] = 'Local preview on this machine, served from the main worktree';
+		try {
+			herdr.screens.push(CODEX_COLLAPSED, CODEX_COLLAPSED, wrapped, CODEX_IDLE);
+			const result = await answer(2);
+			expect(herdr.sent).toEqual([['alt+up'], ['2']]);
+			expect(result.outcome).toBe('accepted');
+		} finally {
+			CODEX_ASK.options[1] = 'Local preview';
+		}
+	});
+
+	it('refuses when the opened question does not offer the chosen answer', async () => {
+		const other = CODEX_OPENED.replace('Local preview', 'Production');
+		herdr.screens.push(CODEX_COLLAPSED, CODEX_COLLAPSED, other);
+		await expect(answer(2)).rejects.toMatchObject({ status: 409 });
+		expect(herdr.sent).toEqual([['alt+up']]);
 	});
 });

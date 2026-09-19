@@ -1468,7 +1468,9 @@
 							</ToggleRow>
 							<ToggleRow
 								label="Invert swipe direction"
-								hint="Swap which neighbouring agent a left or right swipe opens. The page still follows your finger."
+								hint={prefs.value.swipeInverted
+									? 'Drag right to left for the next agent, like turning a page. The page still follows your finger.'
+									: 'Drag left to right for the next agent. Turn on to go forward by dragging right to left instead.'}
 								checked={prefs.value.swipeInverted}
 								onchange={(v) => prefs.set('swipeInverted', v)}
 							>

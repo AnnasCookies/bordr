@@ -28,7 +28,11 @@ export interface Picker {
 	multi: boolean;
 	/** False for caret-only lists (Claude Code's trust prompt): no digit shortcuts, arrows and Enter. */
 	numbered: boolean;
-	/** 'text': no dialog exists; the option is typed back as a prompt (codex). Default 'keys'. */
+	/**
+	 * 'text': the question came from the transcript, not the screen, so the
+	 * option is typed back as a prompt — unless codex has it collapsed on
+	 * screen, when the answer route opens it and uses keys. Default 'keys'.
+	 */
 	answer?: 'keys' | 'text';
 	/** A slider: the stops sit side by side and ←/→ move between them (Claude Code's /effort). */
 	axis?: 'horizontal';
@@ -36,8 +40,9 @@ export interface Picker {
 
 /**
  * A question asked through a tool, still unanswered: the newest `ask` with
- * no user message after it. codex prints such a question as bullets in its
- * transcript and polls for typed input, so there is no dialog on screen.
+ * no user message after it. Older codex printed such a question as bullets
+ * and polled for typed input, so there was no dialog on screen; codex 0.155
+ * collapses it above the composer instead (see `asyncQuestionKey`).
  */
 export function pendingAsk(
 	messages: Array<{ role: string; ask?: { question: string; options: string[] } }>
@@ -61,6 +66,39 @@ export function pendingAsk(
 				answer: 'text'
 			};
 		}
+	}
+	return null;
+}
+
+/** codex's collapsed question summary: `? 1 question · 45s`. */
+const ASYNC_SUMMARY = /^\s*\?\s+\d+\s+questions?\b/;
+/**
+ * The line under it names the key that opens the question. codex prints Alt
+ * as `alt` on Linux and `⌥` on macOS; these are its two default bindings.
+ */
+const ASYNC_OPEN_KEYS: Array<[RegExp, string]> = [
+	[/^\s*(?:alt|⌥)\s*\+\s*↑\s+to answer\s*$/, 'alt+up'],
+	[/^\s*shift\s*\+\s*←\s+to answer\s*$/, 'shift+left']
+];
+
+/**
+ * The key that opens a collapsed codex question, or null when there is none.
+ *
+ * codex 0.155's `request_user_input_async` does not print its question and
+ * wait for typing, as `pendingAsk` assumes: it parks the question, collapsed
+ * to a summary line, above the composer. herdr then counts the pane as
+ * blocked and refuses a typed prompt ("blocked and requires interactive
+ * input", seen 2026-09-19), and the options only reach the screen once the
+ * question is opened. Opened, it is an ordinary numbered dialog.
+ *
+ * Only a default binding is recognised: a remapped one is codex's business,
+ * and sending a guess would type into whatever has focus.
+ */
+export function asyncQuestionKey(visible: string): string | null {
+	const lines = visible.split('\n');
+	for (let i = 0; i < lines.length - 1; i++) {
+		if (!ASYNC_SUMMARY.test(lines[i])) continue;
+		for (const [hint, key] of ASYNC_OPEN_KEYS) if (hint.test(lines[i + 1])) return key;
 	}
 	return null;
 }
