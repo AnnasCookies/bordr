@@ -3477,6 +3477,7 @@
 													<MessageBlocks
 														blocks={message.blocks ?? []}
 														mono={prefs.value.monoSize}
+														scope={`${detail.paneId}:${row.key}`}
 														plain
 													/>
 													{#snippet meta()}
@@ -3494,6 +3495,7 @@
 													<MessageBlocks
 														blocks={message.blocks ?? []}
 														mono={prefs.value.monoSize}
+														scope={`${detail.paneId}:${row.key}`}
 														plain
 													/>
 												</span>
@@ -3540,6 +3542,7 @@
 																<MessageBlocks
 																	blocks={segment.blocks}
 																	mono={prefs.value.monoSize}
+																	scope={`${detail.paneId}:${row.key}:segment-${segmentIndex}`}
 																/>
 																{#snippet meta()}
 																	<!--

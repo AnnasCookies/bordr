@@ -2,9 +2,9 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { load } from './+page';
 
 /**
- * The load holds its last good payload in the browser only, and these tests
- * run under Node, where the real `browser` is false. A getter rather than a
- * value so one test can play the server's first render.
+ * The load sends its held ETag from the browser only, and these tests run
+ * under Node, where the real `browser` is false. A getter rather than a value
+ * so one test can play the server's first render.
  */
 const environment = vi.hoisted(() => ({ browser: true }));
 vi.mock('$app/environment', () => ({
@@ -133,10 +133,10 @@ describe('pane load: unchanged detail', () => {
 		expect(second.detail).toBe(first.detail);
 	});
 
-	it('holds nothing on the server, so the first render is never conditional', async () => {
-		// The server's map outlived every request, and its ETag made the SSR
-		// fetch conditional: the browser, with nothing held, could not repeat
-		// that request, missed the inlined response and fetched it again.
+	it('never makes the server render conditional', async () => {
+		// An ETag on the SSR fetch made the inlined response unmatchable: the
+		// browser, with nothing held, could not repeat that request, missed the
+		// inlined response and fetched it again.
 		const conditionals: string[] = [];
 		const fetchStub = async (input: string | URL | Request, init?: RequestInit) => {
 			const path = String(input);
@@ -158,11 +158,8 @@ describe('pane load: unchanged detail', () => {
 		environment.browser = false;
 		await load(event);
 		await load(event);
-		environment.browser = true;
-		await load(event);
-		// Neither server render sent an ETag, and the browser's first load found
-		// nothing the server had left behind.
-		expect(conditionals).toEqual(['', '', '']);
+		// The second render has the first one's ETag held, and still sends none.
+		expect(conditionals).toEqual(['', '']);
 	});
 });
 

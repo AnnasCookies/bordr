@@ -43,11 +43,12 @@ async function failureMessage(response: Response): Promise<string> {
  * evicted — it is one transcript each for the panes visited this session, and
  * a reload clears it.
  *
- * Browser only. This module also runs on the server for the first render, and
- * the server's copy of the map is shared by every request and never cleared.
- * Worse, its ETag made the server-side fetch conditional, so the response
- * inlined into the page carried an `if-none-match` the browser's empty map
- * could not repeat — hydration missed it and fetched the transcript again.
+ * The ETag is sent from the browser only. This module also runs on the server
+ * for the first render, where a conditional fetch made the response inlined
+ * into the page carry an `if-none-match` the browser's empty map could not
+ * repeat — hydration missed it and fetched the transcript again. The server
+ * still keeps its copy, so a reload during an outage holds the last transcript
+ * instead of an error page.
  */
 type Held = { detail: AgentDetail; watched: boolean; megabytes: number; etag: string };
 const lastGood = new Map<string, Held>();
@@ -76,12 +77,12 @@ export const load: PageLoad = async ({ params, url, fetch }) => {
 	// Both requests in flight together. The watch flag seeds the header bell:
 	// without it the bell renders 🔕 for a pane the server is really watching,
 	// and the first tap then re-arms an existing watch instead of clearing it.
-	const held = browser ? lastGood.get(params.pane) : undefined;
+	const held = lastGood.get(params.pane);
 	const [detail, watch] = await Promise.all([
 		reach(
 			fetch,
 			`/api/agents/${encodeURIComponent(params.pane)}?bytes=${megabytes * 1024 * 1024}`,
-			held?.etag ? { headers: { 'if-none-match': held.etag } } : undefined
+			browser && held?.etag ? { headers: { 'if-none-match': held.etag } } : undefined
 		),
 		reach(fetch, `/api/agents/${encodeURIComponent(params.pane)}/watch`)
 	]);
@@ -105,7 +106,6 @@ export const load: PageLoad = async ({ params, url, fetch }) => {
 	if (detail.status === 304 && held) {
 		const watched = watch?.ok ? await readWatched(watch) : held.watched;
 		const next = { ...held, watched, megabytes };
-		// `held` exists only in the browser, so this write is browser-only too.
 		lastGood.set(params.pane, next);
 		return heldResult(next, megabytes, false);
 	}
@@ -119,6 +119,6 @@ export const load: PageLoad = async ({ params, url, fetch }) => {
 		megabytes,
 		etag: detail.headers.get('etag') ?? ''
 	};
-	if (browser) lastGood.set(params.pane, data);
+	lastGood.set(params.pane, data);
 	return heldResult(data, megabytes, false);
 };
