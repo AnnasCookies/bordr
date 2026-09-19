@@ -1154,9 +1154,9 @@
 			if (message.role !== 'user') continue;
 			if (say(message.text)) landed.push({ text: say(message.text), at: message.at ?? 0 });
 			for (const block of message.blocks ?? []) {
-				if (block.kind !== 'tool' || block.name !== '!') continue;
+				if (block.kind !== 'tool' || (block.name !== '!' && block.name !== '!!')) continue;
 				const command = say(String(block.input?.command ?? ''));
-				if (command) landed.push({ text: `!${command}`, at: message.at ?? 0 });
+				if (command) landed.push({ text: `${block.name}${command}`, at: message.at ?? 0 });
 			}
 		}
 
