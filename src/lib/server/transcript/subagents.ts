@@ -1,7 +1,7 @@
 import type { Dirent } from 'node:fs';
 import { readdir, readFile, stat } from 'node:fs/promises';
 import { basename, dirname, join } from 'node:path';
-import { isDone, resolvedToolUses } from './subagent-done';
+import { claudeRunEnded, isDone, resolvedToolUseTimes } from './subagent-done';
 
 /**
  * Claude Code's sub-agents, which have their own transcripts.
@@ -304,8 +304,9 @@ export async function listSubagents(
 				// Filled in below, once every sibling's text has been read: a
 				// deeper agent's result lives in one of them.
 				done: false,
+				ended: claudeRunEnded(text),
 				text
-			} as SubagentSummary & { text: string });
+			} as SubagentSummary & { text: string; ended: boolean });
 		} catch {
 			// Unreadable, or a sidecar whose transcript has not appeared yet.
 		}
@@ -316,25 +317,28 @@ export async function listSubagents(
 	 * than per agent — four siblings of one parent would otherwise scan the
 	 * same megabyte four times.
 	 */
-	const withText = out as Array<SubagentSummary & { text: string }>;
+	const withText = out as Array<SubagentSummary & { text: string; ended: boolean }>;
 	const byId = new Map(withText.map((a) => [a.id, a.text]));
-	const resolvedIn = new Map<string, Set<string>>();
-	const resolvedFor = (parentAgentId: string): Set<string> => {
+	const resolvedIn = new Map<string, Map<string, number>>();
+	const resolvedFor = (parentAgentId: string): Map<string, number> => {
 		const key = parentAgentId || '\u0000session';
 		const cached = resolvedIn.get(key);
 		if (cached) return cached;
 		const source = parentAgentId ? (byId.get(`agent-${parentAgentId}`) ?? '') : sessionText;
-		const found = resolvedToolUses(source);
+		const found = resolvedToolUseTimes(source);
 		resolvedIn.set(key, found);
 		return found;
 	};
 
 	for (const agent of withText) {
-		agent.done = isDone(agent, resolvedFor(agent.parentAgentId));
+		agent.done = agent.ended || isDone(agent, resolvedFor(agent.parentAgentId));
 	}
 	// The transcripts themselves were only ever needed to answer that; sending
 	// several megabytes of them to a phone would be absurd.
-	for (const agent of withText) delete (agent as { text?: string }).text;
+	for (const agent of withText) {
+		delete (agent as { text?: string }).text;
+		delete (agent as { ended?: boolean }).ended;
+	}
 
 	return [...out, ...(await listPiSubagents(transcriptPath))].sort((a, b) => b.lastAt - a.lastAt);
 }

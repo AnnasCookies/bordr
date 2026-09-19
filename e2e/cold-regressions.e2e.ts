@@ -347,6 +347,24 @@ for (const paneView of ['conversation', 'terminal']) {
 	});
 }
 
+test('desktop agent sessions focus the composer by click and keyboard', async ({ page }) => {
+	const state = await fixture(page, { paneView: 'conversation', sidebarOpen: true });
+	state.picker = false;
+	await openPane(page);
+	const agentList = page.locator('aside [data-agent-list]');
+	const composer = page.locator('textarea').first();
+
+	// Clicking the already-open session must still hand focus back from the sidebar.
+	await agentList.locator('a[href="/a/a"]').click();
+	await expect(composer).toBeFocused();
+
+	// Links retain native keyboard activation; Enter takes the same focus-aware path.
+	await agentList.locator('a[href="/a/b"]').focus();
+	await page.keyboard.press('Enter');
+	await expect.poll(() => new URL(page.url()).pathname).toBe('/a/b');
+	await expect(page.locator('textarea').first()).toBeFocused();
+});
+
 test('right-clicking a tab opens rename for that tab', async ({ page }) => {
 	const state = await fixture(page, { tabStrip: 'always' });
 	state.picker = false;

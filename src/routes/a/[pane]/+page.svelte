@@ -254,11 +254,13 @@
 		(terminalInput ?? textarea)?.focus({ preventScroll: true });
 	}
 
-	/** Select a sibling split and leave the keyboard ready for that pane. */
+	/** Select a pane and leave the keyboard ready there, even when it is already open. */
 	async function openSplitPane(paneId: string) {
-		await goto(resolve('/a/[pane]', { pane: paneId }), {
-			replaceState: prefs.value.backTo === 'home'
-		});
+		if (paneId !== detail.paneId) {
+			await goto(resolve('/a/[pane]', { pane: paneId }), {
+				replaceState: prefs.value.backTo === 'home'
+			});
+		}
 		await focusPaneInput();
 	}
 
@@ -4317,7 +4319,11 @@
 	-->
 		{#if wideScreen && prefs.value.sidebarOpen}
 			<aside class="relative hidden shrink-0 lg:block" style="width: {prefs.value.sidebarWidth}px">
-				<SessionTree current={detail.paneId} onnew={() => (showNewAgent = true)} />
+				<SessionTree
+					current={detail.paneId}
+					onnew={() => (showNewAgent = true)}
+					onselect={(paneId) => void openSplitPane(paneId)}
+				/>
 				<SidebarResizer onreset={() => prefs.set('sidebarWidth', DEFAULT_SIDEBAR)} />
 			</aside>
 		{/if}
