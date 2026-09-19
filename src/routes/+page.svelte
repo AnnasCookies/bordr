@@ -399,74 +399,91 @@
 					</div>
 				{/if}
 
-				{#if prefs.value.rollup && store.agents.length > 0}
-					<div
-						class="mb-3 grid grid-cols-5 gap-px overflow-hidden rounded-xl border border-hairline bg-black/[.07] dark:bg-white/[.07]"
-						role="group"
-						aria-label="Filter the list"
-					>
-						{#each rollup as cell (cell.status)}
-							{@const on = prefs.value.listFilter === cell.status}
-							<!--
-						A cell with nothing in it is not a filter, it is a dead end —
-						tapping it would empty the list to prove a zero you can already
-						read. Disabled rather than hidden: the strip must not reflow
-						its columns every time a pane changes state.
-					-->
-							<!--
-						The padding and the label shrink below 360px. At 320 a fifth of
-						the row is 57px, and `unpushed` came out as `unpus…` — a label
-						you cannot read is not a label, and this is the one cell whose
-						meaning is not also written in the list below it.
-					-->
-							<button
-								class="px-2 pt-2.5 pb-2 text-left transition-colors disabled:opacity-45 max-[360px]:px-1 {on
-									? 'bg-ink'
-									: cell.status === 'blocked' && cell.n > 0
-										? 'bg-blocked-bg'
-										: 'bg-card'}"
-								disabled={cell.n === 0 && !on}
-								aria-pressed={on}
-								aria-label="{cell.n} {cell.label}{on ? ', showing only these' : ''}"
-								onclick={() => prefs.set('listFilter', on ? null : cell.status)}
+				{#if (prefs.value.rollup && store.agents.length > 0) || prefs.value.showGrouping}
+					<div class="mb-3 overflow-hidden rounded-xl border border-hairline bg-card">
+						{#if prefs.value.rollup && store.agents.length > 0}
+							<div
+								class="grid grid-cols-5 divide-x divide-black/[.06] dark:divide-white/[.06]"
+								role="group"
+								aria-label="Filter the list"
 							>
-								<span
-									class="block font-mono text-[21px] leading-none {on
-										? 'text-card'
-										: cell.status === 'blocked'
-											? 'text-blocked-ink'
-											: cell.status === 'dirty'
-												? 'text-branch'
-												: (STATUS_INK[cell.status as AgentStatus] ?? '')}"
-								>
-									{cell.n}
-								</span>
-								<span
-									class="mt-1.5 block truncate text-[10.5px] max-[360px]:text-[9.5px] {on
-										? 'text-card'
-										: cell.status === 'blocked'
-											? 'text-blocked-ink'
-											: 'text-muted'}"
-								>
-									{cell.label}
-								</span>
-							</button>
-						{/each}
-					</div>
-				{/if}
+								{#each rollup as cell (cell.status)}
+									{@const on = prefs.value.listFilter === cell.status}
+									<!-- Keep zeroes in place so the summary never jumps around, but do not make
+									     a dead filter tappable. -->
+									<button
+										class="relative flex min-h-[62px] flex-col items-center justify-center gap-1 px-1 py-2 text-center transition-colors disabled:cursor-default disabled:opacity-40 sm:min-h-[56px] sm:flex-row sm:justify-start sm:gap-2 sm:px-3 sm:text-left {on
+											? 'bg-chip'
+											: 'hover:bg-chip/60'}"
+										disabled={cell.n === 0 && !on}
+										aria-pressed={on}
+										aria-label="{cell.n} {cell.label}{on ? ', showing only these' : ''}"
+										onclick={() => prefs.set('listFilter', on ? null : cell.status)}
+									>
+										<span class="flex items-center gap-1.5 sm:shrink-0">
+											<span
+												class="h-1.5 w-1.5 rounded-full {STATUS_RAIL[cell.status] ?? 'bg-branch'}"
+												aria-hidden="true"
+											></span>
+											<span
+												class="font-mono text-[19px] leading-none {cell.status === 'dirty'
+													? 'text-branch'
+													: (STATUS_INK[cell.status as AgentStatus] ?? '')}"
+											>
+												{cell.n}
+											</span>
+										</span>
+										<span
+											class="block max-w-full truncate text-[10px] leading-none sm:text-[11px] {cell.n ===
+											0
+												? 'text-faint'
+												: cell.status === 'dirty'
+													? 'text-branch'
+													: (STATUS_INK[cell.status as AgentStatus] ?? 'text-muted')}"
+										>
+											{cell.label}
+										</span>
+										{#if on}
+											<span
+												class="absolute inset-x-2 bottom-0 h-0.5 rounded-full {STATUS_RAIL[
+													cell.status
+												] ?? 'bg-branch'}"
+												aria-hidden="true"
+											></span>
+										{/if}
+									</button>
+								{/each}
+							</div>
+						{/if}
 
-				{#if prefs.value.showGrouping}
-					<div class="mb-3 flex flex-wrap gap-1.5">
-						{#each GROUP_CHIPS as chip (chip.v)}
-							<button
-								class="rounded-full px-2.5 py-1.5 text-xs {prefs.value.groupBy === chip.v
-									? 'bg-ink text-card'
-									: 'bg-chip text-muted'}"
-								onclick={() => prefs.set('groupBy', chip.v)}
+						{#if prefs.value.showGrouping}
+							<div
+								class="flex flex-col gap-1.5 px-2 py-2 sm:flex-row sm:items-center sm:gap-2 {prefs
+									.value.rollup && store.agents.length > 0
+									? 'border-t border-hairline'
+									: ''}"
 							>
-								{chip.l}
-							</button>
-						{/each}
+								<span class="px-1 font-mono text-[10px] text-faint">Group</span>
+								<div
+									class="grid grid-cols-4 gap-0.5 rounded-lg bg-page p-0.5 sm:max-w-md sm:flex-1"
+									role="group"
+									aria-label="Group agents"
+								>
+									{#each GROUP_CHIPS as chip (chip.v)}
+										<button
+											class="min-h-9 rounded-md px-2 text-[11.5px] transition-colors {prefs.value
+												.groupBy === chip.v
+												? 'bg-chip text-ink shadow-sm'
+												: 'text-muted hover:text-ink'}"
+											aria-pressed={prefs.value.groupBy === chip.v}
+											onclick={() => prefs.set('groupBy', chip.v)}
+										>
+											{chip.l}
+										</button>
+									{/each}
+								</div>
+							</div>
+						{/if}
 					</div>
 				{/if}
 

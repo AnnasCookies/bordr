@@ -306,6 +306,32 @@ test('settings stay balanced on desktop and finger-sized on phones', async ({ pa
 	await expect(transcript).not.toContainText('Harness icons');
 });
 
+test('home list controls form one responsive summary card', async ({ page }) => {
+	await fixture(page, { rollup: true, showGrouping: true, groupBy: 'workspace' });
+	await move(page, '/');
+	const filters = page.getByRole('group', { name: 'Filter the list' });
+	const grouping = page.getByRole('group', { name: 'Group agents' });
+	await expect(filters).toBeVisible();
+	await expect(grouping).toBeVisible();
+	await expect(filters.locator('..').getByText('Group', { exact: true })).toBeVisible();
+
+	const working = filters.getByRole('button', { name: /^3 working/ });
+	await working.click();
+	await expect(working).toHaveAttribute('aria-pressed', 'true');
+	const status = grouping.getByRole('button', { name: 'Status', exact: true });
+	await status.click();
+	await expect(status).toHaveAttribute('aria-pressed', 'true');
+
+	await page.setViewportSize({ width: 320, height: 568 });
+	await expect
+		.poll(async () => (await filters.getByRole('button').first().boundingBox())?.height ?? 0)
+		.toBeGreaterThanOrEqual(62);
+	await expect
+		.poll(async () => (await grouping.getByRole('button').first().boundingBox())?.height ?? 0)
+		.toBeGreaterThanOrEqual(36);
+	expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(320);
+});
+
 for (const paneView of ['conversation', 'terminal']) {
 	test(`${paneView}: selecting a pane focuses its input`, async ({ page }) => {
 		const state = await fixture(page, { paneView, tabStrip: 'always' });
