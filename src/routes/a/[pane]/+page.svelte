@@ -1,11 +1,14 @@
 <script lang="ts">
 	import { onMount, tick } from 'svelte';
+	import { SvelteSet } from 'svelte/reactivity';
 	import { goto, invalidateAll } from '$app/navigation';
 	import { navigating, page } from '$app/state';
 	import { resolve } from '$app/paths';
 	import { agentStore } from '$lib/agents.svelte';
 	import { mergeResults } from '$lib/dictation';
 	import { shrinkImage } from '$lib/shrink-image';
+	import { splitLayoutFingerprint } from '$lib/layout-fingerprint';
+	import { tabViewport } from '$lib/tab-viewport';
 
 	/** The upload route's per-file cap (`$lib/server/attachments`), which the page cannot import. */
 	const MAX_ATTACH_BYTES = 15 * 1024 * 1024;
@@ -16,7 +19,8 @@
 		dragTarget,
 		inEdgeZone,
 		inHorizontalScroller,
-		neighbourPane
+		neighbourPane,
+		swipeNavigationDelta
 	} from '$lib/swipe';
 	import {
 		CHECK_INK,
@@ -76,7 +80,6 @@
 	import { glideInterrupted } from './glide-interrupt';
 	import { keepPending, restorePending, say, type PendingSend } from '$lib/pending-sends';
 	import { queueVerdict } from '$lib/queue';
-	import { widthClasses } from '$lib/conversation-width';
 	import { pickerShortcut, pickerIdentity } from '$lib/picker-shortcut';
 	import { parseModelLine } from '$lib/model-line';
 	import { shortModel } from '$lib/short-model';
@@ -130,6 +133,8 @@
 	 * in the terminal, not when this conversation moves on.
 	 */
 	let workspaces = $state<WorkspaceNode[]>([]);
+	let layoutFingerprint = '';
+	let viewportOwned = $state(false);
 
 	/** Whether the rebuilt split actually contains a given pane. */
 	function treeHolds(node: SplitNode | undefined, paneId: string): boolean {
@@ -138,34 +143,35 @@
 		return treeHolds(node.first, paneId) || treeHolds(node.second, paneId);
 	}
 
-	const splitLayout = $derived.by(() => {
-		if (!prefs.value.splitPanes) return undefined;
+	/** The current tab layout also drives mobile geometry when its split is not drawn. */
+	const viewportTab = $derived.by(() => {
 		for (const workspace of workspaces) {
 			for (const tab of workspace.tabs) {
 				if (!tab.panes.some((p) => p.paneId === detail.paneId)) continue;
-				if (tab.panes.length <= 1) return undefined;
-				// The split renders the conversation only in the tile whose leaf
-				// is this pane. If the rebuilt tree does not hold it — a layout
-				// herdr reported oddly, or a snapshot fetched a beat before a
-				// pane was added — that tile never renders and the screen has no
-				// transcript and no composer, silently. Falling back to the
-				// plain conversation loses the split and keeps the app usable.
-				return treeHolds(tab.layout?.tree, detail.paneId) ? tab.layout : undefined;
+				const tabLayout = tab.layout;
+				return tabLayout && treeHolds(tabLayout.tree, detail.paneId)
+					? { ...tabLayout, tabId: tab.tabId, paneCount: tab.panes.length }
+					: undefined;
 			}
 		}
 		return undefined;
 	});
 
-	/** The tab id the split belongs to, which set_split_ratio needs. */
-	const splitTabId = $derived(
-		workspaces.flatMap((w) => w.tabs).find((t) => t.panes.some((p) => p.paneId === detail.paneId))
-			?.tabId ?? ''
+	const splitLayout = $derived(
+		prefs.value.splitPanes && viewportTab && viewportTab.paneCount > 1 ? viewportTab : undefined
 	);
 
 	async function loadLayout() {
 		try {
 			const res = await fetch('/api/panes');
-			if (res.ok) workspaces = (await res.json()).workspaces ?? [];
+			if (res.ok) {
+				const next: WorkspaceNode[] = (await res.json()).workspaces ?? [];
+				const fingerprint = splitLayoutFingerprint(next);
+				if (fingerprint !== layoutFingerprint) {
+					layoutFingerprint = fingerprint;
+					workspaces = next;
+				}
+			}
 		} catch {
 			// Keep the last layout rather than collapsing the split mid-turn.
 		}
@@ -176,21 +182,6 @@
 		const timer = setInterval(() => void loadLayout(), 5000);
 		return () => clearInterval(timer);
 	});
-
-	/** Move a divider — in herdr, not just here. */
-	async function setRatio(path: boolean[], ratio: number) {
-		if (!splitTabId) return;
-		try {
-			await fetch('/api/layout', {
-				method: 'POST',
-				headers: { 'content-type': 'application/json' },
-				body: JSON.stringify({ tabId: splitTabId, path, ratio })
-			});
-			await loadLayout();
-		} catch {
-			// herdr's real ratio comes back on the next poll either way.
-		}
-	}
 
 	/**
 	 * The drawer closes once the new pane has loaded, NOT when the link is
@@ -534,8 +525,8 @@
 	 * same lines as `statusLines` with their escapes intact; the fallback
 	 * covers a payload cached on a phone that has not reloaded yet.
 	 */
-	/** One width for the transcript, its banners and the composer. */
-	const widths = $derived(widthClasses(prefs.value.conversationWidth));
+	/** Transcript, banners and composer always take the space beside the sidebar. */
+	const widths = 'max-w-screen-sm lg:max-w-none';
 
 	const statusRows = $derived(detail.statusAnsi?.length ? detail.statusAnsi : detail.statusLines);
 
@@ -695,6 +686,37 @@
 	const hidden = $derived(Math.max(0, detail.messages.length - shown));
 	const canShowEarlier = $derived(hidden > 0 || detail.hasMore);
 	const toolCount = $derived(visibleMessages.reduce((n, m) => n + m.tools.length, 0));
+	const thinkingCount = $derived(
+		visibleMessages.reduce(
+			(total, message) =>
+				total + (message.blocks ?? []).filter((block) => block.kind === 'thinking').length,
+			0
+		)
+	);
+	/** Common conversation choices, kept one tap away at every screen width. */
+	const conversationToggles = $derived([
+		{
+			label: toolCount > 0 ? `Show tools (${toolCount})` : 'Show tools',
+			hint: 'Tool calls and results, inline in the transcript.',
+			on: showTools,
+			onchange: () => {
+				showTools = !showTools;
+				prefs.set('showWork', showTools);
+			}
+		},
+		{
+			label: thinkingCount > 0 ? `Show thinking (${thinkingCount})` : 'Show thinking',
+			hint: 'The agent’s thinking as separate, quiet rows.',
+			on: prefs.value.showThinking,
+			onchange: () => prefs.set('showThinking', !prefs.value.showThinking)
+		},
+		{
+			label: 'Notify when this agent finishes',
+			hint: 'A push for every done, not only when it needs you.',
+			on: watched,
+			onchange: () => void toggleWatch()
+		}
+	]);
 
 	/**
 	 * The transcript, with any still-unclaimed prompts after it.
@@ -858,12 +880,55 @@
 		return out;
 	}
 
+	/**
+	 * A transcript window can grow backwards from 1 MiB to 4 MiB. Absolute
+	 * array indexes then change for every existing turn, remounting open tools.
+	 * Harness timestamps are stable across reparses; a tool identity separates
+	 * the vanishingly rare pair of records written in the same millisecond.
+	 */
+	function messageRowKey(message: (typeof visibleMessages)[number], fallback: string): string {
+		if (!message.at) return fallback;
+		const tool = work(message).find((block) => block.kind === 'tool');
+		const identity = tool ? `${tool.name}:${tool.summary}` : message.text.slice(0, 96);
+		return `m${message.at}:${message.role}:${identity}`;
+	}
+
+	const openToolGroups = new SvelteSet<string>();
+	function toggleToolGroup(event: MouseEvent, key: string) {
+		event.preventDefault();
+		const details = (event.currentTarget as HTMLElement).parentElement as HTMLDetailsElement;
+		details.open = !details.open;
+		if (details.open) {
+			openToolGroups.add(key);
+			if (openToolGroups.size > 512) {
+				openToolGroups.delete(openToolGroups.values().next().value as string);
+			}
+		} else openToolGroups.delete(key);
+	}
+
+	function toolGroupDisclosure(node: HTMLDetailsElement, initialKey: string) {
+		let key = initialKey;
+		const remember = () => {
+			if (node.open) openToolGroups.add(key);
+			else openToolGroups.delete(key);
+		};
+		node.open = openToolGroups.has(key);
+		node.addEventListener('toggle', remember);
+		return {
+			update(nextKey: string) {
+				key = nextKey;
+				node.open = openToolGroups.has(key);
+			},
+			destroy: () => node.removeEventListener('toggle', remember)
+		};
+	}
+
 	const rows = $derived.by((): Row[] => {
 		const base = detail.messages.length - visibleMessages.length;
 		const out: Row[] = visibleMessages.map((message, i) => ({
 			kind: 'message' as const,
 			message,
-			key: `m${base + i}`,
+			key: messageRowKey(message, `m${base + i}`),
 			run: 'only' as RunPos,
 			thinkingJoin: false
 		}));
@@ -1396,7 +1461,12 @@
 			observer = new IntersectionObserver(
 				(entries) => {
 					if (!entries.some((e) => e.isIntersecting)) return;
-					if (loadingEarlier || !canShowEarlier) return;
+					// On first paint the top sentinel can intersect before scrollBottom lands.
+					// Loading then silently widens every later refresh from 1 MiB to 4 MiB.
+					// Following means the reader is at the live end, not asking for history.
+					// `historyScrollIntent` also stops layout shifts during startup from
+					// masquerading as a real trip towards the top.
+					if (!historyScrollIntent || following || loadingEarlier || !canShowEarlier) return;
 					void showEarlier();
 				},
 				{ root: scrollHost(), rootMargin: '600px 0px 0px 0px' }
@@ -1651,9 +1721,12 @@
 	 */
 	let following = $state(true);
 	let lastTop = 0;
+	/** Auto-history only follows a real upward reader scroll, never first-layout geometry. */
+	let historyScrollIntent = false;
 
 	function onScroll() {
 		const top = scrollTop();
+		if (!programmatic && top < lastTop) historyScrollIntent = true;
 		following = nextFollowing(following, {
 			top,
 			lastTop,
@@ -1838,6 +1911,7 @@
 		shown = TAIL;
 		scrollback = null;
 		following = true;
+		historyScrollIntent = false;
 		requestAnimationFrame(scrollBottom);
 	});
 
@@ -2488,9 +2562,13 @@
 	 */
 	const revealing = $derived.by(() => {
 		if (!dragging || Math.abs(dragX) < 4) return null;
-		// `dragX` keeps the sign of the finger's travel, so this names the pane
-		// `decideSwipe` will commit to on release — one mapping, in `$lib/swipe`.
-		const to = dragTarget(swipeOrder, detail.paneId, dragX);
+		// The card and the committed destination use the same optional inversion;
+		// dragX itself stays physical so the transcript follows the finger.
+		const to = dragTarget(
+			swipeOrder,
+			detail.paneId,
+			swipeNavigationDelta(dragX, prefs.value.swipeInverted)
+		);
 		if (!to) return null;
 		return (
 			store.agents.find((a) => a.paneId === to) ?? {
@@ -2562,7 +2640,11 @@
 		// anything; it is the wrong one in the middle, where the drag has to
 		// open a gap wide enough to actually read the card underneath before
 		// deciding to let go.
-		dragX = dx * (dragTarget(swipeOrder, detail.paneId, dx) ? 0.66 : 0.33);
+		dragX =
+			dx *
+			(dragTarget(swipeOrder, detail.paneId, swipeNavigationDelta(dx, prefs.value.swipeInverted))
+				? 0.66
+				: 0.33);
 	}
 
 	function onTouchCancel() {
@@ -2588,8 +2670,9 @@
 			dragX = 0;
 			return;
 		}
+		const physicalDx = touch.clientX - startX;
 		const direction = decideSwipe(
-			touch.clientX - startX,
+			swipeNavigationDelta(physicalDx, prefs.value.swipeInverted),
 			touch.clientY - startY,
 			startX,
 			window.innerWidth
@@ -2607,7 +2690,7 @@
 			// pane from the other side. Without this the content jumped from
 			// wherever the finger left it back to centre, which read as a glitch.
 			leaving = true;
-			dragX = direction === 'next' ? window.innerWidth : -window.innerWidth;
+			dragX = physicalDx > 0 ? window.innerWidth : -window.innerWidth;
 			await new Promise((r) => setTimeout(r, 140));
 		}
 		// REPLACE, never push: swiping is moving along one list, not walking
@@ -2617,7 +2700,7 @@
 		// go to the previous agent.
 		await goto(resolve('/a/[pane]', { pane }), { replaceState: true });
 		// Land from the opposite edge, then release to centre on the next frame.
-		dragX = direction === 'next' ? -window.innerWidth / 3 : window.innerWidth / 3;
+		dragX = physicalDx > 0 ? -window.innerWidth / 3 : window.innerWidth / 3;
 		leaving = false;
 		requestAnimationFrame(() => requestAnimationFrame(() => (dragX = 0)));
 	}
@@ -2839,11 +2922,12 @@
 		a state you set once, rather than a link you re-find at the bottom of a
 		growing conversation.
 	-->
-	{#if prefs.value.workControl === 'header' && toolCount > 0 && !layout.tight}
+	{#if (wideScreen || prefs.value.workControl === 'header') && toolCount > 0 && !layout.tight}
 		<button
 			class="flex h-9 shrink-0 items-center rounded-full border px-3 text-[12px] {showTools
 				? 'border-working-halo bg-working-bg text-working'
 				: 'border-edge text-muted'}"
+			aria-label={showTools ? 'Hide tools' : 'Show tools'}
 			aria-pressed={showTools}
 			onclick={() => {
 				showTools = !showTools;
@@ -2851,6 +2935,19 @@
 			}}
 		>
 			tools {toolCount}
+		</button>
+	{/if}
+	{#if wideScreen}
+		<button
+			class="flex h-9 shrink-0 items-center rounded-full border px-3 text-[12px] {prefs.value
+				.showThinking
+				? 'border-working-halo bg-working-bg text-working'
+				: 'border-edge text-muted'}"
+			aria-label={prefs.value.showThinking ? 'Hide thinking' : 'Show thinking'}
+			aria-pressed={prefs.value.showThinking}
+			onclick={() => prefs.set('showThinking', !prefs.value.showThinking)}
+		>
+			thinking {thinkingCount}
 		</button>
 	{/if}
 	{#if detail.status === 'working'}
@@ -2884,7 +2981,7 @@
 	</button>
 	{#if !layout.tight}
 		<!--
-			Both toggles move into the ⋯ sheet on a narrow screen. Measured on a
+			Secondary toggles move into the ⋯ sheet on a narrow screen. Measured on a
 			430px phone: the row's controls take 365px of it and the pane's own
 			title is left with 13 pixels — at 360 and 320 it gets none at all.
 			The title is the one thing there you cannot work out from anything
@@ -2903,9 +3000,32 @@
 	{/if}
 {/snippet}
 
+<!-- The focused terminal used when this pane's normal view mode calls for it. -->
+{#snippet liveTerminal()}
+	<div data-viewport-terminal-body class="flex min-h-0 flex-1 flex-col">
+		<PaneTerminal
+			paneId={detail.paneId}
+			agent={detail.agent}
+			ask={detail.picker && detail.picker.options.length > 0 && !askHidden ? pickerCard : undefined}
+			suggestion={detail.suggestion ?? ''}
+			bind:draft
+			mono={prefs.value.monoSize}
+			{dictating}
+			{busy}
+			onkeys={sendKeys}
+			dialog={pickerKey}
+			{writeIn}
+			onsubmit={sendTerminalAnswer}
+			onrestore={restoreTerminalDraft}
+			bind:input={terminalInput}
+			onmic={speechSupported ? toggleDictation : undefined}
+		/>
+	</div>
+{/snippet}
+
 {#snippet conversation()}
 	<div class="flex min-h-dvh flex-col lg:h-full lg:min-h-0 lg:flex-1" bind:this={swipeRoot}>
-		<header class="sticky top-0 z-10 border-b border-hairline bg-page">
+		<header data-viewport-header class="sticky top-0 z-10 border-b border-hairline bg-page">
 			{#if !wideScreen}
 				{@render paneHeader()}
 			{/if}
@@ -3007,25 +3127,7 @@
 				prompt line under it. The transcript view is the one that
 				interprets; this one shows.
 			-->
-			<PaneTerminal
-				paneId={detail.paneId}
-				agent={detail.agent}
-				ask={detail.picker && detail.picker.options.length > 0 && !askHidden
-					? pickerCard
-					: undefined}
-				suggestion={detail.suggestion ?? ''}
-				bind:draft
-				mono={prefs.value.monoSize}
-				{dictating}
-				{busy}
-				onkeys={sendKeys}
-				dialog={pickerKey}
-				{writeIn}
-				onsubmit={sendTerminalAnswer}
-				onrestore={restoreTerminalDraft}
-				bind:input={terminalInput}
-				onmic={speechSupported ? toggleDictation : undefined}
-			/>
+			{@render liveTerminal()}
 		{:else}
 			<!--
 				The TRANSCRIPT moves, not the scroll container: the header above is
@@ -3093,6 +3195,7 @@
 			-->
 			<div class="flex flex-1 flex-col lg:min-h-0 lg:overflow-y-auto" bind:this={scrollRoot}>
 				<main
+					data-viewport-content
 					class="relative mx-auto w-full flex-1 px-4 pt-3 pb-2 lg:mx-0 lg:px-6 {widths} {dragging
 						? 'bg-page'
 						: ''} {dragging || leaving
@@ -3293,9 +3396,10 @@
 									a message row; the toggle is checked inside it.
 								-->
 									{#if showTools}
-										<details class="group">
+										<details class="group" use:toolGroupDisclosure={`${detail.paneId}:${row.key}`}>
 											<summary
 												class="flex cursor-pointer items-baseline gap-2 rounded-lg px-2 py-1.5 font-mono text-[11.5px] text-muted transition-colors hover:bg-chip/60"
+												onclick={(event) => toggleToolGroup(event, `${detail.paneId}:${row.key}`)}
 											>
 												<span
 													class="shrink-0 self-center text-faint transition-transform group-open:rotate-90 motion-reduce:transition-none"
@@ -3308,7 +3412,12 @@
 												</span>
 											</summary>
 											<div class="pl-2">
-												<MessageBlocks blocks={row.blocks} mono={prefs.value.monoSize} showTools />
+												<MessageBlocks
+													blocks={row.blocks}
+													mono={prefs.value.monoSize}
+													showTools
+													scope={`${detail.paneId}:${row.key}`}
+												/>
 											</div>
 										</details>
 									{/if}
@@ -3418,6 +3527,7 @@
 															<MessageBlocks
 																blocks={segment.blocks}
 																mono={prefs.value.monoSize}
+																scope={`${detail.paneId}:${row.key}:segment-${segmentIndex}`}
 																{showTools}
 																showThinking={prefs.value.showThinking}
 															/>
@@ -3432,6 +3542,7 @@
 														<MessageBlocks
 															blocks={message.blocks ?? []}
 															mono={prefs.value.monoSize}
+															scope={`${detail.paneId}:${row.key}`}
 															{showTools}
 															showThinking={prefs.value.showThinking}
 														/>
@@ -3558,7 +3669,7 @@
 				</main>
 			</div>
 
-			<div class="sticky bottom-0 z-10 w-full {widths}">
+			<div data-viewport-composer class="sticky bottom-0 z-10 w-full {widths}">
 				<!--
 						Above the whole composer stack, never on it: the suggestion chip
 						and the input are the two things you are reaching for, and a pill
@@ -3985,6 +4096,7 @@
 	{:else}
 		<PaneScreen
 			{paneId}
+			mono={prefs.value.monoSize}
 			onopen={() =>
 				goto(resolve('/a/[pane]', { pane: paneId }), {
 					replaceState: prefs.value.backTo === 'home'
@@ -4025,6 +4137,16 @@
 <div
 	class="lg:flex lg:h-dvh lg:flex-col lg:overflow-hidden"
 	data-sveltekit-replacestate={prefs.value.backTo === 'home' ? '' : 'false'}
+	use:tabViewport={{
+		enabled: !!viewportTab && (!wideScreen || !!splitLayout),
+		mobile: !wideScreen,
+		tabId: viewportTab?.tabId ?? detail.tabId,
+		paneId: detail.paneId,
+		tree: viewportTab?.tree,
+		mono: prefs.value.monoSize,
+		density: prefs.value.terminalDensity,
+		onactive: (active) => (viewportOwned = active)
+	}}
 >
 	{#if wideScreen}
 		<header class="shrink-0 border-b border-hairline bg-page">
@@ -4078,10 +4200,9 @@
 		{/if}
 		{#if wideScreen && splitLayout}
 			<!--
-			The tab as herdr has it: the pane you are in holds the transcript and
-			the composer, and every other pane in the split shows its own screen.
-			A tile IS the pane, not a picture of it — which is the whole point of
-			showing the split rather than a row of chips.
+			The focused agent keeps its normal conversation view. Every sibling is
+			a live visible-grid terminal with click-to-focus navigation and no input
+			controls of its own. Mobile keeps the same single-pane view.
 		-->
 			<!--
 				min-w-0 matters here: without it this flex item sizes to its
@@ -4089,8 +4210,14 @@
 				pushed the whole split wider than the window rather than scrolling
 				inside its own tile.
 			-->
-			<div class="flex min-h-0 min-w-0 flex-1 overflow-hidden">
-				<PaneSplit node={splitLayout.tree} tile={splitTile} onratio={setRatio} />
+			<div data-viewport-surface class="flex min-h-0 min-w-0 flex-1 overflow-hidden">
+				<PaneSplit
+					node={splitLayout.tree}
+					active={detail.paneId}
+					tile={splitTile}
+					canonical={viewportOwned}
+					tabId={splitLayout.tabId}
+				/>
 			</div>
 		{:else}
 			{@render conversation()}
@@ -4103,29 +4230,7 @@
 				(closingContext = { current: detail.paneId, siblings: [...tabSiblings], all: [...order] })}
 			targets={controlTargets}
 			subagents={subs}
-			toggles={layout.tight
-				? [
-						...(prefs.value.workControl === 'header' && toolCount > 0
-							? [
-									{
-										label: `Show tools (${toolCount})`,
-										hint: 'Tool calls and results, inline in the transcript.',
-										on: showTools,
-										onchange: () => {
-											showTools = !showTools;
-											prefs.set('showWork', showTools);
-										}
-									}
-								]
-							: []),
-						{
-							label: 'Notify when this agent finishes',
-							hint: 'A push for every done, not only when it needs you.',
-							on: watched,
-							onchange: () => void toggleWatch()
-						}
-					]
-				: []}
+			toggles={conversationToggles}
 			onsubagent={(id) => {
 				controlling = false;
 				openSub = id;

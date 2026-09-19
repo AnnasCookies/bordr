@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { resolve } from '$app/paths';
 	import { track } from '$lib/pending.svelte';
 	import Spinner from './spinner.svelte';
 
@@ -231,6 +232,11 @@
 				{/if}
 			{/if}
 
+			{#if toggles.length > 0}
+				<p class="px-4 pt-2 pb-1 font-mono text-[10.5px] tracking-[.06em] text-faint uppercase">
+					conversation
+				</p>
+			{/if}
 			{#each toggles as toggle (toggle.label)}
 				<button
 					class="flex min-h-12 w-full items-center gap-3 px-4 text-left"
@@ -276,6 +282,11 @@
 					<span class="font-mono text-[11px] text-faint">branch off, or open one</span>
 				</button>
 			{/if}
+
+			<a class="flex min-h-12 items-center px-4 text-left text-[15px]" href={resolve('/settings')}>
+				<span class="flex-1">All conversation settings</span>
+				<span class="font-mono text-[11px] text-faint">transcript, input, display</span>
+			</a>
 
 			<button class="min-h-12 px-4 text-left text-[15px] text-muted" onclick={onclose}
 				>Cancel</button

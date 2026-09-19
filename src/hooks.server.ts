@@ -118,7 +118,12 @@ export const handle: Handle = async ({ event, resolve }) => {
 		}
 	}
 
-	const response = await resolve(event);
+	const response = await resolve(event, {
+		// Universal page loads read the detail endpoint's ETag so repeat transcript
+		// polls can send If-None-Match. SvelteKit hides internal-fetch headers unless
+		// they are explicitly safe to serialise into the hydration payload.
+		filterSerializedResponseHeaders: (name) => name === 'etag'
+	});
 
 	// /raw serves agent-authored bytes and sets its own sandbox CSP; do not
 	// overwrite it with the app shell's policy, and above all do not send

@@ -31,6 +31,11 @@ export function swipeDirection(dx: number): SwipeDirection {
 	return dx > 0 ? 'next' : 'previous';
 }
 
+/** Keep the finger movement physical while optionally reversing list navigation. */
+export function swipeNavigationDelta(dx: number, inverted: boolean): number {
+	return inverted ? -dx : dx;
+}
+
 /**
  * Does this gesture start in the strip the system has reserved?
  *

@@ -93,9 +93,10 @@ describe('normalisePrefs', () => {
 		expect(normalisePrefs({ toolDetail: 'xml' }).toolDetail).toBe(DEFAULTS.toolDetail);
 	});
 
-	it('retains every user-selected conversation width', () => {
-		for (const width of ['comfortable', 'wide', 'full'])
-			expect(normalisePrefs({ conversationWidth: width }).conversationWidth).toBe(width);
+	it('drops the old conversation width cap', () => {
+		expect(normalisePrefs({ conversationWidth: 'comfortable' })).not.toHaveProperty(
+			'conversationWidth'
+		);
 	});
 
 	it('follows the OS only for system', () => {
@@ -118,10 +119,15 @@ describe('normalisePrefs: bubble colours', () => {
 		}
 	});
 
-	it('defaults swipe on and bubbles off', () => {
+	it('defaults swipe on in the original direction and bubbles off', () => {
 		expect(DEFAULTS.swipeAgents).toBe(true);
+		expect(DEFAULTS.swipeInverted).toBe(false);
 		expect(DEFAULTS.bubbles).toBe(false);
-		expect(normalisePrefs({ swipeAgents: 'yes' }).swipeAgents).toBe(true);
+		expect(normalisePrefs({ swipeAgents: 'yes', swipeInverted: 'yes' })).toMatchObject({
+			swipeAgents: true,
+			swipeInverted: false
+		});
+		expect(normalisePrefs({ swipeInverted: true }).swipeInverted).toBe(true);
 	});
 
 	it('leaves colours empty by default, meaning follow the theme', () => {

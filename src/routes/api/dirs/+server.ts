@@ -2,6 +2,7 @@ import { readdirSync, realpathSync, statSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { join, resolve, sep } from 'node:path';
 import { json } from '@sveltejs/kit';
+import { createHomeDirectory, DirectoryError } from '$lib/server/home-directories';
 import type { RequestHandler } from './$types';
 
 const HOME = homedir();
@@ -48,4 +49,33 @@ export const GET: RequestHandler = async ({ url }) => {
 		parent: absolute === realHome ? null : join(absolute, '..'),
 		dirs
 	});
+};
+
+/** Create a child folder and return it so the picker can open it straight away. */
+export const POST: RequestHandler = async ({ request }) => {
+	let body: { parent?: unknown; name?: unknown };
+	try {
+		body = (await request.json()) as { parent?: unknown; name?: unknown };
+	} catch {
+		return json({ message: 'request must be JSON' }, { status: 400 });
+	}
+	if (typeof body !== 'object' || body === null) {
+		return json({ message: 'request must be an object' }, { status: 400 });
+	}
+	if (body.parent !== undefined && typeof body.parent !== 'string') {
+		return json({ message: 'parent folder must be a path' }, { status: 400 });
+	}
+	try {
+		const parent = body.parent?.replace(/^~(?=\/|$)/, HOME);
+		const result = createHomeDirectory(HOME, parent, body.name);
+		return json({
+			...result,
+			display: result.path.replace(HOME, '~')
+		});
+	} catch (cause) {
+		if (cause instanceof DirectoryError) {
+			return json({ message: cause.message }, { status: cause.status });
+		}
+		return json({ message: 'could not create folder' }, { status: 500 });
+	}
 };

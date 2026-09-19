@@ -9,11 +9,11 @@
 <script lang="ts">
 	import { onMount, type Snippet } from 'svelte';
 	import { SvelteSet } from 'svelte/reactivity';
-	import { ansiToHtml } from '$lib/ansi';
 	import { prefs } from '$lib/prefs.svelte';
 	import { promptMark, splitAtPrompt } from '$lib/screen-split';
 	import Icon from './icon.svelte';
 	import StatusBlock from './status-block.svelte';
+	import TerminalSurface from './terminal-surface.svelte';
 
 	/**
 	 * The pane as the terminal draws it, with a prompt line under it.
@@ -66,8 +66,6 @@
 	} = $props();
 
 	let text = $state('');
-	let screen = $state<HTMLElement | undefined>();
-	let stuck = $state(true);
 
 	/** The pane the screen on show belongs to. */
 	let shownFor = '';
@@ -100,11 +98,28 @@
 
 	$effect(() => {
 		const id = paneId;
-		void load(id);
-		// A second is what the terminal itself feels like; the screen is small
-		// and the read is one socket round trip.
-		const timer = setInterval(() => void load(id), 1000);
-		return () => clearInterval(timer);
+		let timer: ReturnType<typeof setInterval> | undefined;
+		const stop = () => {
+			if (timer) clearInterval(timer);
+			timer = undefined;
+		};
+		const start = () => {
+			if (timer || document.visibilityState === 'hidden') return;
+			void load(id);
+			// A second is what the terminal itself feels like; the screen is small
+			// and the read is one socket round trip.
+			timer = setInterval(() => void load(id), 1000);
+		};
+		const onVisibility = () => {
+			if (document.visibilityState === 'hidden') stop();
+			else start();
+		};
+		start();
+		document.addEventListener('visibilitychange', onVisibility);
+		return () => {
+			stop();
+			document.removeEventListener('visibilitychange', onVisibility);
+		};
 	});
 
 	const parts = $derived(splitAtPrompt(text));
@@ -121,77 +136,6 @@
 		parts.below.map((l) => l.trim().replace(/\s{2,}/g, '  ')).filter((l) => l !== '')
 	);
 	let statusOpen = $state(false);
-
-	// The screen follows its own bottom, the way a terminal does, unless you
-	// have scrolled up to read something.
-	$effect(() => {
-		void text;
-		if (stuck && screen) screen.scrollTop = screen.scrollHeight;
-	});
-
-	/**
-	 * Shrink the type until the pane's own width fits the window's.
-	 *
-	 * herdr draws a pane at the terminal's width — 198 columns here — and
-	 * bordr only displays what it drew. On a phone that is four times the
-	 * screen, so without this every line runs off the side and reading
-	 * anything means scrolling sideways. Scaling the type keeps the columns
-	 * lined up, which wrapping would destroy: a status bar, a table and a
-	 * progress meter are all built out of column positions.
-	 *
-	 * Down to a floor only. Past that it stops being legible and buys nothing —
-	 * a 198-column pane needs about 3px a character to fit a phone, which is
-	 * not reading, it is a texture. Below the floor, sideways scrolling is the
-	 * better of two bad answers.
-	 */
-	const FLOOR = 8;
-	let fitted = $state(0);
-	const mode = $derived(prefs.value.terminalFit);
-	/**
-	 * How much of the pane fits on screen.
-	 *
-	 * A terminal row is drawn at its own line height; bordr was adding a
-	 * third of a line to every one of them and a row of padding all round,
-	 * which on a phone is several lines of the pane you cannot see.
-	 */
-	const tight = $derived(prefs.value.terminalDensity === 'compact');
-	const size = $derived(mode === 'fit' ? fitted || mono : mono);
-
-	function fit() {
-		if (mode !== 'fit') {
-			fitted = 0;
-			return;
-		}
-		const box = screen;
-		const pre = box?.firstElementChild as HTMLElement | undefined;
-		if (!box || !pre || !box.clientWidth) return;
-		// Measure at the SOURCE size, so the answer does not drift each time
-		// it is recomputed from its own previous result.
-		const at = fitted || mono;
-		const natural = (pre.scrollWidth / at) * mono;
-		if (!natural) return;
-		const want = Math.min(mono, (box.clientWidth / natural) * mono);
-		fitted = Math.max(FLOOR, Math.floor(want * 10) / 10);
-	}
-
-	$effect(() => {
-		void text;
-		void mono;
-		void mode;
-		// After the paint: scrollWidth is only true once the new text is in.
-		const id = requestAnimationFrame(fit);
-		return () => cancelAnimationFrame(id);
-	});
-
-	$effect(() => {
-		const box = screen;
-		if (!box) return;
-		// The window resizing, the split moving, the keyboard opening — all
-		// change the width without changing a character of the text.
-		const observer = new ResizeObserver(() => fit());
-		observer.observe(box);
-		return () => observer.disconnect();
-	});
 
 	/**
 	 * Typing goes THROUGH to the pane, character by character.
@@ -342,23 +286,7 @@
 </script>
 
 <div class="flex min-h-0 min-w-0 flex-1 flex-col bg-page">
-	<div
-		bind:this={screen}
-		onscroll={() => {
-			if (screen) stuck = screen.scrollTop + screen.clientHeight >= screen.scrollHeight - 24;
-		}}
-		class="term flex min-h-0 w-full flex-1 flex-col justify-end overflow-auto {tight
-			? 'px-1.5 py-0.5 leading-[1.15]'
-			: 'px-3 py-2 leading-[1.35]'}"
-		style="font-size: {size}px"
-	>
-		<!-- eslint-disable svelte/no-at-html-tags -- ansiToHtml escapes its input -->
-		<pre
-			class={mode === 'wrap'
-				? '[overflow-wrap:anywhere] whitespace-pre-wrap'
-				: 'whitespace-pre'}>{@html ansiToHtml(parts.above.join('\n'), true)}</pre>
-		<!-- eslint-enable svelte/no-at-html-tags -->
-	</div>
+	<TerminalSurface text={parts.above.join('\n')} {mono} />
 
 	{#if ask}
 		<!--

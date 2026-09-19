@@ -29,7 +29,6 @@
 		SubagentStrip,
 		DrawerHome,
 		ChromeWhen,
-		ConversationWidth,
 		Motion,
 		HeaderPull,
 		HeaderModel,
@@ -736,28 +735,6 @@
 	</p>
 {/snippet}
 
-{#snippet widthPreview()}
-	<!-- The column, and how much of it the transcript takes. -->
-	<div class="rounded-lg bg-page p-2">
-		<div class="flex h-10 w-full items-stretch rounded border border-hairline bg-card p-0.5">
-			<div
-				class="rounded bg-chip {prefs.value.conversationWidth === 'full'
-					? 'w-full'
-					: prefs.value.conversationWidth === 'wide'
-						? 'w-3/4'
-						: 'w-1/2'}"
-			></div>
-		</div>
-		<p class="mt-1 font-mono text-[10.5px] text-faint">
-			{prefs.value.conversationWidth === 'full'
-				? 'the whole column'
-				: prefs.value.conversationWidth === 'wide'
-					? 'up to 1280px'
-					: 'up to 1024px'}
-		</p>
-	</div>
-{/snippet}
-
 {#snippet chromePreview()}
 	<!--
 		The three together, because they share a row and the question is always
@@ -880,7 +857,11 @@
 {#snippet swipePreview()}
 	<div class="rounded-lg bg-page p-2 text-[12px] text-muted">
 		{#if prefs.value.swipeAgents}
-			<span class="font-mono">← swipe →</span> moves to the next agent in the list.
+			{#if prefs.value.swipeInverted}
+				Swipe left: next · swipe right: previous.
+			{:else}
+				Swipe left: previous · swipe right: next.
+			{/if}
 		{:else}
 			A sideways swipe does nothing; use the list or the tree.
 		{/if}
@@ -1279,25 +1260,6 @@
 								the back arrow is there, so the two cannot push the header off the screen.
 							</p>
 							<SettingRow
-								label="Conversation width"
-								value={prefs.value.conversationWidth}
-								options={[
-									{ v: 'comfortable' as ConversationWidth, l: 'Comfortable' },
-									{ v: 'wide' as ConversationWidth, l: 'Wide' },
-									{ v: 'full' as ConversationWidth, l: 'Full' }
-								]}
-								onchange={(v) => prefs.set('conversationWidth', v)}
-							>
-								{#snippet preview()}{@render widthPreview()}{/snippet}
-							</SettingRow>
-							<p class="px-3.5 pb-2 text-[12px] text-muted">
-								Desktop only; a phone has one column either way. It was capped at 1024px however
-								wide the window — at 1920 that left 620px of the column empty, and at 2560 it left
-								1260px. A cap is not wrong, though: prose past about 90 characters a line is harder
-								to read, which is why there was one. Diffs and terminal output want the room; long
-								prose does not.
-							</p>
-							<SettingRow
 								label="Pull request"
 								value={prefs.value.headerPull}
 								options={[
@@ -1501,6 +1463,14 @@
 								hint="Swipe across a conversation for the next or previous agent in the list. Swiping from either screen edge still goes back."
 								checked={prefs.value.swipeAgents}
 								onchange={(v) => prefs.set('swipeAgents', v)}
+							>
+								{#snippet preview()}{@render swipePreview()}{/snippet}
+							</ToggleRow>
+							<ToggleRow
+								label="Invert swipe direction"
+								hint="Swap which neighbouring agent a left or right swipe opens. The page still follows your finger."
+								checked={prefs.value.swipeInverted}
+								onchange={(v) => prefs.set('swipeInverted', v)}
 							>
 								{#snippet preview()}{@render swipePreview()}{/snippet}
 							</ToggleRow>

@@ -38,10 +38,14 @@
 	let loadingDirs = $state(false);
 	/** Why the listing is empty when it is not simply an empty folder. */
 	let dirError = $state<string | null>(null);
+	let folderName = $state('');
+	let creatingFolder = $state(false);
+	let folderError = $state<string | null>(null);
 
 	async function browse(path?: string) {
 		loadingDirs = true;
 		dirError = null;
+		folderError = null;
 		try {
 			const url = path ? `/api/dirs?path=${encodeURIComponent(path)}` : '/api/dirs';
 			const response = await fetch(url);
@@ -65,6 +69,28 @@
 			dirError = `Could not list it: ${(e as Error).message}.`;
 		}
 		loadingDirs = false;
+	}
+
+	async function createFolder() {
+		if (!folderName.trim() || creatingFolder) return;
+		creatingFolder = true;
+		folderError = null;
+		try {
+			const response = await fetch('/api/dirs', {
+				method: 'POST',
+				headers: { 'content-type': 'application/json' },
+				body: JSON.stringify({ parent: cwd || undefined, name: folderName })
+			});
+			const body = (await response.json()) as { path?: string; message?: string };
+			if (!response.ok || !body.path) {
+				throw new Error(body.message ?? `create folder failed: ${response.status}`);
+			}
+			folderName = '';
+			await browse(body.path);
+		} catch (e) {
+			folderError = (e as Error).message;
+		}
+		creatingFolder = false;
 	}
 
 	// Load the walker the first time the sheet opens, not on every render.
@@ -183,6 +209,36 @@
 							>
 						{/if}
 					</div>
+					<form
+						class="flex items-center gap-2 border-b border-hairline bg-page px-2 py-2"
+						onsubmit={(event) => {
+							event.preventDefault();
+							void createFolder();
+						}}
+					>
+						<input
+							bind:value={folderName}
+							class="min-w-0 flex-1 rounded-lg border border-edge bg-card px-2.5 py-2 text-[15px]"
+							placeholder="New folder name"
+							aria-label="New folder name"
+						/>
+						<button
+							type="submit"
+							class="flex min-h-10 shrink-0 items-center gap-1.5 rounded-lg bg-ink px-3 text-[12.5px] font-medium text-card disabled:opacity-50"
+							disabled={!folderName.trim() || creatingFolder}
+						>
+							{#if creatingFolder}<Spinner size={12} label="Creating folder" />{/if}
+							Create &amp; open
+						</button>
+					</form>
+					{#if folderError}
+						<p
+							class="border-b border-hairline bg-danger-bg px-3 py-2 text-[12px] text-danger-ink"
+							role="alert"
+						>
+							{folderError}
+						</p>
+					{/if}
 					<div class="max-h-52 overflow-y-auto">
 						{#each dirs as dir (dir)}
 							<button

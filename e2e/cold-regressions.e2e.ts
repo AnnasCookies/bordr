@@ -103,7 +103,6 @@ async function fixture(
 				'bordr-prefs',
 				JSON.stringify({
 					v: 2,
-					conversationWidth: 'comfortable',
 					subagentStrip: 'all',
 					splitLayout: false,
 					tabStrip: 'off',
@@ -699,41 +698,29 @@ test('multi-select Submit uses the verified submit operation, not the checkbox t
 	expect(state.keys).toEqual([]);
 });
 
-for (const width of ['comfortable', 'wide', 'full']) {
-	test(`retained ${width} conversation width respects its cap while resizing`, async ({ page }) => {
-		const state = await fixture(page, { conversationWidth: width });
-		state.picker = false;
-		state.treeData = [
-			{
-				...workspaces[0],
-				tabs: [{ ...workspaces[0].tabs[0], panes: [workspaces[0].tabs[0].panes[0]] }]
-			}
-		];
-		await openPane(page);
-		const main = page.locator('.transcript-rows').locator('xpath=ancestor::main[1]');
-		for (const viewport of [1400, 1600]) {
-			await page.setViewportSize({ width: viewport, height: 900 });
-			const cap =
-				width === 'full'
-					? Infinity
-					: width === 'wide'
-						? viewport >= 1536
-							? 1280
-							: 1152
-						: viewport >= 1536
-							? 1024
-							: 896;
-			await expect
-				.poll(async () => main.evaluate((el) => el.getBoundingClientRect().width))
-				.toBeGreaterThan(0);
-			const sizes = await main.evaluate((el) => ({
-				main: el.getBoundingClientRect().width,
-				available: el.parentElement!.getBoundingClientRect().width
-			}));
-			expect(Math.abs(sizes.main - Math.min(sizes.available, cap))).toBeLessThan(2);
+test('a stale conversation width cap cannot waste desktop space', async ({ page }) => {
+	const state = await fixture(page, { conversationWidth: 'comfortable' });
+	state.picker = false;
+	state.treeData = [
+		{
+			...workspaces[0],
+			tabs: [{ ...workspaces[0].tabs[0], panes: [workspaces[0].tabs[0].panes[0]] }]
 		}
-	});
-}
+	];
+	await openPane(page);
+	const main = page.locator('.transcript-rows').locator('xpath=ancestor::main[1]');
+	for (const viewport of [1400, 1600]) {
+		await page.setViewportSize({ width: viewport, height: 900 });
+		await expect
+			.poll(async () => main.evaluate((el) => el.getBoundingClientRect().width))
+			.toBeGreaterThan(0);
+		const sizes = await main.evaluate((el) => ({
+			main: el.getBoundingClientRect().width,
+			available: el.parentElement!.getBoundingClientRect().width
+		}));
+		expect(Math.abs(sizes.main - sizes.available)).toBeLessThan(2);
+	}
+});
 
 test('terminal failure cancels empty confirmations queued behind the failed text', async ({
 	page

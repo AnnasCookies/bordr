@@ -1,4 +1,5 @@
-import { error, json } from '@sveltejs/kit';
+import { createHash } from 'node:crypto';
+import { error } from '@sveltejs/kit';
 import { rawAgent, rawPane, readPane, readVisible, toSummary } from '$lib/server/herdr';
 import { adapterFor } from '$lib/server/transcript';
 import { agentCwd } from '$lib/server/transcript/cwd';
@@ -86,7 +87,7 @@ function explain(degraded: Degraded, harness: string, reason?: string): string |
 	}
 }
 
-export const GET: RequestHandler = async ({ params, url }) => {
+export const GET: RequestHandler = async ({ params, url, request }) => {
 	// Widened by the reader paging back through history. A junk value must
 	// fall back to the default rather than reading zero bytes and rendering
 	// an empty conversation.
@@ -338,7 +339,7 @@ export const GET: RequestHandler = async ({ params, url }) => {
 		suggestion = suggestionFrom(ansiVisible);
 	}
 
-	return json({
+	const payload = {
 		...summary,
 		// The agent's directory wins over the pane's for everything the detail
 		// view shows; `paneCwd` keeps the shell's, which is what a key sent to
@@ -380,5 +381,21 @@ export const GET: RequestHandler = async ({ params, url }) => {
 		statusLines,
 		statusAnsi,
 		hasMore
-	} satisfies AgentDetail);
+	} satisfies AgentDetail;
+
+	// This route can carry megabytes of transcript and is polled while open.
+	// Most polls are byte-identical. Validate them without sending or parsing
+	// the same JSON again; the server still computes current truth first.
+	const body = JSON.stringify(payload);
+	const etag = `"${createHash('sha256').update(body).digest('base64url').slice(0, 24)}"`;
+	const headers = {
+		etag,
+		'cache-control': 'private, no-cache'
+	};
+	if (request?.headers.get('if-none-match') === etag) {
+		return new Response(null, { status: 304, headers });
+	}
+	return new Response(body, {
+		headers: { ...headers, 'content-type': 'application/json; charset=utf-8' }
+	});
 };

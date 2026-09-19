@@ -8,6 +8,7 @@ import { judgeCompatibility, type Compatibility } from './compat';
 import { SubscriptionManager } from './subscriptions';
 import { ensureConnection } from './connections';
 import { formatPane, parsePane } from './address';
+import { promptAfterRegistration } from './prompt-retry';
 
 const DEFAULT_SOCKET = join(homedir(), '.config', 'herdr', 'sessions', 'main', 'herdr.sock');
 
@@ -215,6 +216,20 @@ export async function rawAgent(address: string): Promise<Record<string, unknown>
 	return agent ? { ...agent, pane_id: address } : null;
 }
 
+/** Wait until herdr lists a newly started pane as an active agent. */
+export async function waitForActiveAgent(address: string, budgetMs = 15_000): Promise<boolean> {
+	const deadline = Date.now() + budgetMs;
+	do {
+		try {
+			if (await rawAgent(address)) return true;
+		} catch {
+			// Agent startup can briefly race herdr's registry; keep the bounded wait going.
+		}
+		await new Promise((resolve) => setTimeout(resolve, 250));
+	} while (Date.now() < deadline);
+	return false;
+}
+
 /**
  * Any pane, agent or not.
  *
@@ -278,8 +293,8 @@ export async function readPane(
 
 /**
  * agent.prompt briefly refuses with "not an active named agent" while a
- * pane's agent is (re)registering — seen live with pi. One short retry
- * absorbs the window.
+ * pane's agent is (re)registering — seen live with pi. Bounded retries absorb
+ * the startup window without retrying any request herdr accepted.
  */
 /**
  * Wait for a pane's screen to go still.
@@ -351,13 +366,8 @@ export async function promptAgent(address: string, text: string): Promise<void> 
 		if (!text.trim()) return;
 	}
 	try {
-		await herdr.request('agent.prompt', { target: paneId, text });
+		await promptAfterRegistration(() => herdr.request('agent.prompt', { target: paneId, text }));
 	} catch (e) {
-		if (e instanceof HerdrRequestError && e.message.includes('not an active named agent')) {
-			await new Promise((r) => setTimeout(r, 2000));
-			await herdr.request('agent.prompt', { target: paneId, text });
-			return;
-		}
 		// A shell pane has no agent to prompt; typing the line and pressing
 		// enter is the same gesture, and is what the key strip already does.
 		if (e instanceof Error && /agent target .* not found/.test(e.message)) {

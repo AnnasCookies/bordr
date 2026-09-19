@@ -1,5 +1,11 @@
-<script lang="ts">
+<script module lang="ts">
 	import { SvelteSet } from 'svelte/reactivity';
+
+	/** Transcript refreshes may remount a row; remember the tool the reader opened. */
+	const openTools = new SvelteSet<string>();
+</script>
+
+<script lang="ts">
 	import RichText from './rich-text.svelte';
 	import CodeBlock from './code-block.svelte';
 	import ToolDetail from './tool-detail.svelte';
@@ -14,13 +20,16 @@
 		mono = 11,
 		showTools = true,
 		showThinking = true,
-		plain = false
+		plain = false,
+		scope = ''
 	}: {
 		blocks: Block[];
 		mono?: number;
 		showTools?: boolean;
 		showThinking?: boolean;
 		plain?: boolean;
+		/** Stable transcript row identity, so open tools survive a data refresh. */
+		scope?: string;
 	} = $props();
 
 	/**
@@ -49,6 +58,43 @@
 	function hasBody(block: Block): boolean {
 		if (block.kind !== 'tool') return false;
 		return block.input !== null || block.result !== null || block.diffs.length > 0;
+	}
+
+	function toolKey(block: Extract<Block, { kind: 'tool' }>, index: number): string {
+		return `${scope}\0${index}\0${block.name}\0${block.summary}`;
+	}
+
+	function rememberToolClick(event: MouseEvent, key: string) {
+		event.preventDefault();
+		const details = (event.currentTarget as HTMLElement).parentElement as HTMLDetailsElement;
+		// Set the property now rather than waiting for the native queued toggle.
+		// A transcript refresh can remove this node in the same click turn.
+		details.open = !details.open;
+		if (details.open) {
+			openTools.add(key);
+			if (openTools.size > 512) openTools.delete(openTools.values().next().value as string);
+		} else openTools.delete(key);
+	}
+
+	function toolDisclosure(node: HTMLDetailsElement, initialKey: string) {
+		let key = initialKey;
+		const remember = () => {
+			if (node.open) {
+				openTools.add(key);
+				// A long-running browser can visit thousands of calls. Keep recent intent,
+				// not a permanent index of every tool it has ever rendered.
+				if (openTools.size > 512) openTools.delete(openTools.values().next().value as string);
+			} else openTools.delete(key);
+		};
+		node.open = openTools.has(key);
+		node.addEventListener('toggle', remember);
+		return {
+			update(nextKey: string) {
+				key = nextKey;
+				node.open = openTools.has(key);
+			},
+			destroy: () => node.removeEventListener('toggle', remember)
+		};
 	}
 
 	/** A Read result is file content, not terminal output. */
@@ -105,8 +151,9 @@
 			<TodoCard {plan} truncatedLines={block.result?.truncatedLines ?? 0} {mono} />
 		{:else if showTools}
 			{#if hasBody(block)}
-				<details class="fold tool">
-					<summary>
+				{@const key = toolKey(block, i)}
+				<details class="fold tool" use:toolDisclosure={key}>
+					<summary onclick={(event) => rememberToolClick(event, key)}>
 						<span class="marker" aria-hidden="true"></span>
 						<span class="name">{block.name}</span>
 						<span class="arg">{block.summary}</span>

@@ -21,6 +21,47 @@ function session(agents: { id: string; meta?: object; lines?: string[] }[]): str
 
 const entry = (at: string) => JSON.stringify({ type: 'assistant', timestamp: at });
 
+const PI_CHILD = '4e88d2cd-c852-4fed-ba74-4e59344a8582';
+function piSession(done: boolean): string {
+	const project = mkdtempSync(join(tmpdir(), 'bordr-pi-sub-'));
+	const id = 'sess-pi';
+	const transcript = join(project, `${id}.jsonl`);
+	writeFileSync(transcript, '');
+	const dir = join(project, id, PI_CHILD, 'run-0');
+	mkdirSync(dir, { recursive: true });
+	const records = [
+		{
+			type: 'session_info',
+			timestamp: '2026-09-18T16:27:29.039Z',
+			name: 'subagent-plan-a3b895d0-d05b-4ddf-a97f-dbf7246b1283-1'
+		},
+		{
+			type: 'message',
+			timestamp: '2026-09-18T16:27:30.000Z',
+			message: {
+				role: 'user',
+				content: [{ type: 'text', text: 'Map the terminal ownership path' }]
+			}
+		},
+		{
+			type: 'message',
+			timestamp: '2026-09-18T16:28:00.000Z',
+			message: {
+				role: 'assistant',
+				content: done
+					? [{ type: 'text', text: 'Found it.' }]
+					: [{ type: 'toolCall', id: 'call-1', name: 'read', arguments: { path: '/tmp/x' } }],
+				stopReason: done ? 'stop' : 'toolUse'
+			}
+		}
+	];
+	writeFileSync(
+		join(dir, 'session.jsonl'),
+		records.map((record) => JSON.stringify(record)).join('\n')
+	);
+	return transcript;
+}
+
 describe('subagentsDir', () => {
 	it('sits beside the session, named after it', () => {
 		expect(subagentsDir('/p/sess-1.jsonl')).toBe('/p/sess-1/subagents');
@@ -76,6 +117,24 @@ describe('listSubagents', () => {
 		expect(agent.lastAt).toBe(Date.parse('2026-09-12T12:00:00.000Z'));
 	});
 
+	it('reads Pi child runs and uses their stopped transcript as completion', async () => {
+		const [agent] = await listSubagents(piSession(true));
+		expect(agent).toMatchObject({
+			id: `pi-${PI_CHILD}-run-0`,
+			agentType: 'plan',
+			description: 'Map the terminal ownership path',
+			toolUseId: 'a3b895d0-d05b-4ddf-a97f-dbf7246b1283',
+			entries: 3,
+			done: true
+		});
+		expect(agent.lastAt).toBe(Date.parse('2026-09-18T16:28:00.000Z'));
+	});
+
+	it('keeps a Pi child with an unanswered tool call running', async () => {
+		const [agent] = await listSubagents(piSession(false));
+		expect(agent.done).toBe(false);
+	});
+
 	it('says nothing for a session that never spawned one', async () => {
 		const project = mkdtempSync(join(tmpdir(), 'bordr-nosub-'));
 		const t = join(project, 'sess-1.jsonl');
@@ -92,10 +151,22 @@ describe('readSubagent', () => {
 		expect(await readSubagent(t, 'agent-aaa')).toContain('assistant');
 	});
 
+	it('returns a Pi child transcript through its closed-shape id', async () => {
+		expect(await readSubagent(piSession(true), `pi-${PI_CHILD}-run-0`)).toContain('Found it.');
+	});
+
 	it('refuses an id that could address anything but a sibling file', async () => {
 		// The id lands in a path, so traversal has to be impossible by shape.
 		const t = session([{ id: 'agent-aaa', meta: {}, lines: ['{}'] }]);
-		for (const bad of ['../../../etc/passwd', 'agent-../x', '', 'agent-a/b', 'not-an-agent']) {
+		for (const bad of [
+			'../../../etc/passwd',
+			'agent-../x',
+			'',
+			'agent-a/b',
+			'not-an-agent',
+			`pi-${PI_CHILD}-run-../1`,
+			'pi-not-a-uuid-run-0'
+		]) {
 			expect(await readSubagent(t, bad), bad).toBeNull();
 		}
 	});

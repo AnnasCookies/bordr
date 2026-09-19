@@ -61,8 +61,10 @@ export type Block =
 			input: Record<string, unknown> | null;
 			result: ToolResult | null;
 			diffs: EditDiff[];
-			/** Canonical OMP todo snapshot, normalised from TodoToolDetails. */
+			/** Canonical todo snapshot, normalised from OMP details or replayed Pi actions. */
 			todo?: TodoPlan;
+			/** An older Pi todo mutation replaced by a newer plan snapshot. */
+			supersededTodo?: boolean;
 	  }
 	| { kind: 'image'; src: string; caption: string };
 
