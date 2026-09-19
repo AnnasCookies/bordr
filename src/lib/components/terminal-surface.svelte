@@ -1,4 +1,6 @@
 <script lang="ts">
+	import { tick } from 'svelte';
+	import type { Action } from 'svelte/action';
 	import { ansiToHtml } from '$lib/ansi';
 	import { prefs } from '$lib/prefs.svelte';
 	import { termGrid } from '$lib/term-grid';
@@ -24,6 +26,18 @@
 	const mode = $derived(prefs.value.terminalFit);
 	const tight = $derived(prefs.value.terminalDensity === 'compact');
 	const size = $derived(mode === 'fit' ? fitted || mono : mono);
+
+	/**
+	 * `termGrid`, re-measured whenever the font size changes. Fitting shrinks
+	 * the font without resizing the box, so its own observer never fires and
+	 * wide glyphs stayed pinned to the old cell. The measure waits a tick
+	 * because Svelte runs an action's update before it patches this element's
+	 * `style`, which would read the old size and then wipe `--cell` with it.
+	 */
+	const cellGrid: Action<HTMLElement, number> = (element) => {
+		const grid = termGrid(element);
+		return { update: () => void tick().then(grid.update), destroy: grid.destroy };
+	};
 
 	function fit() {
 		if (mode !== 'fit') {
@@ -65,7 +79,7 @@
 
 <div
 	bind:this={screen}
-	use:termGrid
+	use:cellGrid={size}
 	onscroll={() => {
 		if (screen) stuck = screen.scrollTop + screen.clientHeight >= screen.scrollHeight - 24;
 	}}
