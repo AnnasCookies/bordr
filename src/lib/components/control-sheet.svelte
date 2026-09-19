@@ -23,6 +23,9 @@
 		id: string;
 		/** What it is called now, as the rename box's starting point. */
 		label: string;
+		/** Pane-only context needed to match Herdr's native menu. */
+		canSwap?: boolean;
+		rightClickPassthrough?: boolean;
 	}
 
 	let {

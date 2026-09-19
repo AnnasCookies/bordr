@@ -111,6 +111,29 @@
 		return cwd.split('/').filter(Boolean).pop() || cwd || 'shell';
 	}
 
+	function paneTarget(pane: (typeof tabPanes)[number]): ControlTarget {
+		const machine = pane.paneId.includes('~') ? pane.paneId.slice(0, pane.paneId.indexOf('~')) : '';
+		const canSwap = workspaces.some((candidateWorkspace) =>
+			candidateWorkspace.tabs.some((candidateTab) =>
+				candidateTab.panes.some((candidate) => {
+					const candidateMachine = candidate.paneId.includes('~')
+						? candidate.paneId.slice(0, candidate.paneId.indexOf('~'))
+						: '';
+					return (
+						candidateMachine === machine && candidate.focused && candidate.paneId !== pane.paneId
+					);
+				})
+			)
+		);
+		return {
+			scope: 'pane',
+			id: pane.paneId,
+			label: pane.title || paneLabel(pane),
+			canSwap,
+			rightClickPassthrough: pane.rightClickPassthrough
+		};
+	}
+
 	/**
 	 * A tab's name. herdr labels a tab with its own number unless you rename
 	 * it, and "tab 2" tells you nothing about what is in it — so an unnamed
@@ -281,12 +304,7 @@
 					href={resolve('/a/[pane]', { pane: pane.paneId })}
 					role="tab"
 					onclick={(event) => select(event, pane.paneId)}
-					oncontextmenu={(event) =>
-						context(event, {
-							scope: 'pane',
-							id: pane.paneId,
-							label: pane.title || paneLabel(pane)
-						})}
+					oncontextmenu={(event) => context(event, paneTarget(pane))}
 					aria-selected={open}
 					class="flex shrink-0 items-center gap-1.5 rounded-md border px-2 py-0.5 text-[12px] {open
 						? 'border-working/60 bg-card text-ink'

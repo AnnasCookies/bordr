@@ -34,7 +34,9 @@ const workspaces = [
 					...agents[0],
 					paneId,
 					hasAgent: paneId !== 'shell',
-					tabId: 't1'
+					tabId: 't1',
+					focused: paneId === 'a',
+					rightClickPassthrough: false
 				}))
 			},
 			{
@@ -69,7 +71,15 @@ async function fixture(
 		controlDelay: null as Promise<void> | null,
 		controlCalls: 0,
 		controlBodies: [] as Array<{
-			action: 'focus' | 'rename' | 'close';
+			action:
+				| 'focus'
+				| 'rename'
+				| 'close'
+				| 'swap-focused'
+				| 'split-right'
+				| 'split-down'
+				| 'zoom'
+				| 'toggle-right-click';
 			scope: 'pane' | 'tab' | 'workspace';
 			id: string;
 			label: string;
@@ -318,6 +328,15 @@ test('right-clicking a sibling pane closes that pane without leaving the current
 	await page.locator('a[href="/a/c"][role="tab"]').click({ button: 'right' });
 	const menu = page.getByRole('menu', { name: 'pane options for Fixture a' });
 	await expect(menu).toBeVisible();
+	await expect(menu.getByRole('menuitem')).toHaveText([
+		'Rename pane',
+		'Swap with focused pane',
+		'Split right',
+		'Split down',
+		'Zoom',
+		'Send right-clicks to pane',
+		'Close pane'
+	]);
 	await menu.getByRole('menuitem', { name: 'Close pane' }).click();
 	const dialog = page.getByRole('dialog', { name: 'pane controls' });
 	await expect(dialog.getByText('Close this pane?')).toBeVisible();
@@ -330,6 +349,27 @@ test('right-clicking a sibling pane closes that pane without leaving the current
 			id: 'c',
 			label: 'Fixture a'
 		});
+	await expect.poll(() => new URL(page.url()).pathname).toBe('/a/a');
+});
+
+test('the remaining pane menu actions dispatch to the pane that was right-clicked', async ({
+	page
+}) => {
+	const state = await fixture(page, { tabStrip: 'always' });
+	state.picker = false;
+	await openPane(page);
+	for (const [label, action] of [
+		['Swap with focused pane', 'swap-focused'],
+		['Split right', 'split-right'],
+		['Split down', 'split-down'],
+		['Zoom', 'zoom'],
+		['Send right-clicks to pane', 'toggle-right-click']
+	] as const) {
+		await page.locator('a[href="/a/c"][role="tab"]').click({ button: 'right' });
+		await page.getByRole('menuitem', { name: label }).click();
+		await expect.poll(() => state.controlBodies.at(-1)?.action).toBe(action);
+		expect(state.controlBodies.at(-1)).toMatchObject({ scope: 'pane', id: 'c' });
+	}
 	await expect.poll(() => new URL(page.url()).pathname).toBe('/a/a');
 });
 

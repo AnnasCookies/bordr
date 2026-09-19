@@ -65,6 +65,7 @@
 	import ControlSheet from '$lib/components/control-sheet.svelte';
 	import type { ControlTarget } from '$lib/components/control-sheet.svelte';
 	import ResourceContextMenu from '$lib/components/resource-context-menu.svelte';
+	import type { ResourceAction } from '$lib/components/resource-context-menu.svelte';
 	import WorktreeSheet from '$lib/components/worktree-sheet.svelte';
 	import SubagentSheet from '$lib/components/subagent-sheet.svelte';
 	import Spinner from '$lib/components/spinner.svelte';
@@ -449,20 +450,44 @@
 
 	function openResourceMenu(target: ControlTarget, event: MouseEvent) {
 		event.preventDefault();
-		// Keep the fixed-size menu inside the viewport even at the bottom-right edge.
+		// Keep either the short tab menu or full pane menu inside the viewport.
+		const height = target.scope === 'pane' ? (target.canSwap ? 260 : 224) : 80;
 		resourceMenu = {
 			target,
-			x: Math.max(8, Math.min(event.clientX || 8, window.innerWidth - 184)),
-			y: Math.max(8, Math.min(event.clientY || 8, window.innerHeight - 88))
+			x: Math.max(8, Math.min(event.clientX || 8, window.innerWidth - 216)),
+			y: Math.max(8, Math.min(event.clientY || 8, window.innerHeight - height - 8))
 		};
 	}
 
-	function chooseResourceAction(action: 'rename' | 'close') {
+	async function chooseResourceAction(action: ResourceAction) {
 		if (!resourceMenu) return;
-		contextControlTarget = resourceMenu.target;
-		controlIntent = action;
+		const selected = resourceMenu.target;
+		if (action === 'rename' || action === 'close') {
+			contextControlTarget = selected;
+			controlIntent = action;
+			resourceMenu = null;
+			controlling = true;
+			return;
+		}
 		resourceMenu = null;
-		controlling = true;
+		try {
+			const response = await track(() =>
+				fetch('/api/control', {
+					method: 'POST',
+					headers: { 'content-type': 'application/json' },
+					body: JSON.stringify({ action, scope: 'pane', id: selected.id })
+				})
+			);
+			const body = (await response.json().catch(() => null)) as {
+				message?: string;
+				paneId?: string;
+			} | null;
+			if (!response.ok) throw new Error(body?.message ?? `That did not work (${response.status}).`);
+			if (body?.paneId) await openSplitPane(body.paneId);
+			else await invalidateAll();
+		} catch (e) {
+			sendError = (e as Error).message;
+		}
 	}
 
 	function closeControls() {
@@ -2640,18 +2665,29 @@
 	const swipeOrder = $derived(swipeSequence(order, navigationTree));
 
 	function paneControlTarget(paneId: string): ControlTarget {
-		for (const workspace of navigationTree) {
-			for (const tab of workspace.tabs) {
-				const pane = tab.panes.find((candidate) => candidate.paneId === paneId);
-				if (pane) {
-					return { scope: 'pane', id: paneId, label: pane.title || pane.paneId };
-				}
-			}
+		const machine = paneId.includes('~') ? paneId.slice(0, paneId.indexOf('~')) : '';
+		const panes = navigationTree.flatMap((workspace) => workspace.tabs.flatMap((tab) => tab.panes));
+		const canSwap = panes.some((pane) => {
+			const candidateMachine = pane.paneId.includes('~')
+				? pane.paneId.slice(0, pane.paneId.indexOf('~'))
+				: '';
+			return candidateMachine === machine && pane.focused && pane.paneId !== paneId;
+		});
+		const pane = panes.find((candidate) => candidate.paneId === paneId);
+		if (pane) {
+			return {
+				scope: 'pane',
+				id: paneId,
+				label: pane.title || pane.paneId,
+				canSwap,
+				rightClickPassthrough: pane.rightClickPassthrough
+			};
 		}
 		return {
 			scope: 'pane',
 			id: paneId,
-			label: paneId === detail.paneId ? detail.title || paneId : paneId
+			label: paneId === detail.paneId ? detail.title || paneId : paneId,
+			canSwap
 		};
 	}
 

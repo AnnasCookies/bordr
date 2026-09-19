@@ -178,6 +178,8 @@ export interface PaneNode {
 	title: string;
 	cwd: string;
 	focused: boolean;
+	/** Native Herdr clients forward unmodified right-click gestures into this pane. */
+	rightClickPassthrough?: boolean;
 }
 
 export interface TabNode {

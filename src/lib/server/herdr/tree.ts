@@ -118,7 +118,8 @@ async function treeFor(
 			// pane opened in ~ and then cd'd into a repo still reported ~ — which
 			// left the workspace's branch blank and its pane chip labelled "tony".
 			cwd: String(raw.foreground_cwd || raw.cwd || ''),
-			focused: raw.focused === true
+			focused: raw.focused === true,
+			rightClickPassthrough: raw.right_click_passthrough === true
 		};
 		const list = byTab.get(node.tabId);
 		if (list) list.push(node);
