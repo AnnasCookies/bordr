@@ -13,6 +13,7 @@ import {
 	waitForActiveAgent
 } from '$lib/server/herdr';
 import { encodeOmpStartupPrompt } from '$lib/server/omp-startup-prompt';
+import { waitForWorkspacePane } from '$lib/server/herdr/workspace-pane';
 import { piAdapter } from '$lib/server/transcript/pi';
 import { readTranscriptTail } from '$lib/server/transcript/tail';
 import type { RequestHandler } from './$types';
@@ -90,12 +91,11 @@ export const POST: RequestHandler = async ({ request }) => {
 		// The new workspace's pane needs a moment to reach its shell prompt.
 		await sleep(1500);
 
-		const snapshot = await herdr.request<{
-			snapshot?: { panes?: Array<{ pane_id?: string; workspace_id?: string }> };
-		}>('session.snapshot');
-		const pane = snapshot.snapshot?.panes?.find((p) => p.workspace_id === workspaceId);
-		if (!pane?.pane_id) throw error(500, 'no pane found in new workspace');
-		paneId = pane.pane_id;
+		const createdPane = await waitForWorkspacePane(workspaceId, () =>
+			herdr.request('session.snapshot')
+		);
+		if (!createdPane) throw error(504, 'new workspace did not publish its pane');
+		paneId = createdPane;
 		const shell = await readVisible(paneId).catch(() => '');
 
 		await herdr.request('agent.start', {
