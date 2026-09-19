@@ -1,5 +1,20 @@
-import { describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { load } from './+page';
+
+/**
+ * The load holds its last good payload in the browser only, and these tests
+ * run under Node, where the real `browser` is false. A getter rather than a
+ * value so one test can play the server's first render.
+ */
+const environment = vi.hoisted(() => ({ browser: true }));
+vi.mock('$app/environment', () => ({
+	get browser() {
+		return environment.browser;
+	}
+}));
+afterEach(() => {
+	environment.browser = true;
+});
 
 type LoadEvent = Parameters<typeof load>[0];
 
@@ -116,6 +131,38 @@ describe('pane load: unchanged detail', () => {
 		if (!first || !second) throw new Error('load returned no data');
 		expect(conditional).toBe('"same-detail"');
 		expect(second.detail).toBe(first.detail);
+	});
+
+	it('holds nothing on the server, so the first render is never conditional', async () => {
+		// The server's map outlived every request, and its ETag made the SSR
+		// fetch conditional: the browser, with nothing held, could not repeat
+		// that request, missed the inlined response and fetched it again.
+		const conditionals: string[] = [];
+		const fetchStub = async (input: string | URL | Request, init?: RequestInit) => {
+			const path = String(input);
+			if (path.endsWith('/watch')) {
+				return new Response(JSON.stringify({ watched: false }), { status: 200 });
+			}
+			conditionals.push(new Headers(init?.headers).get('if-none-match') ?? '');
+			return new Response(JSON.stringify({ ...DETAIL, paneId: 'ssr:p1' }), {
+				status: 200,
+				headers: { etag: '"ssr-detail"' }
+			});
+		};
+		const event = {
+			params: { pane: 'ssr:p1' },
+			url: new URL('http://x/a/ssr:p1'),
+			fetch: fetchStub
+		} as unknown as LoadEvent;
+
+		environment.browser = false;
+		await load(event);
+		await load(event);
+		environment.browser = true;
+		await load(event);
+		// Neither server render sent an ETag, and the browser's first load found
+		// nothing the server had left behind.
+		expect(conditionals).toEqual(['', '', '']);
 	});
 });
 
