@@ -35,8 +35,7 @@ const workspaces = [
 					paneId,
 					hasAgent: paneId !== 'shell',
 					tabId: 't1',
-					focused: paneId === 'a',
-					rightClickPassthrough: false
+					focused: paneId === 'a'
 				}))
 			},
 			{
@@ -79,7 +78,8 @@ async function fixture(
 				| 'split-right'
 				| 'split-down'
 				| 'zoom'
-				| 'toggle-right-click';
+				| 'right-click-pane'
+				| 'right-click-herdr';
 			scope: 'pane' | 'tab' | 'workspace';
 			id: string;
 			label: string;
@@ -335,6 +335,7 @@ test('right-clicking a sibling pane closes that pane without leaving the current
 		'Split down',
 		'Zoom',
 		'Send right-clicks to pane',
+		'Use Herdr right-click menu',
 		'Close pane'
 	]);
 	await menu.getByRole('menuitem', { name: 'Close pane' }).click();
@@ -363,7 +364,8 @@ test('the remaining pane menu actions dispatch to the pane that was right-clicke
 		['Split right', 'split-right'],
 		['Split down', 'split-down'],
 		['Zoom', 'zoom'],
-		['Send right-clicks to pane', 'toggle-right-click']
+		['Send right-clicks to pane', 'right-click-pane'],
+		['Use Herdr right-click menu', 'right-click-herdr']
 	] as const) {
 		await page.locator('a[href="/a/c"][role="tab"]').click({ button: 'right' });
 		await page.getByRole('menuitem', { name: label }).click();

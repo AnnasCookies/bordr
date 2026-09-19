@@ -7,7 +7,8 @@
 		| 'split-right'
 		| 'split-down'
 		| 'zoom'
-		| 'toggle-right-click'
+		| 'right-click-pane'
+		| 'right-click-herdr'
 		| 'close';
 
 	let {
@@ -110,9 +111,17 @@
 				type="button"
 				role="menuitem"
 				class="flex min-h-9 w-full items-center px-3 text-left text-[13px] hover:bg-chip focus:bg-chip focus:outline-none"
-				onclick={() => onchoose('toggle-right-click')}
+				onclick={() => onchoose('right-click-pane')}
 			>
-				{target.rightClickPassthrough ? 'Use Herdr right-click menu' : 'Send right-clicks to pane'}
+				Send right-clicks to pane
+			</button>
+			<button
+				type="button"
+				role="menuitem"
+				class="flex min-h-9 w-full items-center px-3 text-left text-[13px] hover:bg-chip focus:bg-chip focus:outline-none"
+				onclick={() => onchoose('right-click-herdr')}
+			>
+				Use Herdr right-click menu
 			</button>
 		{/if}
 		<button

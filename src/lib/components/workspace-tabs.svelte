@@ -129,8 +129,7 @@
 			scope: 'pane',
 			id: pane.paneId,
 			label: pane.title || paneLabel(pane),
-			canSwap,
-			rightClickPassthrough: pane.rightClickPassthrough
+			canSwap
 		};
 	}
 

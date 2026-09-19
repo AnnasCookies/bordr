@@ -114,19 +114,14 @@ export async function zoomPane(address: string): Promise<string> {
 	return formatPane(machineId, String(result.zoom?.focused_pane_id ?? paneId));
 }
 
-/** Toggle whether native Herdr forwards right-click gestures into the pane app. */
-export async function togglePaneRightClick(address: string): Promise<boolean> {
+/** Choose where native Herdr sends right-click gestures for this pane. */
+export async function setPaneRightClick(address: string, target: 'pane' | 'herdr'): Promise<void> {
 	const { machineId, paneId } = parsePane(address);
 	const herdr = await clientFor(machineId);
-	const result = await herdr.request<{ pane?: { right_click_passthrough?: unknown } }>('pane.get', {
-		pane_id: paneId
-	});
-	const enabled = result.pane?.right_click_passthrough !== true;
 	await herdr.request('pane.input.set', {
 		pane_id: paneId,
-		right_click: enabled ? 'pane' : 'herdr'
+		right_click: target
 	});
-	return enabled;
 }
 
 /**

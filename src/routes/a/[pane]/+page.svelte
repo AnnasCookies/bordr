@@ -451,7 +451,7 @@
 	function openResourceMenu(target: ControlTarget, event: MouseEvent) {
 		event.preventDefault();
 		// Keep either the short tab menu or full pane menu inside the viewport.
-		const height = target.scope === 'pane' ? (target.canSwap ? 260 : 224) : 80;
+		const height = target.scope === 'pane' ? (target.canSwap ? 296 : 260) : 80;
 		resourceMenu = {
 			target,
 			x: Math.max(8, Math.min(event.clientX || 8, window.innerWidth - 216)),
@@ -2679,8 +2679,7 @@
 				scope: 'pane',
 				id: paneId,
 				label: pane.title || pane.paneId,
-				canSwap,
-				rightClickPassthrough: pane.rightClickPassthrough
+				canSwap
 			};
 		}
 		return {

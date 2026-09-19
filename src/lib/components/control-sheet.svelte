@@ -25,7 +25,6 @@
 		label: string;
 		/** Pane-only context needed to match Herdr's native menu. */
 		canSwap?: boolean;
-		rightClickPassthrough?: boolean;
 	}
 
 	let {

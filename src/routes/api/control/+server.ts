@@ -3,9 +3,9 @@ import {
 	close,
 	focus,
 	rename,
+	setPaneRightClick,
 	splitPane,
 	swapWithFocusedPane,
-	togglePaneRightClick,
 	zoomPane,
 	type Scope
 } from '$lib/server/herdr/controls';
@@ -31,7 +31,8 @@ const ACTIONS = [
 	'split-right',
 	'split-down',
 	'zoom',
-	'toggle-right-click'
+	'right-click-pane',
+	'right-click-herdr'
 ] as const;
 type Action = (typeof ACTIONS)[number];
 const PANE_ACTIONS: Action[] = [
@@ -39,7 +40,8 @@ const PANE_ACTIONS: Action[] = [
 	'split-right',
 	'split-down',
 	'zoom',
-	'toggle-right-click'
+	'right-click-pane',
+	'right-click-herdr'
 ];
 
 export const POST: RequestHandler = async ({ request }) => {
@@ -72,7 +74,7 @@ export const POST: RequestHandler = async ({ request }) => {
 		throw error(400, `a ${scope} needs a name`);
 	}
 
-	let result: { paneId?: string; rightClickPassthrough?: boolean } = {};
+	let result: { paneId?: string } = {};
 	try {
 		if (action === 'focus') await focus(scope, body.id);
 		else if (action === 'close') await close(scope as 'pane' | 'tab', body.id);
@@ -84,7 +86,7 @@ export const POST: RequestHandler = async ({ request }) => {
 			};
 		} else if (action === 'zoom') result = { paneId: await zoomPane(body.id) };
 		else {
-			result = { rightClickPassthrough: await togglePaneRightClick(body.id) };
+			await setPaneRightClick(body.id, action === 'right-click-pane' ? 'pane' : 'herdr');
 		}
 	} catch (e) {
 		// herdr's own refusal is the useful message — "no such pane", a machine

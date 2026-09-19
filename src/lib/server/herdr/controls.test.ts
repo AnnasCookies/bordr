@@ -20,7 +20,6 @@ vi.mock('./index', async (importOriginal) => {
 				herdr.requests.push({ machine, method, params });
 				if (method === 'pane.current') return { pane: { pane_id: 'w8:p9' } };
 				if (method === 'pane.split') return { pane: { pane_id: 'w8:p2' } };
-				if (method === 'pane.get') return { pane: { right_click_passthrough: false } };
 				return {};
 			})
 		}))
@@ -120,15 +119,20 @@ describe('controls: a remote tab', () => {
 		]);
 	});
 
-	it('toggles native right-click routing from Herdr’s current pane state', async () => {
-		const { togglePaneRightClick } = await import('./controls');
-		await expect(togglePaneRightClick('tm-dev~w8:p1')).resolves.toBe(true);
+	it('sets either native right-click route without guessing Herdr’s hidden current state', async () => {
+		const { setPaneRightClick } = await import('./controls');
+		await setPaneRightClick('tm-dev~w8:p1', 'pane');
+		await setPaneRightClick('tm-dev~w8:p1', 'herdr');
 		expect(herdr.requests).toEqual([
-			{ machine: 'tm-dev', method: 'pane.get', params: { pane_id: 'w8:p1' } },
 			{
 				machine: 'tm-dev',
 				method: 'pane.input.set',
 				params: { pane_id: 'w8:p1', right_click: 'pane' }
+			},
+			{
+				machine: 'tm-dev',
+				method: 'pane.input.set',
+				params: { pane_id: 'w8:p1', right_click: 'herdr' }
 			}
 		]);
 	});
