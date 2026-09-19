@@ -280,6 +280,32 @@ async function focusPage(page: Page) {
 	await page.evaluate(() => (document.activeElement as HTMLElement)?.blur());
 }
 
+test('settings stay balanced on desktop and finger-sized on phones', async ({ page }) => {
+	await fixture(page);
+	const navBox = await page.getByRole('navigation', { name: 'Settings sections' }).boundingBox();
+	const mainBox = await page.locator('main').boundingBox();
+	expect(navBox).not.toBeNull();
+	expect(mainBox).not.toBeNull();
+	if (!navBox || !mainBox) return;
+	const leftGap = mainBox.x - (navBox.x + navBox.width);
+	const rightGap = 1400 - (mainBox.x + mainBox.width);
+	expect(Math.abs(leftGap - rightGap)).toBeLessThan(16);
+
+	await page.setViewportSize({ width: 320, height: 568 });
+	await expect(page.locator('main details[data-section]')).toHaveCount(8);
+	const header = page.locator('details[data-section="header"]');
+	await expect
+		.poll(async () => (await header.locator('summary').boundingBox())?.height ?? 0)
+		.toBeGreaterThanOrEqual(44);
+	await expect(header).toContainText('Model in the header');
+	await expect(header).toContainText('Status lines');
+	await expect(header).toContainText('Activity line');
+	await expect(page.locator('details[data-section="appearance"]')).toContainText('Harness icons');
+	const transcript = page.locator('details[data-section="transcript"]');
+	await expect(transcript).not.toContainText('Model in the header');
+	await expect(transcript).not.toContainText('Harness icons');
+});
+
 for (const paneView of ['conversation', 'terminal']) {
 	test(`${paneView}: selecting a pane focuses its input`, async ({ page }) => {
 		const state = await fixture(page, { paneView, tabStrip: 'always' });
