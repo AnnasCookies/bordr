@@ -1,4 +1,8 @@
 import { expect, test } from '@playwright/test';
+import { refuseViewportLeases } from './leases';
+
+// Opening a pane at phone width would otherwise resize a real herdr tab.
+test.beforeEach(({ page }) => refuseViewportLeases(page));
 
 test('a long draft does not sit under the scrollbar', async ({ page }) => {
 	await page.goto('/');

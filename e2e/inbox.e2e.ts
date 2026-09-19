@@ -1,5 +1,9 @@
 import { expect, test } from '@playwright/test';
 import { openSettings } from './settings';
+import { refuseViewportLeases } from './leases';
+
+// Opening a pane at phone width would otherwise resize a real herdr tab.
+test.beforeEach(({ page }) => refuseViewportLeases(page));
 
 test('inbox lists agents and never scrolls horizontally', async ({ page }) => {
 	await page.goto('/');

@@ -206,13 +206,10 @@ describe('tabViewport lease', () => {
 		expect(writesOf('claim')).toHaveLength(3);
 	});
 
-	it.each([
-		['an expired lease', 409, 'viewport_expired: lease lapsed'],
-		['a lease Herdr no longer knows', 400, 'invalid_request: no such lease']
-	])('drops %s and claims afresh', async (_name, status, message) => {
+	it('drops an expired lease and claims afresh', async () => {
 		respond = (write) =>
 			write.action === 'update' && write.leaseId === 'lease-1'
-				? reply(status, { message })
+				? reply(409, { message: 'viewport_expired: lease lapsed' })
 				: grantAll(write);
 		const { activity } = mount();
 		await vi.advanceTimersByTimeAsync(16);
@@ -224,6 +221,42 @@ describe('tabViewport lease', () => {
 			['update', 'lease-2']
 		]);
 		expect(activity).toEqual([true, false, true]);
+	});
+
+	it('hands back a lease refused with a 400 before claiming afresh', async () => {
+		// A 400 may be a forgotten lease, or a refusal that leaves it held; a
+		// claim sent first would meet our own orphan as a conflict.
+		respond = (write) =>
+			write.action === 'update' && write.leaseId === 'lease-1'
+				? reply(400, { message: 'invalid_request: no such lease' })
+				: grantAll(write);
+		const { activity } = mount();
+		await vi.advanceTimersByTimeAsync(16);
+		await vi.advanceTimersByTimeAsync(10_000);
+		expect(writes.map((write) => [write.action, write.leaseId ?? ''])).toEqual([
+			['claim', ''],
+			['update', 'lease-1'],
+			['release', 'lease-1'],
+			['claim', ''],
+			['update', 'lease-2']
+		]);
+		expect(activity).toEqual([true, false, true]);
+	});
+
+	it('counts any successful renewal, even one that does not echo the lease id', async () => {
+		let updates = 0;
+		respond = (write) => {
+			if (write.action !== 'update') return grantAll(write);
+			// The fourth beat, 20 s after the claim, is lost; the three before it
+			// succeeded without naming the lease.
+			return ++updates === 4 ? Promise.reject(new TypeError('network down')) : reply(200, {});
+		};
+		const { activity } = mount();
+		await vi.advanceTimersByTimeAsync(16);
+		await vi.advanceTimersByTimeAsync(20_000);
+		expect(updates).toBe(4);
+		expect(activity).toEqual([true]);
+		expect(writesOf('claim')).toHaveLength(1);
 	});
 
 	it('drops a lease whose renewals have failed for longer than its TTL', async () => {

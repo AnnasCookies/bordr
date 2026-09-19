@@ -169,6 +169,27 @@ describe('listSubagents', () => {
 		expect(retrying.done).toBe(false);
 	});
 
+	it.each(['length', 'stop'])(
+		'keeps a Pi child running after its %s turn asked for tools, answered or not',
+		async (stopReason) => {
+			// Once the results land nothing is unanswered, but Pi hands them back to
+			// the model for another turn, so the run is not over.
+			const transcript = piSessionEnding({ ...PI_CALL, stopReason });
+			const file = join(transcript.replace(/\.jsonl$/, ''), PI_CHILD, 'run-0', 'session.jsonl');
+			appendFileSync(
+				file,
+				'\n' +
+					JSON.stringify({
+						type: 'message',
+						timestamp: '2026-09-18T16:29:00.000Z',
+						message: { role: 'toolResult', toolCallId: 'call-1', content: [] }
+					})
+			);
+			const [agent] = await listSubagents(transcript);
+			expect(agent.done).toBe(false);
+		}
+	);
+
 	it('does not read an unchanged Pi child transcript again', async () => {
 		const transcript = piSession(false);
 		const file = join(transcript.replace(/\.jsonl$/, ''), PI_CHILD, 'run-0', 'session.jsonl');

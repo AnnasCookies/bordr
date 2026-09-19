@@ -1,4 +1,5 @@
 import { expect, test } from '@playwright/test';
+import { refuseViewportLeases } from './leases';
 import { openSettings } from './settings';
 
 /** The conversation needs a live pane; skip cleanly when none is running. */
@@ -38,26 +39,8 @@ async function firstTranscriptPane(page: import('@playwright/test').Page): Promi
 	return null;
 }
 
-/**
- * Refuse the Herdr tab viewport lease unless a test opts back in.
- *
- * A lease resizes the owner's REAL terminals to this browser's grid. Any pane
- * opened at the default 390px viewport claims one (see `tabViewport` in the
- * pane page), so without this stub most tests here would squeeze live agent
- * tabs to phone width while they run. 501 is what a herdr without the
- * `tab.viewport` API answers, and the client stops asking after it.
- *
- * Opting in: the desktop split test calls `page.unroute` to reach the real
- * lease; the mobile lease test routes its own fake, which Playwright tries first.
- */
-test.beforeEach(async ({ page }) => {
-	await page.route('**/api/geometry', (route) =>
-		route.fulfill({
-			status: 501,
-			json: { message: 'the e2e suite stubs tab viewport leases off for this test' }
-		})
-	);
-});
+// Every test here refuses the viewport lease unless it opts back in.
+test.beforeEach(({ page }) => refuseViewportLeases(page));
 
 test('the key strip offers exactly the eight allowed keys, including enter', async ({ page }) => {
 	const href = await firstPane(page);

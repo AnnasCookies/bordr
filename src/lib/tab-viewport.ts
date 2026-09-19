@@ -326,13 +326,20 @@ export function tabViewport(node: HTMLElement, initial: TabViewportOptions) {
 					retryClaim(response.status === 409 ? RETRY_CONFLICT_MS : RETRY_FAILURE_MS);
 					return;
 				}
-				if (
-					response.status === 400 ||
-					(response.status === 409 && message.includes('viewport_expired'))
-				) {
+				if (response.status === 409 && message.includes('viewport_expired')) {
 					// Herdr no longer knows this lease (it lapsed, or Herdr restarted).
 					dropLease();
 					void sync();
+					return;
+				}
+				if (response.status === 400) {
+					// Probably a lease Herdr forgot, but a 400 also covers refusals that
+					// leave it held. Hand it back first, or the fresh claim meets our own
+					// orphan as a conflict and waits out the retry.
+					const token = leaseId;
+					const tokenTab = leaseTabId;
+					dropLease();
+					void releaseLease(token, tokenTab).then(() => sync());
 					return;
 				}
 				renewalFailed();
@@ -345,16 +352,22 @@ export function tabViewport(node: HTMLElement, initial: TabViewportOptions) {
 				if (claim && result.lease_id) void releaseLease(result.lease_id, tabId, true);
 				return;
 			}
-			if (!result.lease_id) {
-				if (claim) retryClaim(RETRY_FAILURE_MS);
-				return;
+			if (claim) {
+				if (!result.lease_id) {
+					retryClaim(RETRY_FAILURE_MS);
+					return;
+				}
+				leaseId = result.lease_id;
+				leaseTabId = tabId;
+				setActive(true);
+				startRenewal();
+			} else if (result.lease_id) {
+				leaseId = result.lease_id;
 			}
-			leaseId = result.lease_id;
-			leaseTabId = tabId;
+			// Any 2xx renews, whether or not the update echoes the lease id back;
+			// otherwise one failed beat 15 s after the claim dropped a live lease.
 			renewedAt = Date.now();
 			sentGeometry = next;
-			setActive(true);
-			startRenewal();
 		} catch {
 			if (mine !== generation) return;
 			if (claim) retryClaim(RETRY_FAILURE_MS);

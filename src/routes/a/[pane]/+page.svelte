@@ -926,15 +926,19 @@
 		};
 	}
 
+	// Numbered over the whole transcript, not the visible slice: the slice's top
+	// edge moves with every new message, and a repeat numbered within it would
+	// renumber — and remount — as its twin scrolled off the top.
+	const messageKeys = $derived(
+		uniqueKeys(detail.messages.map((message, i) => messageRowKey(message, `m${i}`)))
+	);
+
 	const rows = $derived.by((): Row[] => {
 		const base = detail.messages.length - visibleMessages.length;
-		const keys = uniqueKeys(
-			visibleMessages.map((message, i) => messageRowKey(message, `m${base + i}`))
-		);
 		const out: Row[] = visibleMessages.map((message, i) => ({
 			kind: 'message' as const,
 			message,
-			key: keys[i],
+			key: messageKeys[base + i],
 			run: 'only' as RunPos,
 			thinkingJoin: false
 		}));

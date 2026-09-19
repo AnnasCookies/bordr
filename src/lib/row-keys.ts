@@ -9,9 +9,9 @@
  * rendering the list, so one such pair took the whole transcript down.
  *
  * Repeats take `#1`, `#2` … in the order they appear, and the first keeps its
- * plain key. New records arrive at the end and paging back adds older ones at
- * the start, so rows already on screen keep their numbers; only a pair split
- * by the window's edge could renumber, and that costs a remount, not a crash.
+ * plain key. Number the whole transcript, not a visible slice, so new records
+ * at the end leave earlier numbers alone; only a pair split by the server's
+ * byte window could renumber, and that costs a remount, not a crash.
  *
  * A suffix never lands on a key that is already in the list, in case a line
  * of text happens to end in `#1`.
