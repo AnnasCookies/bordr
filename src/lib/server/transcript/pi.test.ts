@@ -141,6 +141,58 @@ describe('piAdapter.parse', () => {
 		});
 	});
 
+	it('renders a user-entered shell command and its output as one new row', () => {
+		const line = JSON.stringify({
+			type: 'message',
+			timestamp: '2026-09-19T10:31:57.173Z',
+			message: {
+				role: 'bashExecution',
+				command: 'pwd',
+				output: '/home/tony/bordr\n',
+				exitCode: 0,
+				cancelled: false,
+				truncated: false,
+				excludeFromContext: false
+			}
+		});
+
+		const messages = piAdapter.parse(line);
+		expect(messages).toHaveLength(1);
+		expect(messages[0]).toMatchObject({
+			role: 'user',
+			at: Date.parse('2026-09-19T10:31:57.173Z')
+		});
+		expect(messages[0].blocks?.[0]).toMatchObject({
+			kind: 'tool',
+			name: '!',
+			summary: 'pwd',
+			input: { command: 'pwd' },
+			result: {
+				text: '/home/tony/bordr',
+				isError: false,
+				truncatedLines: 0
+			}
+		});
+	});
+
+	it('keeps hidden shell commands visible while marking failed commands', () => {
+		const line = JSON.stringify({
+			type: 'message',
+			message: {
+				role: 'bashExecution',
+				command: 'false',
+				output: '',
+				exitCode: 1,
+				excludeFromContext: true
+			}
+		});
+		expect(piAdapter.parse(line)[0].blocks?.[0]).toMatchObject({
+			kind: 'tool',
+			name: '!!',
+			result: { isError: true }
+		});
+	});
+
 	it('keeps timestamps for pending-prompt ordering', () => {
 		expect(piAdapter.parse(SESSION)[0].at).toBe(Date.parse('2026-09-11T12:00:00.000Z'));
 	});

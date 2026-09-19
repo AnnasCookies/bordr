@@ -31,6 +31,13 @@ interface OmpMessage {
 	isError?: boolean;
 	timestamp?: number;
 	details?: unknown;
+	/** Native Pi's user-entered ! / !! command record. */
+	command?: string;
+	output?: string;
+	exitCode?: number;
+	cancelled?: boolean;
+	truncated?: boolean;
+	excludeFromContext?: boolean;
 }
 
 interface Entry {
@@ -185,6 +192,27 @@ function toResult(message: OmpMessage, imageBudget: { remaining: number }): Tool
 		...(dropped > 0 && { imagesDropped: dropped })
 	};
 }
+
+/** Pi records a user-entered ! command as one standalone bashExecution message. */
+function bashExecutionBlock(message: OmpMessage): Block | null {
+	const command = str(message.command);
+	if (!command) return null;
+	const full = str(message.output).replace(/\s+$/, '');
+	const lines = full ? full.split('\n') : [];
+	const kept = lines.slice(0, MAX_RESULT_LINES);
+	return {
+		kind: 'tool',
+		name: message.excludeFromContext === true ? '!!' : '!',
+		summary: clip(command),
+		input: { command },
+		result: {
+			text: kept.join('\n'),
+			isError: message.cancelled === true || (message.exitCode ?? 0) !== 0,
+			truncatedLines: Math.max(0, lines.length - kept.length)
+		},
+		diffs: []
+	};
+}
 function editDiff(path: unknown, diff: unknown): EditDiff | null {
 	const file = str(path);
 	const before: string[] = [];
@@ -325,6 +353,12 @@ export const piAdapter: Adapter = {
 			const entry = raw as Entry;
 			const message = entry.message;
 			if (!message) continue;
+
+			if (message.role === 'bashExecution') {
+				const block = bashExecutionBlock(message);
+				if (block) messages.push(fromBlocks('user', [block], undefined, timestamp(entry)));
+				continue;
+			}
 
 			if (message.role === 'toolResult') {
 				const tool = message.toolCallId ? pending.get(message.toolCallId) : undefined;

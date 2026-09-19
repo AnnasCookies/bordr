@@ -238,7 +238,7 @@
 	let draftPaneId = '';
 	let draftStore: SessionDraftStore | undefined;
 
-	/** A draft that starts with `!` is a shell command Claude Code will run. */
+	/** A draft that starts with `!` is a shell command the harness will run. */
 	// The bare `!` counts: the box must say what it is the moment the key is
 	// pressed, not once a command has been typed after it.
 	const isShell = $derived(draft.startsWith('!'));

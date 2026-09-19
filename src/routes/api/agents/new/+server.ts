@@ -14,6 +14,7 @@ import {
 } from '$lib/server/herdr';
 import { encodeOmpStartupPrompt } from '$lib/server/omp-startup-prompt';
 import { waitForWorkspacePane } from '$lib/server/herdr/workspace-pane';
+import { herdrAgentName, uniqueHerdrAgentName } from '$lib/server/herdr/agent-name';
 import { piAdapter } from '$lib/server/transcript/pi';
 import { readTranscriptTail } from '$lib/server/transcript/tail';
 import type { RequestHandler } from './$types';
@@ -98,15 +99,27 @@ export const POST: RequestHandler = async ({ request }) => {
 		paneId = createdPane;
 		const shell = await readVisible(paneId).catch(() => '');
 
-		await herdr.request('agent.start', {
-			name: label?.trim() || kind,
+		const startParams = {
+			name: herdrAgentName(label, kind),
 			kind,
 			pane_id: paneId,
 			timeout_ms: 60_000,
 			...(kind === 'omp'
 				? { args: ['--cwd', directory ?? HOME, '--extension', OMP_STARTUP_EXTENSION] }
 				: {})
-		});
+		};
+		try {
+			await herdr.request('agent.start', startParams);
+		} catch (cause) {
+			// Display labels need not obey Herdr's lowercase machine-name rules.
+			// A second pane may also use the same label; the pane id makes that
+			// retry unique, and Herdr rejects duplicates before launching anything.
+			if (!(cause instanceof HerdrRequestError) || cause.code !== 'agent_name_taken') throw cause;
+			await herdr.request('agent.start', {
+				...startParams,
+				name: uniqueHerdrAgentName(startParams.name, paneId)
+			});
+		}
 		await settleScreen(paneId, { before: shell, budgetMs: 30_000, stableMs: 1_500 });
 
 		// A stable input screen is not enough: Pi can draw it before herdr has
