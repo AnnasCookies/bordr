@@ -17,12 +17,15 @@
 		panes = true,
 		visible = true,
 		ontree,
-		onsiblings
+		onsiblings,
+		onselect
 	}: {
 		current: string;
 		panes?: boolean;
 		visible?: boolean;
 		ontree?: (workspaces: WorkspaceNode[]) => void;
+		/** Select through the owning page so it can focus the new pane's input. */
+		onselect?: (paneId: string) => void;
 		/**
 		 * Every pane of the tab holding `current`, in tab order: what a swipe
 		 * walks through and what closing the pane falls back to.
@@ -79,6 +82,12 @@
 	function tabTarget(tab: (typeof tabs)[number]) {
 		const agent = tab.panes.find((p) => p.hasAgent);
 		return (agent ?? tab.panes[0])?.paneId ?? '';
+	}
+
+	function select(event: MouseEvent, paneId: string) {
+		if (!onselect || event.button !== 0 || event.ctrlKey || event.metaKey || event.shiftKey) return;
+		event.preventDefault();
+		onselect(paneId);
 	}
 
 	/**
@@ -140,7 +149,8 @@
 			const { paneId } = await res.json();
 			await load();
 			// A new tab is a sideways move, like the tab strip it came from.
-			if (paneId) {
+			if (paneId && onselect) onselect(paneId);
+			else if (paneId) {
 				await goto(resolve('/a/[pane]', { pane: paneId }), {
 					replaceState: replacesHistory(prefs.value.backTo, page.url.pathname)
 				});
@@ -203,6 +213,7 @@
 				<a
 					href={resolve('/a/[pane]', { pane: target })}
 					role="tab"
+					onclick={(event) => select(event, target)}
 					aria-selected={open}
 					class="flex shrink-0 items-center gap-1.5 border-b-2 px-1.5 py-1.5 text-[12.5px] {open
 						? 'border-working text-ink'
@@ -257,6 +268,7 @@
 				<a
 					href={resolve('/a/[pane]', { pane: pane.paneId })}
 					role="tab"
+					onclick={(event) => select(event, pane.paneId)}
 					aria-selected={open}
 					class="flex shrink-0 items-center gap-1.5 rounded-md border px-2 py-0.5 text-[12px] {open
 						? 'border-working/60 bg-card text-ink'

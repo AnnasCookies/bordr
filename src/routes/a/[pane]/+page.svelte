@@ -244,6 +244,21 @@
 	const isShell = $derived(draft.startsWith('!'));
 
 	let textarea = $state<HTMLTextAreaElement | undefined>();
+	let terminalInput = $state<HTMLInputElement>();
+
+	/** Put typing where the newly selected pane expects it, without moving the transcript. */
+	async function focusPaneInput() {
+		await tick();
+		(terminalInput ?? textarea)?.focus({ preventScroll: true });
+	}
+
+	/** Select a sibling split and leave the keyboard ready for that pane. */
+	async function openSplitPane(paneId: string) {
+		await goto(resolve('/a/[pane]', { pane: paneId }), {
+			replaceState: prefs.value.backTo === 'home'
+		});
+		await focusPaneInput();
+	}
 
 	/**
 	 * The `/` list. The harness's own popup never reaches the phone (a
@@ -431,6 +446,7 @@
 	async function afterControl(action: 'focus' | 'rename' | 'close', scope: ControlScope) {
 		if (action !== 'close') {
 			await invalidateAll();
+			if (action === 'focus') await focusPaneInput();
 			return;
 		}
 		// Replace rather than push: the pane behind this entry is gone, so back
@@ -2041,8 +2057,6 @@
 		}
 	});
 
-	let terminalInput = $state<HTMLInputElement>();
-
 	function restoreTerminalDraft(paneId: string, text: string) {
 		const restored = draftStore?.restore(paneId, text) ?? text;
 		if (detail.paneId === paneId) draft = restored;
@@ -3072,6 +3086,7 @@
 				ontree={(tree) => (navigationTree = tree)}
 				current={detail.paneId}
 				panes={!(wideScreen && splitLayout)}
+				onselect={(paneId) => void openSplitPane(paneId)}
 				onsiblings={(list) => (tabSiblings = list)}
 			/>
 
@@ -4130,14 +4145,7 @@
 			{@render conversation()}
 		</div>
 	{:else}
-		<PaneScreen
-			{paneId}
-			mono={prefs.value.monoSize}
-			onopen={() =>
-				goto(resolve('/a/[pane]', { pane: paneId }), {
-					replaceState: prefs.value.backTo === 'home'
-				})}
-		/>
+		<PaneScreen {paneId} mono={prefs.value.monoSize} onopen={() => void openSplitPane(paneId)} />
 	{/if}
 {/snippet}
 

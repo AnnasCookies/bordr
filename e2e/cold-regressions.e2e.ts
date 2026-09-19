@@ -83,6 +83,7 @@ async function fixture(
 		keyDelay: null as Promise<void> | null,
 		answerDelay: null as Promise<void> | null,
 		answerStatus: 200,
+		missingPanes: new Set<string>(),
 		children: [
 			{
 				id: 'agent-finished',
@@ -181,6 +182,7 @@ async function fixture(
 		if (/\/api\/agents\/[^/]+$/.test(path)) {
 			state.details++;
 			const paneId = path.split('/').at(-1)!;
+			if (state.missingPanes.has(paneId)) return respond({ message: 'no pane' }, 404);
 			return respond({
 				...(agents.find((a) => a.paneId === paneId) ?? agents[0]),
 				paneId,
@@ -260,6 +262,39 @@ async function openPane(page: Page, pane = 'a') {
 async function focusPage(page: Page) {
 	await page.evaluate(() => (document.activeElement as HTMLElement)?.blur());
 }
+
+for (const paneView of ['conversation', 'terminal']) {
+	test(`${paneView}: selecting a pane focuses its input`, async ({ page }) => {
+		const state = await fixture(page, { paneView, tabStrip: 'always' });
+		state.picker = false;
+		await openPane(page);
+		await page.locator('a[href="/a/c"][role="tab"]').click();
+		await expect.poll(() => new URL(page.url()).pathname).toBe('/a/c');
+		const input =
+			paneView === 'terminal'
+				? page.getByRole('textbox', { name: 'Send to this pane' })
+				: page.locator('textarea').first();
+		await expect(input).toBeFocused();
+	});
+}
+
+test('an exited current pane moves to a surviving sibling instead of the 404 page', async ({
+	page
+}) => {
+	const state = await fixture(page);
+	state.picker = false;
+	await openPane(page);
+	state.treeData = workspaces.map((workspace) => ({
+		...workspace,
+		tabs: workspace.tabs.map((tab) => ({
+			...tab,
+			panes: tab.panes.filter((pane) => pane.paneId !== 'a')
+		}))
+	}));
+	state.missingPanes.add('a');
+	await expect.poll(() => new URL(page.url()).pathname, { timeout: 6000 }).toBe('/a/c');
+	await expect(page.getByText('agent not found')).toHaveCount(0);
+});
 
 test('queued arrows precede fresh Enter selection; native summaries and resizers own their keys', async ({
 	page
@@ -503,7 +538,7 @@ test('a write-in failure after navigation restores the originating pane only', a
 	let release!: () => void;
 	state.answerDelay = new Promise((resolve) => (release = resolve));
 	state.answerStatus = 409;
-	await page.keyboard.press('Control+Enter');
+	await page.getByRole('button', { name: 'Send', exact: true }).click();
 	await expect.poll(() => state.answers.length).toBe(1);
 	await openPane(page, 'b');
 	await composer.fill('other pane draft');
