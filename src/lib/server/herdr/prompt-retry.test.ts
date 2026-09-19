@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
 import { HerdrRequestError } from './client';
-import { promptAfterRegistration } from './prompt-retry';
+import { promptAfterRegistration, promptWithPaneFallback } from './prompt-retry';
 
 describe('promptAfterRegistration', () => {
 	it('waits through the new-agent registration window without duplicating delivery', async () => {
@@ -36,5 +36,49 @@ describe('promptAfterRegistration', () => {
 			'not an active named agent'
 		);
 		expect(send).toHaveBeenCalledTimes(3);
+	});
+});
+
+describe('promptWithPaneFallback', () => {
+	it('uses terminal input immediately while Herdr still marks launch pending', async () => {
+		const sendNamed = vi.fn(async () => undefined);
+		const sendPane = vi.fn(async () => undefined);
+
+		await promptWithPaneFallback({ sendNamed, sendPane, launchPending: true });
+
+		expect(sendNamed).not.toHaveBeenCalled();
+		expect(sendPane).toHaveBeenCalledOnce();
+	});
+
+	it('falls back once after bounded named-agent refusals', async () => {
+		const sendNamed = vi.fn(async () => {
+			throw new HerdrRequestError('invalid_request', 'not an active named agent');
+		});
+		const sendPane = vi.fn(async () => undefined);
+
+		await promptWithPaneFallback({
+			sendNamed,
+			sendPane,
+			sleep: async () => undefined,
+			delays: [1]
+		});
+
+		expect(sendNamed).toHaveBeenCalledTimes(2);
+		expect(sendPane).toHaveBeenCalledOnce();
+	});
+
+	it('never falls back after an ambiguous failure', async () => {
+		const refused = new HerdrRequestError('invalid_request', 'permission denied');
+		const sendPane = vi.fn(async () => undefined);
+
+		await expect(
+			promptWithPaneFallback({
+				sendNamed: async () => {
+					throw refused;
+				},
+				sendPane
+			})
+		).rejects.toBe(refused);
+		expect(sendPane).not.toHaveBeenCalled();
 	});
 });

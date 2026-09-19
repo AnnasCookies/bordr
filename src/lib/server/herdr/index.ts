@@ -8,7 +8,7 @@ import { judgeCompatibility, type Compatibility } from './compat';
 import { SubscriptionManager } from './subscriptions';
 import { ensureConnection } from './connections';
 import { formatPane, parsePane } from './address';
-import { promptAfterRegistration } from './prompt-retry';
+import { promptWithPaneFallback } from './prompt-retry';
 
 const DEFAULT_SOCKET = join(homedir(), '.config', 'herdr', 'sessions', 'main', 'herdr.sock');
 
@@ -366,7 +366,15 @@ export async function promptAgent(address: string, text: string): Promise<void> 
 		if (!text.trim()) return;
 	}
 	try {
-		await promptAfterRegistration(() => herdr.request('agent.prompt', { target: paneId, text }));
+		const registration = await rawAgent(address).catch(() => null);
+		await promptWithPaneFallback({
+			sendNamed: () => herdr.request('agent.prompt', { target: paneId, text }),
+			sendPane: async () => {
+				await herdr.request('pane.send_text', { pane_id: paneId, text });
+				await herdr.request('pane.send_keys', { pane_id: paneId, keys: ['enter'] });
+			},
+			launchPending: registration?.launch_pending === true
+		});
 	} catch (e) {
 		// A shell pane has no agent to prompt; typing the line and pressing
 		// enter is the same gesture, and is what the key strip already does.
