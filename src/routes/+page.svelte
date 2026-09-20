@@ -338,7 +338,7 @@
 		/>
 	</header>
 
-	<div class="lg:flex lg:min-h-0 lg:w-full lg:min-w-0 lg:flex-1">
+	<div class="flex w-full min-w-0 flex-1 lg:min-h-0">
 		<!--
 			Mounted only at desktop widths, not merely hidden: a `hidden lg:block`
 			aside still exists on a phone, which would mean two trees polling
