@@ -2,8 +2,15 @@ import { afterAll, afterEach, describe, expect, it } from 'vitest';
 import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { askFromQuestions, claudeAdapter, toolLabel, toolSummary } from './claude';
+import {
+	askFromQuestions,
+	claudeAdapter,
+	toolLabel,
+	toolSummary,
+	unwrapPastedContent
+} from './claude';
 import { adapterFor } from './index';
+import { landedIn, say } from '$lib/pending-sends';
 
 const jsonl = readFileSync(new URL('./fixtures/claude-session.jsonl', import.meta.url), 'utf8');
 
@@ -90,6 +97,78 @@ describe('claudeAdapter.parse', () => {
 		});
 		const text = JSON.stringify(claudeAdapter.parse(sidechain + '\n' + jsonl));
 		expect(text).not.toContain('a subagent speaking');
+	});
+
+	it('unwraps pasted_content in string user messages and matches pending sends', () => {
+		const prompt =
+			'Obviously need the biography themes and narrative I mentioned that right at the start....';
+		const line = JSON.stringify({
+			type: 'user',
+			message: {
+				role: 'user',
+				content: `\n\n<pasted_content id="4238">\n${prompt}\n</pasted_content id="4238">\n`
+			},
+			timestamp: '2026-09-20T09:43:43.738Z'
+		});
+		const messages = claudeAdapter.parse(line);
+		expect(messages).toHaveLength(1);
+		expect(messages[0].text).toBe(prompt);
+		expect(landedIn(prompt, [say(messages[0].text)])).toBe(true);
+	});
+
+	it('unwraps pasted_content inside text blocks', () => {
+		const prompt = 'Attached image query';
+		const line = JSON.stringify({
+			type: 'user',
+			message: {
+				role: 'user',
+				content: [
+					{
+						type: 'text',
+						text: `\n\n<pasted_content id="99">\n${prompt}\n</pasted_content id="99">\n`
+					}
+				]
+			},
+			timestamp: '2026-09-20T09:43:43.738Z'
+		});
+		const messages = claudeAdapter.parse(line);
+		expect(messages).toHaveLength(1);
+		expect(messages[0].text).toBe(prompt);
+	});
+});
+
+describe('unwrapPastedContent', () => {
+	it('unwraps Claude Code pasted content with matching id attributes', () => {
+		const raw =
+			'<pasted_content id="4238">\nObviously need the biography themes and narrative\n</pasted_content id="4238">';
+		expect(unwrapPastedContent(raw)).toBe('Obviously need the biography themes and narrative');
+	});
+
+	it('unwraps pasted content with leading and trailing newlines from Claude Code transcripts', () => {
+		const raw =
+			'\n\n<pasted_content id="4238">\nObviously need the biography themes and narrative\n</pasted_content id="4238">\n';
+		expect(unwrapPastedContent(raw)).toBe('Obviously need the biography themes and narrative');
+	});
+
+	it('unwraps pasted content when the closing tag lacks an id attribute', () => {
+		const raw = '<pasted_content id="101">\nJust a quick prompt\n</pasted_content>';
+		expect(unwrapPastedContent(raw)).toBe('Just a quick prompt');
+	});
+
+	it('unwraps bare pasted_content tags without attributes', () => {
+		const raw = '<pasted_content>\nBare content\n</pasted_content>';
+		expect(unwrapPastedContent(raw)).toBe('Bare content');
+	});
+
+	it('leaves content without pasted_content tags untouched', () => {
+		const text = 'Normal typed message';
+		expect(unwrapPastedContent(text)).toBe('Normal typed message');
+	});
+
+	it('unwraps multiple pasted content sections in a single message', () => {
+		const raw =
+			'Note:\n<pasted_content id="1">\nfirst snippet\n</pasted_content id="1">\nand\n<pasted_content id="2">\nsecond snippet\n</pasted_content id="2">';
+		expect(unwrapPastedContent(raw)).toBe('Note:\nfirst snippet\nand\nsecond snippet');
 	});
 });
 
