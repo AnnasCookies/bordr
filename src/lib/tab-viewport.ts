@@ -450,10 +450,25 @@ export function tabViewport(node: HTMLElement, initial: TabViewportOptions) {
 		clearTimers();
 		void release(true);
 	};
+	// A desktop page can stay visible beside Herdr after focus moves back to the
+	// terminal. Visibility never changes in that layout, so holding the lease
+	// until timeout leaves the real PTYs at Bordr's rows. Blur hands geometry
+	// back immediately; focus claims it again only when Bordr is active.
+	const onWindowBlur = () => {
+		clearTimers();
+		void release(true);
+	};
+	const onWindowFocus = () => {
+		if (document.visibilityState === 'hidden' || unsupported || !enabled()) return;
+		stopped = false;
+		void sync();
+	};
 	document.addEventListener('visibilitychange', onVisibility);
 	window.addEventListener('resize', onWindowResize);
 	window.addEventListener('orientationchange', onOrientation);
 	window.addEventListener('pagehide', onPageHide);
+	window.addEventListener('blur', onWindowBlur);
+	window.addEventListener('focus', onWindowFocus);
 	const firstFrame = requestAnimationFrame(() => void sync());
 
 	return {
@@ -488,6 +503,8 @@ export function tabViewport(node: HTMLElement, initial: TabViewportOptions) {
 			window.removeEventListener('resize', onWindowResize);
 			window.removeEventListener('orientationchange', onOrientation);
 			window.removeEventListener('pagehide', onPageHide);
+			window.removeEventListener('blur', onWindowBlur);
+			window.removeEventListener('focus', onWindowFocus);
 			void release(true);
 		}
 	};
