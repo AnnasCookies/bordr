@@ -295,6 +295,22 @@ describe('tabViewport lease', () => {
 		expect(writesOf('claim')).toHaveLength(2);
 	});
 
+	it('hands geometry back while a visible desktop window is unfocused', async () => {
+		const { activity } = mount();
+		await vi.advanceTimersByTimeAsync(16);
+		window.dispatchEvent(new Event('blur'));
+		await vi.advanceTimersByTimeAsync(0);
+		expect(writesOf('release')).toEqual([
+			expect.objectContaining({ tabId: 'w1:t1', leaseId: 'lease-1' })
+		]);
+		expect(activity).toEqual([true, false]);
+
+		window.dispatchEvent(new Event('focus'));
+		await vi.advanceTimersByTimeAsync(0);
+		expect(writesOf('claim')).toHaveLength(2);
+		expect(activity).toEqual([true, false, true]);
+	});
+
 	it('releases a lease on the machine it was claimed from when the tab changes', async () => {
 		const { action, options } = mount({ tabId: 'tm-dev~w1:t1' });
 		await vi.advanceTimersByTimeAsync(16);
