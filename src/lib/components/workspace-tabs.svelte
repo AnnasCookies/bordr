@@ -11,18 +11,25 @@
 	import HarnessMark from './harness-mark.svelte';
 	import { currentTabPanes } from '$lib/swipe-order';
 	import type { WorkspaceNode } from '$lib/types';
+	import type { ControlTarget } from './control-sheet.svelte';
 
 	let {
 		current,
 		panes = true,
 		visible = true,
 		ontree,
-		onsiblings
+		onsiblings,
+		onselect,
+		oncontext
 	}: {
 		current: string;
 		panes?: boolean;
 		visible?: boolean;
 		ontree?: (workspaces: WorkspaceNode[]) => void;
+		/** Select through the owning page so it can focus the new pane's input. */
+		onselect?: (paneId: string) => void;
+		/** Open the desktop right-click menu for exactly the resource under the pointer. */
+		oncontext?: (target: ControlTarget, event: MouseEvent) => void;
 		/**
 		 * Every pane of the tab holding `current`, in tab order: what a swipe
 		 * walks through and what closing the pane falls back to.
@@ -81,6 +88,18 @@
 		return (agent ?? tab.panes[0])?.paneId ?? '';
 	}
 
+	function select(event: MouseEvent, paneId: string) {
+		if (!onselect || event.button !== 0 || event.ctrlKey || event.metaKey || event.shiftKey) return;
+		event.preventDefault();
+		onselect(paneId);
+	}
+
+	function context(event: MouseEvent, target: ControlTarget) {
+		if (!oncontext) return;
+		event.preventDefault();
+		oncontext(target, event);
+	}
+
 	/**
 	 * A pane's name in the strip. A shell's terminal title is the whole
 	 * `user@host: ~/path`, which is far too long for a chip — the directory
@@ -90,6 +109,28 @@
 		if (pane.hasAgent) return pane.title || pane.paneId;
 		const cwd = pane.cwd.replace(/^\/home\/[^/]+/, '~');
 		return cwd.split('/').filter(Boolean).pop() || cwd || 'shell';
+	}
+
+	function paneTarget(pane: (typeof tabPanes)[number]): ControlTarget {
+		const machine = pane.paneId.includes('~') ? pane.paneId.slice(0, pane.paneId.indexOf('~')) : '';
+		const canSwap = workspaces.some((candidateWorkspace) =>
+			candidateWorkspace.tabs.some((candidateTab) =>
+				candidateTab.panes.some((candidate) => {
+					const candidateMachine = candidate.paneId.includes('~')
+						? candidate.paneId.slice(0, candidate.paneId.indexOf('~'))
+						: '';
+					return (
+						candidateMachine === machine && candidate.focused && candidate.paneId !== pane.paneId
+					);
+				})
+			)
+		);
+		return {
+			scope: 'pane',
+			id: pane.paneId,
+			label: pane.title || paneLabel(pane),
+			canSwap
+		};
 	}
 
 	/**
@@ -140,7 +181,8 @@
 			const { paneId } = await res.json();
 			await load();
 			// A new tab is a sideways move, like the tab strip it came from.
-			if (paneId) {
+			if (paneId && onselect) onselect(paneId);
+			else if (paneId) {
 				await goto(resolve('/a/[pane]', { pane: paneId }), {
 					replaceState: replacesHistory(prefs.value.backTo, page.url.pathname)
 				});
@@ -203,6 +245,9 @@
 				<a
 					href={resolve('/a/[pane]', { pane: target })}
 					role="tab"
+					onclick={(event) => select(event, target)}
+					oncontextmenu={(event) =>
+						context(event, { scope: 'tab', id: tab.tabId, label: label(tab) })}
 					aria-selected={open}
 					class="flex shrink-0 items-center gap-1.5 border-b-2 px-1.5 py-1.5 text-[12.5px] {open
 						? 'border-working text-ink'
@@ -257,6 +302,8 @@
 				<a
 					href={resolve('/a/[pane]', { pane: pane.paneId })}
 					role="tab"
+					onclick={(event) => select(event, pane.paneId)}
+					oncontextmenu={(event) => context(event, paneTarget(pane))}
 					aria-selected={open}
 					class="flex shrink-0 items-center gap-1.5 rounded-md border px-2 py-0.5 text-[12px] {open
 						? 'border-working/60 bg-card text-ink'

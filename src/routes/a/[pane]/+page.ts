@@ -1,6 +1,8 @@
-import { error } from '@sveltejs/kit';
+import { error, redirect } from '@sveltejs/kit';
 import { browser } from '$app/environment';
-import type { AgentDetail } from '$lib/types';
+import { resolve } from '$app/paths';
+import { paneAfterExit } from '$lib/pane-exit';
+import type { AgentDetail, WorkspaceNode } from '$lib/types';
 import type { PageLoad } from './$types';
 
 /** One boolean off one endpoint: narrow it rather than asserting a shape over it. */
@@ -9,13 +11,8 @@ async function readWatched(response: Response): Promise<boolean> {
 	return typeof body === 'object' && body !== null && 'watched' in body && body.watched === true;
 }
 
-/**
- * Only a 404 is "not found". Anything else carries the server's own reason
- * — herdr down, a protocol mismatch — and the error page shows it verbatim,
- * which used to be flattened into "agent not found" for every status.
- */
+/** Carry the server's own reason instead of flattening every failure. */
 async function failureMessage(response: Response): Promise<string> {
-	if (response.status === 404) return 'agent not found';
 	const body: unknown = await response.json().catch(() => null);
 	if (
 		typeof body === 'object' &&
@@ -94,6 +91,27 @@ export const load: PageLoad = async ({ params, url, fetch }) => {
 		// Nothing to hold — this pane has never loaded — so there is genuinely
 		// nothing to show and the error page is the honest answer.
 		throw error(503, 'bordr is unreachable. The transcript will return when it is back.');
+	}
+
+	// A pane exiting is a navigation event, not an application error. Keep the
+	// nearest surviving pane in the same tab when possible; otherwise use any
+	// remaining pane, or the agents list when this was the last one.
+	if (detail.status === 404) {
+		let workspaces: WorkspaceNode[] = [];
+		const panes = await reach(fetch, '/api/panes');
+		if (panes?.ok) {
+			const body: unknown = await panes.json().catch(() => null);
+			if (
+				typeof body === 'object' &&
+				body !== null &&
+				'workspaces' in body &&
+				Array.isArray(body.workspaces)
+			) {
+				workspaces = body.workspaces as WorkspaceNode[];
+			}
+		}
+		const next = paneAfterExit(workspaces, params.pane, held?.detail.tabId);
+		redirect(303, next ? resolve('/a/[pane]', { pane: next }) : resolve('/'));
 	}
 
 	// A 5xx is the server being unwell, not an answer about this pane — herdr

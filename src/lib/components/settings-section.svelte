@@ -32,7 +32,7 @@
 		ontoggle={(e) => (open = (e.currentTarget as HTMLDetailsElement).open)}
 	>
 		<summary
-			class="mb-1.5 flex list-none items-center gap-1.5 px-1 font-mono text-[10.5px] text-muted lg:pointer-events-none [&::-webkit-details-marker]:hidden"
+			class="mb-1.5 flex min-h-11 list-none items-center gap-1.5 px-1 py-2 font-mono text-[10.5px] text-muted lg:pointer-events-none lg:min-h-0 lg:py-0 [&::-webkit-details-marker]:hidden"
 		>
 			<!--
 				Still a heading. A summary carries no heading semantics of its

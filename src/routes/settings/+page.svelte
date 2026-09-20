@@ -1095,9 +1095,7 @@
 		{/if}
 
 		<div class="flex min-w-0 flex-1 flex-col lg:min-h-0 lg:overflow-y-auto">
-			<main
-				class="mx-auto w-full max-w-3xl flex-1 space-y-5 px-4 pt-3 pb-24 lg:mx-0 lg:px-6 lg:pb-8"
-			>
+			<main class="mx-auto w-full max-w-3xl flex-1 space-y-5 px-4 pt-3 pb-24 lg:px-6 lg:pb-8">
 				{#if shown('agents list')}
 					<SettingsSection heading="agents list">
 						<div
@@ -1202,6 +1200,14 @@
 							>
 								{#snippet preview()}{@render monoPreview()}{/snippet}
 							</SettingRow>
+							<ToggleRow
+								label="Harness icons"
+								hint="A glyph beside each harness name, in the list, the tree and the conversation header."
+								checked={prefs.value.harnessIcons}
+								onchange={(v) => prefs.set('harnessIcons', v)}
+							>
+								{#snippet preview()}{@render iconPreview()}{/snippet}
+							</ToggleRow>
 						</div>
 					</SettingsSection>
 				{/if}
@@ -1277,6 +1283,43 @@
 								nothing and the next one has it, and only for panes on this machine — whether `gh`
 								is installed and signed in on another machine is not something bordr can assume.
 							</p>
+							<SettingRow
+								label="Model in the header"
+								value={prefs.value.headerModel}
+								options={[
+									{ v: 'off' as HeaderModel, l: 'Off' },
+									{ v: 'model' as HeaderModel, l: 'Model' },
+									{ v: 'model-effort' as HeaderModel, l: '+ effort' }
+								]}
+								onchange={(v) => prefs.set('headerModel', v)}
+							>
+								{#snippet preview()}{@render headerModelPreview()}{/snippet}
+							</SettingRow>
+							<p class="px-3.5 pb-2 text-[12px] text-muted">
+								The model comes from the transcript, where the harness records it, so it is right on
+								any machine. Effort is only ever in the status line — no harness writes it down and
+								herdr has no concept of it — so it is shown when that line clearly carries one and
+								left out when it does not.
+							</p>
+							<SettingRow
+								label="Status lines"
+								value={prefs.value.statusPosition}
+								options={[
+									{ v: 'header' as StatusPosition, l: 'Under title' },
+									{ v: 'bottom' as StatusPosition, l: 'Below input' }
+								]}
+								onchange={(v) => prefs.set('statusPosition', v)}
+							>
+								{#snippet preview()}{@render statusPositionPreview()}{/snippet}
+							</SettingRow>
+							<ToggleRow
+								label="Activity line"
+								hint="What the harness says it is doing while it works — its verb, elapsed time and tokens — instead of just 'working'."
+								checked={prefs.value.showActivity}
+								onchange={(v) => prefs.set('showActivity', v)}
+							>
+								{#snippet preview()}{@render activityPreview()}{/snippet}
+							</ToggleRow>
 							<SettingRow
 								label="Motion"
 								value={prefs.value.motion}
@@ -1707,24 +1750,6 @@
 								{#snippet preview()}{@render clockPreview()}{/snippet}
 							</SettingRow>
 							<SettingRow
-								label="Model in the header"
-								value={prefs.value.headerModel}
-								options={[
-									{ v: 'off' as HeaderModel, l: 'Off' },
-									{ v: 'model' as HeaderModel, l: 'Model' },
-									{ v: 'model-effort' as HeaderModel, l: '+ effort' }
-								]}
-								onchange={(v) => prefs.set('headerModel', v)}
-							>
-								{#snippet preview()}{@render headerModelPreview()}{/snippet}
-							</SettingRow>
-							<p class="px-3.5 pb-2 text-[12px] text-muted">
-								The model comes from the transcript, where the harness records it, so it is right on
-								any machine. Effort is only ever in the status line — no harness writes it down and
-								herdr has no concept of it — so it is shown when that line clearly carries one and
-								left out when it does not.
-							</p>
-							<SettingRow
 								label="Sub-agents above the conversation"
 								value={prefs.value.subagentStrip}
 								options={[
@@ -1764,17 +1789,6 @@
 								{#snippet preview()}{@render workPreview()}{/snippet}
 							</ToggleRow>
 							<SettingRow
-								label="Status lines"
-								value={prefs.value.statusPosition}
-								options={[
-									{ v: 'header' as StatusPosition, l: 'Under title' },
-									{ v: 'bottom' as StatusPosition, l: 'Below input' }
-								]}
-								onchange={(v) => prefs.set('statusPosition', v)}
-							>
-								{#snippet preview()}{@render statusPositionPreview()}{/snippet}
-							</SettingRow>
-							<SettingRow
 								label="Show tools control"
 								value={prefs.value.workControl}
 								options={[
@@ -1785,22 +1799,6 @@
 							>
 								{#snippet preview()}{@render workControlPreview()}{/snippet}
 							</SettingRow>
-							<ToggleRow
-								label="Activity line"
-								hint="What the harness says it is doing while it works — its verb, elapsed time and tokens — instead of just 'working'."
-								checked={prefs.value.showActivity}
-								onchange={(v) => prefs.set('showActivity', v)}
-							>
-								{#snippet preview()}{@render activityPreview()}{/snippet}
-							</ToggleRow>
-							<ToggleRow
-								label="Harness icons"
-								hint="A glyph beside each harness name, in the list, the tree and the conversation header."
-								checked={prefs.value.harnessIcons}
-								onchange={(v) => prefs.set('harnessIcons', v)}
-							>
-								{#snippet preview()}{@render iconPreview()}{/snippet}
-							</ToggleRow>
 							<ToggleRow
 								label="Syntax highlighting"
 								hint="VS Code's own grammars and themes for code blocks, tool input and both sides of a diff. Off renders plain monospace and downloads nothing."

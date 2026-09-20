@@ -19,12 +19,15 @@
 		current = '',
 		onnew = () => {},
 		onclose,
+		onselect,
 		home = false,
 		backTo
 	}: {
 		current?: string;
 		onnew?: () => void;
 		onclose?: () => void;
+		/** Select through the conversation page so it can hand focus to the input. */
+		onselect?: (paneId: string) => void;
 		/** Offer a way back to the agents list. Pointless on the agents list. */
 		home?: boolean;
 		/** The header's own `backTo` on this screen, so both agree on the arrow. */
@@ -264,6 +267,17 @@
 	function paneHref(paneId: string) {
 		return resolve('/a/[pane]', { pane: paneId });
 	}
+
+	/**
+	 * Keep a real link for open-in-new-tab and assistive tech. A plain click or
+	 * keyboard Enter is handed to the owning conversation page, which can focus
+	 * the destination composer after navigation. Modified clicks stay native.
+	 */
+	function select(event: MouseEvent, paneId: string) {
+		if (!onselect || event.button !== 0 || event.ctrlKey || event.metaKey || event.shiftKey) return;
+		event.preventDefault();
+		onselect(paneId);
+	}
 </script>
 
 <!--
@@ -390,6 +404,7 @@
 						{@const c = counts(workspace)}
 						<a
 							href={paneHref(workspaceTarget(workspace))}
+							onclick={(event) => select(event, workspaceTarget(workspace))}
 							class="flex w-full items-center gap-2 border-l-2 py-1 pr-2 pl-3.5 transition-colors hover:bg-chip/60 {workspace.workspaceId ===
 							currentWorkspace
 								? 'border-l-working bg-chip'
@@ -512,6 +527,7 @@
 			{@const status = info?.status ?? pane.status}
 			<a
 				href={paneHref(pane.paneId)}
+				onclick={(event) => select(event, pane.paneId)}
 				class="flex items-start gap-2 border-l-2 py-1 pr-2 pl-1.5 transition-colors hover:bg-chip/60 {pane.paneId ===
 				current
 					? 'border-l-working bg-chip'

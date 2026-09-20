@@ -1,22 +1,48 @@
 import { error, json } from '@sveltejs/kit';
-import { close, focus, rename, type Scope } from '$lib/server/herdr/controls';
+import {
+	close,
+	focus,
+	rename,
+	setPaneRightClick,
+	splitPane,
+	swapWithFocusedPane,
+	zoomPane,
+	type Scope
+} from '$lib/server/herdr/controls';
 import { HerdrRequestError } from '$lib/server/herdr/client';
 import type { RequestHandler } from './$types';
 
 /**
  * herdr's own controls — focus, rename, close — for a pane, tab or workspace.
  *
- * One endpoint rather than nine: the three actions take the same shape and
- * differ only in which herdr method they end up calling, so a route each
- * would be the same handler copied out with a word changed.
+ * One endpoint rather than one route per method: every action takes the same
+ * resource target and differs only in the Herdr method it reaches.
  *
  * POST bodies are already covered by the CSRF and Host guards in
  * `hooks.server.ts`, which is what makes a mutating endpoint safe to add here
  * at all.
  */
 const SCOPES: Scope[] = ['pane', 'tab', 'workspace'];
-const ACTIONS = ['focus', 'rename', 'close'] as const;
+const ACTIONS = [
+	'focus',
+	'rename',
+	'close',
+	'swap-focused',
+	'split-right',
+	'split-down',
+	'zoom',
+	'right-click-pane',
+	'right-click-herdr'
+] as const;
 type Action = (typeof ACTIONS)[number];
+const PANE_ACTIONS: Action[] = [
+	'swap-focused',
+	'split-right',
+	'split-down',
+	'zoom',
+	'right-click-pane',
+	'right-click-herdr'
+];
 
 export const POST: RequestHandler = async ({ request }) => {
 	const body = (await request.json()) as {
@@ -31,6 +57,9 @@ export const POST: RequestHandler = async ({ request }) => {
 	if (!ACTIONS.includes(action)) throw error(400, `action must be one of ${ACTIONS.join(', ')}`);
 	if (!SCOPES.includes(scope)) throw error(400, `scope must be one of ${SCOPES.join(', ')}`);
 	if (typeof body.id !== 'string' || !body.id) throw error(400, 'id required');
+	if (PANE_ACTIONS.includes(action) && scope !== 'pane') {
+		throw error(400, `${action} only applies to panes`);
+	}
 	// A workspace holds every tab in it; herdr offers no single call that ends
 	// one, and building it out of tab closes is not something to do from a
 	// phone by accident.
@@ -45,10 +74,20 @@ export const POST: RequestHandler = async ({ request }) => {
 		throw error(400, `a ${scope} needs a name`);
 	}
 
+	let result: { paneId?: string } = {};
 	try {
 		if (action === 'focus') await focus(scope, body.id);
 		else if (action === 'close') await close(scope as 'pane' | 'tab', body.id);
-		else await rename(scope, body.id, label);
+		else if (action === 'rename') await rename(scope, body.id, label);
+		else if (action === 'swap-focused') await swapWithFocusedPane(body.id);
+		else if (action === 'split-right' || action === 'split-down') {
+			result = {
+				paneId: await splitPane(body.id, action === 'split-right' ? 'right' : 'down')
+			};
+		} else if (action === 'zoom') result = { paneId: await zoomPane(body.id) };
+		else {
+			await setPaneRightClick(body.id, action === 'right-click-pane' ? 'pane' : 'herdr');
+		}
 	} catch (e) {
 		// herdr's own refusal is the useful message — "no such pane", a machine
 		// that is not reachable — so it is passed through rather than flattened
@@ -57,5 +96,5 @@ export const POST: RequestHandler = async ({ request }) => {
 		throw error(e instanceof HerdrRequestError ? 409 : 502, message);
 	}
 
-	return json({ ok: true });
+	return json({ ok: true, ...result });
 };

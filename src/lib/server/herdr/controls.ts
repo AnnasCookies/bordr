@@ -1,5 +1,5 @@
 import { clientFor } from './index';
-import { parsePane } from './address';
+import { formatPane, parsePane } from './address';
 
 /**
  * herdr's own controls, the ones worth having on a phone.
@@ -9,17 +9,9 @@ import { parsePane } from './address';
  * the panes, their names — was read-only, so the phone could see the shape of
  * a session and change nothing about it.
  *
- * These are the three that earn a place there:
- *
- *   focus   put a pane on the actual terminal, so walking to the desk
- *           continues where the phone left off
- *   rename  name the work, which is the thing that tells two identical rows
- *           apart — and bordr now shows tab names, so it should set them
- *   close   the housekeeping, which is the one that needs asking twice
- *
- * Everything else herdr offers — splits, moves, resizes, worktrees, plugin
- * management — is either fiddly on a phone or rare enough to belong at a
- * keyboard. They are a socket call away if that changes.
+ * Common controls live in the sheet; the desktop right-click menu mirrors
+ * Herdr's own pane menu as well: swap, split, zoom and native right-click
+ * routing. Close stays separate because it is the only one that ends work.
  */
 
 /** What a control acts on. Each carries its machine in the address. */
@@ -76,6 +68,60 @@ export async function rename(scope: Scope, address: string, label: string): Prom
 export async function close(scope: 'pane' | 'tab', address: string): Promise<void> {
 	const { herdr, params } = await target(scope, address);
 	await herdr.request(`${scope}.close`, params);
+}
+
+/** Swap the chosen pane with the pane the native Herdr client currently focuses. */
+export async function swapWithFocusedPane(address: string): Promise<void> {
+	const { machineId, paneId } = parsePane(address);
+	const herdr = await clientFor(machineId);
+	const current = await herdr.request<{ pane?: { pane_id?: unknown } }>('pane.current', {});
+	const focused = String(current.pane?.pane_id ?? '');
+	if (!focused) throw new Error('Herdr has no focused pane to swap with');
+	if (focused === paneId) throw new Error('That pane is already focused in Herdr');
+	await herdr.request('pane.swap', {
+		source_pane_id: focused,
+		target_pane_id: paneId
+	});
+	// Match Herdr's own context menu: the originally focused pane stays focused
+	// after it moves into the chosen pane's old position.
+	await herdr.request('pane.focus', { pane_id: focused });
+}
+
+/** Split beside the chosen pane and return Bordr's machine-qualified pane id. */
+export async function splitPane(address: string, direction: 'right' | 'down'): Promise<string> {
+	const { machineId, paneId } = parsePane(address);
+	const herdr = await clientFor(machineId);
+	const result = await herdr.request<{ pane?: { pane_id?: unknown } }>('pane.split', {
+		target_pane_id: paneId,
+		direction,
+		focus: true,
+		right_click: 'herdr',
+		env: {}
+	});
+	const created = String(result.pane?.pane_id ?? '');
+	if (!created) throw new Error('Herdr split the pane but did not return the new pane id');
+	return formatPane(machineId, created);
+}
+
+/** Toggle Herdr's native zoom and return the pane it focused. */
+export async function zoomPane(address: string): Promise<string> {
+	const { machineId, paneId } = parsePane(address);
+	const herdr = await clientFor(machineId);
+	const result = await herdr.request<{ zoom?: { focused_pane_id?: unknown } }>('pane.zoom', {
+		pane_id: paneId,
+		mode: 'toggle'
+	});
+	return formatPane(machineId, String(result.zoom?.focused_pane_id ?? paneId));
+}
+
+/** Choose where native Herdr sends right-click gestures for this pane. */
+export async function setPaneRightClick(address: string, target: 'pane' | 'herdr'): Promise<void> {
+	const { machineId, paneId } = parsePane(address);
+	const herdr = await clientFor(machineId);
+	await herdr.request('pane.input.set', {
+		pane_id: paneId,
+		right_click: target
+	});
 }
 
 /**

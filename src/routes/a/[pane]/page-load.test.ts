@@ -163,6 +163,69 @@ describe('pane load: unchanged detail', () => {
 	});
 });
 
+describe('pane load: the current pane exited', () => {
+	it('redirects to a surviving sibling instead of replacing Bordr with a 404 page', async () => {
+		const pane = 'exit:p1';
+		let gone = false;
+		const fetchStub = async (input: string | URL | Request) => {
+			const path = String(input);
+			if (path.endsWith('/watch')) {
+				return new Response(JSON.stringify({ watched: false }), { status: 200 });
+			}
+			if (path === '/api/panes') {
+				return new Response(
+					JSON.stringify({
+						workspaces: [
+							{
+								tabs: [
+									{
+										tabId: 'exit:t1',
+										panes: [{ paneId: 'exit:p2' }]
+									}
+								]
+							}
+						]
+					}),
+					{ status: 200 }
+				);
+			}
+			if (gone) return new Response(JSON.stringify({ message: 'no pane' }), { status: 404 });
+			return new Response(JSON.stringify({ ...DETAIL, paneId: pane, tabId: 'exit:t1' }), {
+				status: 200
+			});
+		};
+		const event = {
+			params: { pane },
+			url: new URL(`http://x/a/${pane}`),
+			fetch: fetchStub
+		} as unknown as LoadEvent;
+
+		await load(event);
+		gone = true;
+		await expect(load(event)).rejects.toMatchObject({ status: 303, location: '/a/exit:p2' });
+	});
+
+	it('redirects to the agents list when no pane survived', async () => {
+		const pane = 'exit:last';
+		const event = {
+			params: { pane },
+			url: new URL(`http://x/a/${pane}`),
+			fetch: async (input: string | URL | Request) => {
+				const path = String(input);
+				if (path.endsWith('/watch')) {
+					return new Response(JSON.stringify({ watched: false }), { status: 200 });
+				}
+				if (path === '/api/panes') {
+					return new Response(JSON.stringify({ workspaces: [] }), { status: 200 });
+				}
+				return new Response(JSON.stringify({ message: 'no pane' }), { status: 404 });
+			}
+		} as unknown as LoadEvent;
+
+		await expect(load(event)).rejects.toMatchObject({ status: 303, location: '/' });
+	});
+});
+
 describe('load: losing the connection', () => {
 	/** A fetch that throws the way a real one does with no network. */
 	const dead = () => Promise.reject(new TypeError('Failed to fetch'));

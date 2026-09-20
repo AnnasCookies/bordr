@@ -34,7 +34,8 @@ const workspaces = [
 					...agents[0],
 					paneId,
 					hasAgent: paneId !== 'shell',
-					tabId: 't1'
+					tabId: 't1',
+					focused: paneId === 'a'
 				}))
 			},
 			{
@@ -68,6 +69,21 @@ async function fixture(
 		command: null as { name: string; message: string } | null,
 		controlDelay: null as Promise<void> | null,
 		controlCalls: 0,
+		controlBodies: [] as Array<{
+			action:
+				| 'focus'
+				| 'rename'
+				| 'close'
+				| 'swap-focused'
+				| 'split-right'
+				| 'split-down'
+				| 'zoom'
+				| 'right-click-pane'
+				| 'right-click-herdr';
+			scope: 'pane' | 'tab' | 'workspace';
+			id: string;
+			label: string;
+		}>,
 		extraBlocks: [] as unknown[],
 		trees: 0,
 		selected: 1,
@@ -83,6 +99,7 @@ async function fixture(
 		keyDelay: null as Promise<void> | null,
 		answerDelay: null as Promise<void> | null,
 		answerStatus: 200,
+		missingPanes: new Set<string>(),
 		children: [
 			{
 				id: 'agent-finished',
@@ -145,6 +162,7 @@ async function fixture(
 		if (path === '/api/agents') return respond({ agents: state.agentData });
 		if (path === '/api/control') {
 			state.controlCalls++;
+			state.controlBodies.push(route.request().postDataJSON());
 			await state.controlDelay;
 			return respond({ ok: true });
 		}
@@ -181,6 +199,7 @@ async function fixture(
 		if (/\/api\/agents\/[^/]+$/.test(path)) {
 			state.details++;
 			const paneId = path.split('/').at(-1)!;
+			if (state.missingPanes.has(paneId)) return respond({ message: 'no pane' }, 404);
 			return respond({
 				...(agents.find((a) => a.paneId === paneId) ?? agents[0]),
 				paneId,
@@ -260,6 +279,189 @@ async function openPane(page: Page, pane = 'a') {
 async function focusPage(page: Page) {
 	await page.evaluate(() => (document.activeElement as HTMLElement)?.blur());
 }
+
+test('settings stay balanced on desktop and finger-sized on phones', async ({ page }) => {
+	await fixture(page);
+	const navBox = await page.getByRole('navigation', { name: 'Settings sections' }).boundingBox();
+	const mainBox = await page.locator('main').boundingBox();
+	expect(navBox).not.toBeNull();
+	expect(mainBox).not.toBeNull();
+	if (!navBox || !mainBox) return;
+	const leftGap = mainBox.x - (navBox.x + navBox.width);
+	const rightGap = 1400 - (mainBox.x + mainBox.width);
+	expect(Math.abs(leftGap - rightGap)).toBeLessThan(16);
+
+	await page.setViewportSize({ width: 320, height: 568 });
+	await expect(page.locator('main details[data-section]')).toHaveCount(8);
+	const header = page.locator('details[data-section="header"]');
+	await expect
+		.poll(async () => (await header.locator('summary').boundingBox())?.height ?? 0)
+		.toBeGreaterThanOrEqual(44);
+	await expect(header).toContainText('Model in the header');
+	await expect(header).toContainText('Status lines');
+	await expect(header).toContainText('Activity line');
+	await expect(page.locator('details[data-section="appearance"]')).toContainText('Harness icons');
+	const transcript = page.locator('details[data-section="transcript"]');
+	await expect(transcript).not.toContainText('Model in the header');
+	await expect(transcript).not.toContainText('Harness icons');
+});
+
+test('home list controls form one responsive summary card', async ({ page }) => {
+	await fixture(page, { rollup: true, showGrouping: true, groupBy: 'workspace' });
+	await move(page, '/');
+	const filters = page.getByRole('group', { name: 'Filter the list' });
+	const grouping = page.getByRole('group', { name: 'Group agents' });
+	await expect(filters).toBeVisible();
+	await expect(grouping).toBeVisible();
+	await expect(filters.locator('..').getByText('Group', { exact: true })).toBeVisible();
+
+	const working = filters.getByRole('button', { name: /^3 working/ });
+	await working.click();
+	await expect(working).toHaveAttribute('aria-pressed', 'true');
+	const status = grouping.getByRole('button', { name: 'Status', exact: true });
+	await status.click();
+	await expect(status).toHaveAttribute('aria-pressed', 'true');
+
+	await page.setViewportSize({ width: 320, height: 568 });
+	await expect
+		.poll(async () => (await filters.getByRole('button').first().boundingBox())?.height ?? 0)
+		.toBeGreaterThanOrEqual(62);
+	await expect
+		.poll(async () => (await grouping.getByRole('button').first().boundingBox())?.height ?? 0)
+		.toBeGreaterThanOrEqual(36);
+	expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(320);
+});
+
+for (const paneView of ['conversation', 'terminal']) {
+	test(`${paneView}: selecting a pane focuses its input`, async ({ page }) => {
+		const state = await fixture(page, { paneView, tabStrip: 'always' });
+		state.picker = false;
+		await openPane(page);
+		await page.locator('a[href="/a/c"][role="tab"]').click();
+		await expect.poll(() => new URL(page.url()).pathname).toBe('/a/c');
+		const input =
+			paneView === 'terminal'
+				? page.getByRole('textbox', { name: 'Send to this pane' })
+				: page.locator('textarea').first();
+		await expect(input).toBeFocused();
+	});
+}
+
+test('desktop agent sessions focus the composer by click and keyboard', async ({ page }) => {
+	const state = await fixture(page, { paneView: 'conversation', sidebarOpen: true });
+	state.picker = false;
+	await openPane(page);
+	const agentList = page.locator('aside [data-agent-list]');
+	const composer = page.locator('textarea').first();
+
+	// Clicking the already-open session must still hand focus back from the sidebar.
+	await agentList.locator('a[href="/a/a"]').click();
+	await expect(composer).toBeFocused();
+
+	// Links retain native keyboard activation; Enter takes the same focus-aware path.
+	await agentList.locator('a[href="/a/b"]').focus();
+	await page.keyboard.press('Enter');
+	await expect.poll(() => new URL(page.url()).pathname).toBe('/a/b');
+	await expect(page.locator('textarea').first()).toBeFocused();
+});
+
+test('right-clicking a tab opens rename for that tab', async ({ page }) => {
+	const state = await fixture(page, { tabStrip: 'always' });
+	state.picker = false;
+	await openPane(page);
+	const tab = page.getByRole('tab', { name: /Split/ }).first();
+	await tab.click({ button: 'right' });
+	const menu = page.getByRole('menu', { name: 'tab options for Split' });
+	await expect(menu).toBeVisible();
+	await menu.getByRole('menuitem', { name: 'Rename tab' }).click();
+	const dialog = page.getByRole('dialog', { name: 'tab controls' });
+	const name = dialog.getByRole('textbox', { name: 'Name' });
+	await expect(name).toBeFocused();
+	await name.fill('Release');
+	await dialog.getByRole('button', { name: 'Rename' }).click();
+	await expect
+		.poll(() => state.controlBodies.at(-1))
+		.toEqual({
+			action: 'rename',
+			scope: 'tab',
+			id: 't1',
+			label: 'Release'
+		});
+});
+
+test('right-clicking a sibling pane closes that pane without leaving the current one', async ({
+	page
+}) => {
+	const state = await fixture(page, { tabStrip: 'always' });
+	state.picker = false;
+	await openPane(page);
+	await page.locator('a[href="/a/c"][role="tab"]').click({ button: 'right' });
+	const menu = page.getByRole('menu', { name: 'pane options for Fixture a' });
+	await expect(menu).toBeVisible();
+	await expect(menu.getByRole('menuitem')).toHaveText([
+		'Rename pane',
+		'Swap with focused pane',
+		'Split right',
+		'Split down',
+		'Zoom',
+		'Send right-clicks to pane',
+		'Use Herdr right-click menu',
+		'Close pane'
+	]);
+	await menu.getByRole('menuitem', { name: 'Close pane' }).click();
+	const dialog = page.getByRole('dialog', { name: 'pane controls' });
+	await expect(dialog.getByText('Close this pane?')).toBeVisible();
+	await dialog.getByRole('button', { name: 'Close it' }).click();
+	await expect
+		.poll(() => state.controlBodies.at(-1))
+		.toEqual({
+			action: 'close',
+			scope: 'pane',
+			id: 'c',
+			label: 'Fixture a'
+		});
+	await expect.poll(() => new URL(page.url()).pathname).toBe('/a/a');
+});
+
+test('the remaining pane menu actions dispatch to the pane that was right-clicked', async ({
+	page
+}) => {
+	const state = await fixture(page, { tabStrip: 'always' });
+	state.picker = false;
+	await openPane(page);
+	for (const [label, action] of [
+		['Swap with focused pane', 'swap-focused'],
+		['Split right', 'split-right'],
+		['Split down', 'split-down'],
+		['Zoom', 'zoom'],
+		['Send right-clicks to pane', 'right-click-pane'],
+		['Use Herdr right-click menu', 'right-click-herdr']
+	] as const) {
+		await page.locator('a[href="/a/c"][role="tab"]').click({ button: 'right' });
+		await page.getByRole('menuitem', { name: label }).click();
+		await expect.poll(() => state.controlBodies.at(-1)?.action).toBe(action);
+		expect(state.controlBodies.at(-1)).toMatchObject({ scope: 'pane', id: 'c' });
+	}
+	await expect.poll(() => new URL(page.url()).pathname).toBe('/a/a');
+});
+
+test('an exited current pane moves to a surviving sibling instead of the 404 page', async ({
+	page
+}) => {
+	const state = await fixture(page);
+	state.picker = false;
+	await openPane(page);
+	state.treeData = workspaces.map((workspace) => ({
+		...workspace,
+		tabs: workspace.tabs.map((tab) => ({
+			...tab,
+			panes: tab.panes.filter((pane) => pane.paneId !== 'a')
+		}))
+	}));
+	state.missingPanes.add('a');
+	await expect.poll(() => new URL(page.url()).pathname, { timeout: 6000 }).toBe('/a/c');
+	await expect(page.getByText('agent not found')).toHaveCount(0);
+});
 
 test('queued arrows precede fresh Enter selection; native summaries and resizers own their keys', async ({
 	page
@@ -503,7 +705,7 @@ test('a write-in failure after navigation restores the originating pane only', a
 	let release!: () => void;
 	state.answerDelay = new Promise((resolve) => (release = resolve));
 	state.answerStatus = 409;
-	await page.keyboard.press('Control+Enter');
+	await page.getByRole('button', { name: 'Send', exact: true }).click();
 	await expect.poll(() => state.answers.length).toBe(1);
 	await openPane(page, 'b');
 	await composer.fill('other pane draft');

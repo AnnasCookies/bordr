@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { isDone, resolvedToolUses } from './subagent-done';
+import { claudeRunEnded, isDone, resolvedToolUses, resolvedToolUseTimes } from './subagent-done';
 
 const NOW = 1_700_000_000_000;
 
@@ -23,6 +23,30 @@ describe('resolvedToolUses', () => {
 		expect(resolvedToolUses(pending).has('toolu_c')).toBe(false);
 	});
 
+	it('ignores the immediate result that only says an async agent launched', () => {
+		const text = JSON.stringify({
+			type: 'user',
+			timestamp: '2026-09-19T17:19:52.626Z',
+			message: { content: [{ type: 'tool_result', tool_use_id: 'toolu_async' }] },
+			toolUseResult: { status: 'async_launched' }
+		});
+		expect(resolvedToolUses(text).has('toolu_async')).toBe(false);
+	});
+
+	it.each(['completed', 'failed', 'killed', 'stopped'])(
+		'finds an async task-notification with terminal status %s',
+		(status) => {
+			const text = JSON.stringify({
+				type: 'queue-operation',
+				timestamp: '2026-09-19T17:26:29.484Z',
+				content: `<task-notification><tool-use-id>toolu_async</tool-use-id><status>${status}</status></task-notification>`
+			});
+			expect(resolvedToolUseTimes(text).get('toolu_async')).toBe(
+				Date.parse('2026-09-19T17:26:29.484Z')
+			);
+		}
+	);
+
 	it('survives the rubbish a live transcript contains', () => {
 		const text = ['', 'not json', JSON.stringify(null), '{"message":{"content":"a string"}}'].join(
 			'\n'
@@ -31,8 +55,34 @@ describe('resolvedToolUses', () => {
 	});
 });
 
+describe('claudeRunEnded', () => {
+	it('uses the latest conversational row, so a resumed child is live again', () => {
+		const stopped = JSON.stringify({
+			type: 'assistant',
+			message: { role: 'assistant', stop_reason: 'end_turn' }
+		});
+		expect(claudeRunEnded(stopped)).toBe(true);
+		expect(
+			claudeRunEnded(
+				`${stopped}\n${JSON.stringify({ type: 'user', message: { role: 'user', content: 'Again' } })}`
+			)
+		).toBe(false);
+	});
+
+	it('keeps a child in a tool turn running', () => {
+		expect(
+			claudeRunEnded(
+				JSON.stringify({
+					type: 'assistant',
+					message: { role: 'assistant', stop_reason: 'tool_use' }
+				})
+			)
+		).toBe(false);
+	});
+});
+
 describe('isDone', () => {
-	const resolved = new Set(['toolu_finished']);
+	const resolved = new Map([['toolu_finished', NOW]]);
 
 	/** The exact signal: the harness wrote the Task's result. */
 	it('is done the moment its result is written', () => {
@@ -55,6 +105,10 @@ describe('isDone', () => {
 	it('holds on through a pause shorter than the window', () => {
 		const lastAt = NOW - 120_000 + 1000;
 		expect(isDone({ toolUseId: 'toolu_going', lastAt }, resolved)).toBe(false);
+	});
+
+	it('treats a child write after completion as a resumed live run', () => {
+		expect(isDone({ toolUseId: 'toolu_finished', lastAt: NOW + 1 }, resolved)).toBe(false);
 	});
 
 	/**

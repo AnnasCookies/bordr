@@ -131,6 +131,69 @@ describe('listSubagents', () => {
 		expect(agent.lastAt).toBe(Date.parse('2026-09-12T12:00:00.000Z'));
 	});
 
+	it('marks a Claude child done from its own final end_turn', async () => {
+		const t = session([
+			{
+				id: 'agent-done',
+				meta: { agentType: 'general-purpose', toolUseId: 'toolu_async' },
+				lines: [
+					JSON.stringify({
+						type: 'assistant',
+						timestamp: '2026-09-19T17:26:29.463Z',
+						message: { role: 'assistant', stop_reason: 'end_turn', content: [] }
+					})
+				]
+			}
+		]);
+		expect((await listSubagents(t))[0].done).toBe(true);
+	});
+
+	it('does not mistake Claude async launch acknowledgement for completion', async () => {
+		const t = session([
+			{
+				id: 'agent-live',
+				meta: { agentType: 'general-purpose', toolUseId: 'toolu_async' },
+				lines: [
+					JSON.stringify({
+						type: 'assistant',
+						timestamp: '2026-09-19T17:20:00.000Z',
+						message: { role: 'assistant', stop_reason: 'tool_use', content: [] }
+					})
+				]
+			}
+		]);
+		const launch = JSON.stringify({
+			type: 'user',
+			timestamp: '2026-09-19T17:19:52.626Z',
+			message: { content: [{ type: 'tool_result', tool_use_id: 'toolu_async' }] },
+			toolUseResult: { status: 'async_launched' }
+		});
+		expect((await listSubagents(t, launch))[0].done).toBe(false);
+	});
+
+	it('uses an async completion notification but honours a later resume', async () => {
+		const t = session([
+			{
+				id: 'agent-resumable',
+				meta: { agentType: 'general-purpose', toolUseId: 'toolu_async' },
+				lines: [
+					JSON.stringify({
+						type: 'user',
+						timestamp: '2026-09-19T17:27:00.000Z',
+						message: { role: 'user', content: 'Check one more thing' }
+					})
+				]
+			}
+		]);
+		const completed = JSON.stringify({
+			type: 'queue-operation',
+			timestamp: '2026-09-19T17:26:29.484Z',
+			content:
+				'<task-notification><tool-use-id>toolu_async</tool-use-id><status>completed</status></task-notification>'
+		});
+		expect((await listSubagents(t, completed))[0].done).toBe(false);
+	});
+
 	it('reads Pi child runs and uses their stopped transcript as completion', async () => {
 		const [agent] = await listSubagents(piSession(true));
 		expect(agent).toMatchObject({

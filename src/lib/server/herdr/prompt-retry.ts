@@ -27,3 +27,27 @@ export async function promptAfterRegistration(
 		}
 	}
 }
+
+/**
+ * A harness can be visibly ready while Herdr keeps it in `launch_pending`.
+ * Terminal input is the same final gesture, and an exact named-agent refusal
+ * proves the API did not accept the text, so this fallback cannot duplicate it.
+ */
+export async function promptWithPaneFallback(options: {
+	sendNamed: () => Promise<void>;
+	sendPane: () => Promise<void>;
+	launchPending?: boolean;
+	sleep?: (ms: number) => Promise<unknown>;
+	delays?: readonly number[];
+}): Promise<void> {
+	if (options.launchPending) {
+		await options.sendPane();
+		return;
+	}
+	try {
+		await promptAfterRegistration(options.sendNamed, options.sleep, options.delays);
+	} catch (cause) {
+		if (!agentIsRegistering(cause)) throw cause;
+		await options.sendPane();
+	}
+}

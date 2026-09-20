@@ -18,6 +18,8 @@ vi.mock('./index', async (importOriginal) => {
 		clientFor: vi.fn(async (machine: string) => ({
 			request: vi.fn(async (method: string, params: unknown) => {
 				herdr.requests.push({ machine, method, params });
+				if (method === 'pane.current') return { pane: { pane_id: 'w8:p9' } };
+				if (method === 'pane.split') return { pane: { pane_id: 'w8:p2' } };
 				return {};
 			})
 		}))
@@ -76,6 +78,62 @@ describe('controls: a remote tab', () => {
 		await close('tab', summary.tabId);
 		expect(herdr.requests).toEqual([
 			{ machine: '', method: 'tab.close', params: { tab_id: 'w8:t1' } }
+		]);
+	});
+
+	it('splits and zooms the pane on its own machine', async () => {
+		const { splitPane, zoomPane } = await import('./controls');
+		await expect(splitPane('tm-dev~w8:p1', 'right')).resolves.toBe('tm-dev~w8:p2');
+		await expect(zoomPane('tm-dev~w8:p1')).resolves.toBe('tm-dev~w8:p1');
+		expect(herdr.requests).toEqual([
+			{
+				machine: 'tm-dev',
+				method: 'pane.split',
+				params: {
+					target_pane_id: 'w8:p1',
+					direction: 'right',
+					focus: true,
+					right_click: 'herdr',
+					env: {}
+				}
+			},
+			{
+				machine: 'tm-dev',
+				method: 'pane.zoom',
+				params: { pane_id: 'w8:p1', mode: 'toggle' }
+			}
+		]);
+	});
+
+	it('swaps with Herdr’s focused pane and keeps that pane focused', async () => {
+		const { swapWithFocusedPane } = await import('./controls');
+		await swapWithFocusedPane('tm-dev~w8:p1');
+		expect(herdr.requests).toEqual([
+			{ machine: 'tm-dev', method: 'pane.current', params: {} },
+			{
+				machine: 'tm-dev',
+				method: 'pane.swap',
+				params: { source_pane_id: 'w8:p9', target_pane_id: 'w8:p1' }
+			},
+			{ machine: 'tm-dev', method: 'pane.focus', params: { pane_id: 'w8:p9' } }
+		]);
+	});
+
+	it('sets either native right-click route without guessing Herdr’s hidden current state', async () => {
+		const { setPaneRightClick } = await import('./controls');
+		await setPaneRightClick('tm-dev~w8:p1', 'pane');
+		await setPaneRightClick('tm-dev~w8:p1', 'herdr');
+		expect(herdr.requests).toEqual([
+			{
+				machine: 'tm-dev',
+				method: 'pane.input.set',
+				params: { pane_id: 'w8:p1', right_click: 'pane' }
+			},
+			{
+				machine: 'tm-dev',
+				method: 'pane.input.set',
+				params: { pane_id: 'w8:p1', right_click: 'herdr' }
+			}
 		]);
 	});
 });
