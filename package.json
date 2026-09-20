@@ -26,7 +26,7 @@
 		"test": "bun run test:unit --run && bun run test:e2e",
 		"test:e2e": "playwright install chromium && playwright test",
 		"smoke": "bun run scripts/smoke.ts",
-		"deploy": "bun run build && bun scripts/publish-build.ts && systemctl --user restart bordr && sleep 3 && bun run smoke \"${BORDR_URL:-http://127.0.0.1:7682/}\""
+		"deploy": "bun run build && bun scripts/publish-build.ts && bash scripts/restart-service.sh && sleep 3 && bun run smoke \"${BORDR_URL:-http://127.0.0.1:7682/}\""
 	},
 	"devDependencies": {
 		"@eslint/js": "^10.0.1",

@@ -1,0 +1,39 @@
+# SYSTEM unit — install into /etc/systemd/system, not ~/.config/systemd/user.
+#
+# A user unit dies with the systemd user manager. On 2026-09-20 a stray SIGTERM
+# to user@1000 ran exit.target and took herdr, bordr and every agent pane down
+# at once; Linger keeps a manager alive across logouts but never resurrects one
+# that has exited, so nothing came back until the next login. On a server, this
+# belongs to the system manager. deploy/user/ has the user-manager variant for a
+# single-user desktop where that trade-off is fine.
+#
+# __HOME__ and __USER__ are rendered at install time: a system unit cannot use
+# %h, which resolves to /root rather than the User= home.
+[Unit]
+# The herdr session must exist before anything that reads its socket.
+# Previously only ttyd started at boot, and ttyd spawns `herdr --session
+# main` per CONNECTION — so after a reboot no server existed until a human
+# opened the terminal or SSH'd in, and bordr came up pointing at nothing.
+Description=herdr headless session (main)
+After=network-online.target
+
+[Service]
+Type=simple
+User=__USER__
+Group=__USER__
+ExecStart=__HOME__/.local/bin/herdr --session main server
+Restart=on-failure
+# A second server for the same session exits 1 with "already running" and
+# leaves the first untouched. That is this unit's job already DONE, not a
+# failure to retry — with Restart=always it span every ten seconds forever
+# whenever a manual session was up (observed: 13,573 attempts in four days,
+# filling the journal). Any other non-zero exit is a real crash and still
+# restarts.
+RestartPreventExitStatus=1
+RestartSec=10
+# The session owns long-lived agent panes; never let a stop race them.
+TimeoutStopSec=20
+KillMode=mixed
+
+[Install]
+WantedBy=multi-user.target

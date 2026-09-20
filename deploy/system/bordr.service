@@ -1,0 +1,55 @@
+# SYSTEM unit — install into /etc/systemd/system, not ~/.config/systemd/user.
+#
+# A user unit dies with the systemd user manager. On 2026-09-20 a stray SIGTERM
+# to user@1000 ran exit.target and took herdr, bordr and every agent pane down
+# at once; Linger keeps a manager alive across logouts but never resurrects one
+# that has exited, so nothing came back until the next login. On a server, this
+# belongs to the system manager. deploy/user/ has the user-manager variant for a
+# single-user desktop where that trade-off is fine.
+#
+# __HOME__ and __USER__ are rendered at install time: a system unit cannot use
+# %h, which resolves to /root rather than the User= home.
+[Unit]
+Description=bordr — mobile workspace for herdr
+# Ordering only: bordr degrades gracefully without herdr and must not pull a
+# unit in on every restart. herdr-session is WantedBy=multi-user.target and
+# starts at boot on its own.
+After=network-online.target herdr-session.service
+
+[Service]
+Type=simple
+User=__USER__
+Group=__USER__
+WorkingDirectory=__HOME__/bordr
+# Loopback unless .env says otherwise: EnvironmentFile wins over Environment,
+# so .env can only ever tighten or deliberately override this, and a .env
+# with no HOST line cannot fall through to the adapter's 0.0.0.0.
+Environment=HOST=127.0.0.1
+EnvironmentFile=__HOME__/bordr/.env
+# svelte-adapter-bun defaults to a 512KB request cap — camera photos need
+# more; the image endpoint allows six 15MB images per message above this.
+Environment=BODY_SIZE_LIMIT=100M
+# svelte-adapter-bun defaults Bun's idle timeout to 10s, which kills the SSE
+# stream between heartbeats. The heartbeat is now well under that on its own;
+# this is belt and braces so a slow tick cannot drop a phone's connection.
+Environment=IDLE_TIMEOUT=120
+# Live state outside the checkout: a git clean, worktree op or test run in
+# the working tree would otherwise delete push subscriptions and watches.
+Environment=BORDR_DATA_DIR=__HOME__/.local/state/bordr
+# The official installer's path; `which bun` if yours lives elsewhere.
+# The copy `bun run deploy` publishes, not ./build: every gate build rewrites
+# build/, and serving it directly swapped assets under the running app. The
+# working directory stays the checkout, which .env and the omp startup
+# extension are resolved against.
+ExecStart=__HOME__/.bun/bin/bun __HOME__/.local/lib/bordr/index.js
+# always, not on-failure: a clean SIGTERM (stray stop, session churn,
+# OOM reaper) otherwise leaves bordr down silently until someone notices
+# the phone 500ing. The app holds no state that a restart harms.
+Restart=always
+RestartSec=5
+# The server can take a moment to release the herdr socket; without this
+# systemd SIGKILLs it after the default 90s and logs a spurious failure.
+TimeoutStopSec=20
+
+[Install]
+WantedBy=multi-user.target
