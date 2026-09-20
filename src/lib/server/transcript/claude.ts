@@ -239,6 +239,23 @@ const BASH_STDOUT = /<bash-stdout>([\s\S]*?)<\/bash-stdout>/;
 const BASH_STDERR = /<bash-stderr>([\s\S]*?)<\/bash-stderr>/;
 
 /**
+ * Claude Code wraps text pasted into its terminal pane in `<pasted_content>` tags.
+ * When Herdr delivers a prompt via bracketed paste, Claude Code records it wrapped in
+ * `<pasted_content id="...">\n...\n</pasted_content id="...">` (with the closing tag
+ * sometimes repeating the `id` attribute).
+ *
+ * Stripping the wrapper restores the genuine prompt text, keeps the user bubble
+ * clean, and allows pending sends to deduplicate against the transcript entry.
+ */
+const PASTED_CONTENT =
+	/<pasted_content(?:\s+[^>]*)?>\r?\n?([\s\S]*?)(?:\r?\n)?<\/pasted_content(?:\s+[^>]*)?>/g;
+
+export function unwrapPastedContent(text: string): string {
+	if (!text.includes('<pasted_content')) return text;
+	return text.replace(PASTED_CONTENT, '$1').trim();
+}
+
+/**
  * More of Claude Code's own voice in the `user` role, none of it flagged:
  * a background agent finishing (multi-kilobyte reports, sometimes behind a
  * "[SYSTEM NOTIFICATION]" preamble), the summary it writes to itself after
@@ -420,12 +437,16 @@ export const claudeAdapter = {
 			// results and attachments. Slash-command machinery is string-form
 			// too and must not render as chat.
 			if (typeof content === 'string') {
-				if (content.startsWith('<command-name>') || content.startsWith('<local-command-stdout>')) {
-					const system = systemMessage(content);
+				const unwrapped = unwrapPastedContent(content);
+				if (
+					unwrapped.startsWith('<command-name>') ||
+					unwrapped.startsWith('<local-command-stdout>')
+				) {
+					const system = systemMessage(unwrapped);
 					if (system) messages.push(system);
 					continue;
 				}
-				const command = BASH_INPUT.exec(content.trim());
+				const command = BASH_INPUT.exec(unwrapped.trim());
 				if (command) {
 					// The output lands in the NEXT entry, so the block is held
 					// open the same way a tool_use waits for its tool_result.
@@ -441,9 +462,9 @@ export const claudeAdapter = {
 					messages.push(fromBlocks('user', [tool], undefined, at));
 					continue;
 				}
-				if (content.startsWith('<bash-stdout>')) {
-					const out = BASH_STDOUT.exec(content)?.[1] ?? '';
-					const err = BASH_STDERR.exec(content)?.[1] ?? '';
+				if (unwrapped.startsWith('<bash-stdout>')) {
+					const out = BASH_STDOUT.exec(unwrapped)?.[1] ?? '';
+					const err = BASH_STDERR.exec(unwrapped)?.[1] ?? '';
 					if (lastBash && lastBash.kind === 'tool') {
 						const text = [out, err].filter((part) => part.trim()).join('\n');
 						lastBash.result = {
@@ -456,16 +477,16 @@ export const claudeAdapter = {
 					// Never its own message: it belongs to the command above it.
 					continue;
 				}
-				if (MACHINERY_PREFIXES.some((prefix) => content.startsWith(prefix))) continue;
-				if (!content.trim()) continue;
-				if (isInjected(isMeta, content)) {
-					const system = injectedMessage(content);
+				if (MACHINERY_PREFIXES.some((prefix) => unwrapped.startsWith(prefix))) continue;
+				if (!unwrapped.trim()) continue;
+				if (isInjected(isMeta, unwrapped)) {
+					const system = injectedMessage(unwrapped);
 					if (system) messages.push(system);
 					continue;
 				}
 				// Omitted when 0, so a message with no timestamp keeps the shape
 				// it has always had rather than carrying a meaningless field.
-				messages.push({ role: entry.type, text: content, tools: [], ...(at ? { at } : {}) });
+				messages.push({ role: entry.type, text: unwrapped, tools: [], ...(at ? { at } : {}) });
 				continue;
 			}
 
@@ -476,7 +497,7 @@ export const claudeAdapter = {
 			let ask: Message['ask'] | undefined;
 			for (const block of content_blocks) {
 				if (block.type === 'text' && block.text) {
-					blocks.push({ kind: 'text', text: block.text });
+					blocks.push({ kind: 'text', text: unwrapPastedContent(block.text) });
 				} else if (block.type === 'thinking' && block.thinking) {
 					blocks.push({ kind: 'thinking', text: block.thinking });
 				} else if (block.type === 'tool_use' && block.name) {
