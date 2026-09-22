@@ -39,3 +39,9 @@ Codex inside bordr and nothing else; it remains OpenAI's trademark.
 
 Every other agent falls back to a Nerd Font glyph, scaled to sit at the same
 weight as the marks beside it.
+
+## The collie
+
+`collie-hero.png`, `collie-badge.png`, `collie.svg` and the `patrl-*.png` icons
+were generated with ChatGPT from the maintainer's own brief for this project,
+and ship with it under the MIT licence.

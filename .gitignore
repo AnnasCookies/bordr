@@ -36,3 +36,5 @@ playwright-report
 graphify-out/
 .idea/
 .attic
+# Local planning notes
+tasks/
