@@ -3,8 +3,8 @@
 <h1 align="center">bordr</h1>
 
 <p align="center">
-  <strong>Your faithful, playful, roaming sheepdog - Herd(r) your flock from anywhere! <br>
-    Read and drive every coding agent on your machine, from your phone.</strong>
+  <strong>Read and drive every coding agent on your machine, from your phone. <br>
+    Your faithful, playful, roaming sheepdog - Herd(r) your flock from anywhere!</strong>
   <br> A mobile web workspace for <a href="https://herdr.dev">herdr</a>, served over Tailscale.
   <br>Waggy Tail, Happy Dev :)
 </p>
@@ -27,7 +27,8 @@ This is the result, I love it and use it every day. I hope you'll like it too!
 ## Who this is for
 
 Anyone who runs multiple harnesses on their PC and wants to access them from anywhere. <br>
-All you need is Tailscale, Herdr and a PC to run it on.
+You need a Linux or macOS machine running Herdr, Bun and at least one supported agent, and Tailscale
+to reach it; [Prerequisites](#prerequisites) has the detail.
 
 ## What it does
 
@@ -62,7 +63,8 @@ All you need is Tailscale, Herdr and a PC to run it on.
 - Swipe between agents; back always returns to the list.
 - Light, dark, chat bubbles, and a live preview under every setting.
 
-Installs to the home screen as a PWA and works in any modern phone browser.
+Installs to the home screen as a PWA. The automated browser tests run in Chromium; other phone
+browsers are used day to day but not tested automatically.
 
 ## What it looks like
 
