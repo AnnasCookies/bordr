@@ -1,5 +1,6 @@
-import { error, json } from '@sveltejs/kit';
+import { error, isHttpError, json } from '@sveltejs/kit';
 import { clientFor, HerdrRequestError } from '$lib/server/herdr';
+import { HerdrHangupError } from '$lib/server/herdr/client';
 import { parsePane } from '$lib/server/herdr/address';
 import type { RequestHandler } from './$types';
 
@@ -61,9 +62,31 @@ function herdrError(e: unknown): never {
 async function forward(machineId: string, method: string, params: Record<string, unknown>) {
 	try {
 		const herdr = await clientFor(machineId);
-		return json(await herdr.request(method, params));
+		try {
+			return json(await herdr.request(method, params));
+		} catch (e) {
+			// A hang-up from a herdr that still answers ping is a method it does
+			// not know, not an outage. Left as 503, the browser retries the claim
+			// every few seconds for as long as the split is open.
+			if (e instanceof HerdrHangupError && (await answersPing(herdr))) {
+				throw error(501, 'this Herdr build does not support tab viewport leases');
+			}
+			throw e;
+		}
 	} catch (e) {
+		if (isHttpError(e)) throw e;
 		herdrError(e);
+	}
+}
+
+async function answersPing(herdr: {
+	request: (method: string, params: object, timeoutMs?: number) => Promise<unknown>;
+}) {
+	try {
+		await herdr.request('ping', {}, 2000);
+		return true;
+	} catch {
+		return false;
 	}
 }
 

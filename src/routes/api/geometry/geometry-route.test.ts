@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { HerdrRequestError } from '$lib/server/herdr/client';
+import { HerdrHangupError, HerdrRequestError } from '$lib/server/herdr/client';
 
 const herdr = vi.hoisted(() => ({
 	request: vi.fn(),
@@ -89,5 +89,24 @@ describe('POST /api/geometry', () => {
 			new HerdrRequestError('machine_unreachable', 'machine tm-dev is not reachable')
 		);
 		expect(await status({ ...CLAIM, tabId: 'tm-dev~w1:t1' })).toBe(503);
+	});
+
+	// Stable Herdr 0.9.1 has no lease methods and, unlike earlier builds, hangs
+	// up on an unknown method instead of naming it. Read as "unreachable", the
+	// browser retried the claim for ever; a live ping proves it is unsupported.
+	it('reports a Herdr that hangs up on the lease method but answers ping as unsupported', async () => {
+		herdr.request.mockImplementation(async (method: string) => {
+			if (method === 'ping') return { type: 'pong', version: '0.9.1', protocol: 22 };
+			throw new HerdrHangupError(method);
+		});
+		expect(await status(CLAIM)).toBe(501);
+		expect(herdr.request).toHaveBeenCalledWith('ping', {}, expect.any(Number));
+	});
+
+	it('keeps a hang-up a 503 when Herdr does not answer ping either', async () => {
+		herdr.request.mockImplementation(async (method: string) => {
+			throw new HerdrHangupError(method);
+		});
+		expect(await status(CLAIM)).toBe(503);
 	});
 });
