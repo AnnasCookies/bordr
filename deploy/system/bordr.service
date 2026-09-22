@@ -7,7 +7,7 @@
 # belongs to the system manager. deploy/user/ has the user-manager variant for a
 # single-user desktop where that trade-off is fine.
 #
-# __HOME__ and __USER__ are rendered at install time: a system unit cannot use
+# The __PLACEHOLDERS__ are rendered by deploy/install-system-units.sh: a system unit cannot use
 # %h, which resolves to /root rather than the User= home.
 [Unit]
 Description=bordr — mobile workspace for herdr
@@ -19,13 +19,13 @@ After=network-online.target herdr-session.service
 [Service]
 Type=simple
 User=__USER__
-Group=__USER__
-WorkingDirectory=__HOME__/bordr
+Group=__GROUP__
+WorkingDirectory=__CHECKOUT__
 # Loopback unless .env says otherwise: EnvironmentFile wins over Environment,
 # so .env can only ever tighten or deliberately override this, and a .env
 # with no HOST line cannot fall through to the adapter's 0.0.0.0.
 Environment=HOST=127.0.0.1
-EnvironmentFile=__HOME__/bordr/.env
+EnvironmentFile=__CHECKOUT__/.env
 # svelte-adapter-bun defaults to a 512KB request cap — camera photos need
 # more; the image endpoint allows six 15MB images per message above this.
 Environment=BODY_SIZE_LIMIT=100M
@@ -36,12 +36,11 @@ Environment=IDLE_TIMEOUT=120
 # Live state outside the checkout: a git clean, worktree op or test run in
 # the working tree would otherwise delete push subscriptions and watches.
 Environment=BORDR_DATA_DIR=__HOME__/.local/state/bordr
-# The official installer's path; `which bun` if yours lives elsewhere.
 # The copy `bun run deploy` publishes, not ./build: every gate build rewrites
 # build/, and serving it directly swapped assets under the running app. The
 # working directory stays the checkout, which .env and the omp startup
 # extension are resolved against.
-ExecStart=__HOME__/.bun/bin/bun __HOME__/.local/lib/bordr/index.js
+ExecStart=__BUN__ __HOME__/.local/lib/bordr/index.js
 # always, not on-failure: a clean SIGTERM (stray stop, session churn,
 # OOM reaper) otherwise leaves bordr down silently until someone notices
 # the phone 500ing. The app holds no state that a restart harms.

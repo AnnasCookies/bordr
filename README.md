@@ -269,8 +269,9 @@ nothing came back until the next login. `deploy/user/` still holds the
 user-manager variant if you are on a single-user desktop and prefer it — the
 instructions above were that variant until this release.
 
-Editing the units by hand is not required: the installer renders `__HOME__` and
-`__USER__` for you. Do it in `deploy/system/` if you need other changes, not in
+Editing the units by hand is not required: the installer fills in your user,
+group, home, this checkout's path, and the `bun` and `herdr` it finds on `PATH`
+(override with `BUN_BIN=… HERDR_BIN=…`). Do it in `deploy/system/` if you need other changes, not in
 `/etc/systemd/system`, or your next install quietly reverts them.
 
 `herdr-session.service` runs `herdr --session main server` headlessly so the

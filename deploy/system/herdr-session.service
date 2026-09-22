@@ -7,7 +7,7 @@
 # belongs to the system manager. deploy/user/ has the user-manager variant for a
 # single-user desktop where that trade-off is fine.
 #
-# __HOME__ and __USER__ are rendered at install time: a system unit cannot use
+# The __PLACEHOLDERS__ are rendered by deploy/install-system-units.sh: a system unit cannot use
 # %h, which resolves to /root rather than the User= home.
 [Unit]
 # The herdr session must exist before anything that reads its socket.
@@ -20,8 +20,8 @@ After=network-online.target
 [Service]
 Type=simple
 User=__USER__
-Group=__USER__
-ExecStart=__HOME__/.local/bin/herdr --session main server
+Group=__GROUP__
+ExecStart=__HERDR__ --session main server
 Restart=on-failure
 # A second server for the same session exits 1 with "already running" and
 # leaves the first untouched. That is this unit's job already DONE, not a
