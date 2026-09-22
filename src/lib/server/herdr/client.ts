@@ -42,6 +42,18 @@ function peerTimeout(params: unknown): number | undefined {
  * on a local Unix socket, and self-healing across herdr restarts), and
  * subscribe() holds a dedicated connection that becomes a pure event stream.
  */
+/**
+ * herdr closed the socket without answering. Stable 0.9.1 does this for a
+ * method it does not know, where earlier builds answered `unknown variant`, so
+ * a hang-up alone cannot tell "unsupported" from "herdr went away".
+ */
+export class HerdrHangupError extends Error {
+	constructor(readonly method: string) {
+		super(`herdr closed the connection before answering ${method}`);
+		this.name = 'HerdrHangupError';
+	}
+}
+
 export class HerdrClient {
 	constructor(
 		private socketPath: string,
@@ -78,9 +90,7 @@ export class HerdrClient {
 			);
 
 			socket.on('error', (e) => settle(() => reject(e)));
-			socket.on('close', () =>
-				settle(() => reject(new Error(`herdr closed the connection before answering ${method}`)))
-			);
+			socket.on('close', () => settle(() => reject(new HerdrHangupError(method))));
 			socket.on('data', (data) => {
 				let frames: HerdrFrame[];
 				try {
