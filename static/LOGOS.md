@@ -42,6 +42,7 @@ weight as the marks beside it.
 
 ## The collie
 
-`collie-hero.png`, `collie-badge.png`, `collie.svg` and the `patrl-*.png` icons
+`collie-hero.png`, `collie-badge.png`, `collie.svg`, the `patrl-*.png` icons
+and the README banner (`.github/media/banner.jpg`)
 were generated with ChatGPT from the maintainer's own brief for this project,
 and ship with it under the MIT licence.
