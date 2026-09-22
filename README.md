@@ -1,6 +1,4 @@
-<p align="center"><img src="static/collie-hero.png" width="150" alt="the bordr collie"/></p>
-
-<h1 align="center">bordr</h1>
+<p align="center"><img src=".github/media/banner.jpg" alt="bordr — herd your agents from your phone: a pixel-art border collie beside a phone listing agents"/></p>
 
 <p align="center">
   <strong>Read and drive every coding agent on your machine, from your phone. <br>
