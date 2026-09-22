@@ -255,14 +255,24 @@ reads `.env` when you run the build by hand, and the unit below sets the same.
 ### Keep it running
 
 ```bash
-mkdir -p ~/.config/systemd/user
-cp deploy/herdr-session.service deploy/bordr.service ~/.config/systemd/user/
-# edit WorkingDirectory, EnvironmentFile and ExecStart (`which bun`, `which herdr`)
+deploy/install-system-units.sh                  # renders deploy/system/* into /etc/systemd/system
 bun run build && bun scripts/publish-build.ts   # the copy the unit runs
-systemctl --user daemon-reload
-systemctl --user enable --now herdr-session bordr
-loginctl enable-linger "$USER"   # so it survives logout and starts at boot
+sudo systemctl enable --now herdr-session bordr
 ```
+
+**System units, not user units.** A user unit dies with the systemd user
+manager, and that is not hypothetical: on 2026-09-20 a stray SIGTERM to
+`user@1000` made it run `exit.target`, which stopped herdr, bordr and all 18
+agent panes at once and SIGKILLed six agents. `loginctl enable-linger` keeps a
+manager alive across logouts but never resurrects one that has _exited_, so
+nothing came back until the next login. `deploy/user/` still holds the
+user-manager variant if you are on a single-user desktop and prefer it — the
+instructions above were that variant until this release.
+
+Editing the units by hand is not required: the installer fills in your user,
+group, home, this checkout's path, and the `bun` and `herdr` it finds on `PATH`
+(override with `BUN_BIN=… HERDR_BIN=…`). Do it in `deploy/system/` if you need other changes, not in
+`/etc/systemd/system`, or your next install quietly reverts them.
 
 `herdr-session.service` runs `herdr --session main server` headlessly so the
 session exists at boot. This matters more than it looks: if you reach herdr
@@ -282,9 +292,10 @@ app. A phone that has the app open keeps running the old code until it
 reloads, so the app checks for a new build every 30 seconds (and whenever it
 comes back to the foreground) and offers a "tap to reload" pill.
 
-Already-installed units must be upgraded too: copy the updated
-`deploy/bordr.service`, retain your `WorkingDirectory`/`EnvironmentFile` and Bun
-path edits, run `systemctl --user daemon-reload`, then restart after publishing.
+Already-installed units must be upgraded too: re-run
+`deploy/install-system-units.sh` (or copy `deploy/user/bordr.service` and run
+`systemctl --user daemon-reload` if you kept the user-unit layout), then restart
+after publishing. `bun run deploy` finds the unit in whichever manager holds it.
 For a custom `BORDR_LIVE_DIR`, set the unit's `ExecStart` to Bun plus
 `<BORDR_LIVE_DIR>/index.js`; changing the environment variable alone does not move
 the unit. An existing real directory requires the one-time command
