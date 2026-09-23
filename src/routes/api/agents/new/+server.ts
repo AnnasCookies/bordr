@@ -82,7 +82,10 @@ export const POST: RequestHandler = async ({ request }) => {
 			'workspace.create',
 			{
 				cwd: directory,
-				label: label?.trim() || kind,
+				// null lets herdr name it after the folder, as it does for a
+				// workspace made at the terminal. The harness's name told you
+				// nothing: every Claude session was a workspace called "claude".
+				label: label?.trim() || null,
 				focus: false
 			}
 		);
