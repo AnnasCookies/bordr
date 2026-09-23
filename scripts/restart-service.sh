@@ -10,6 +10,9 @@ if systemctl --user cat "$SERVICE" >/dev/null 2>&1; then
 fi
 if systemctl cat "$SERVICE" >/dev/null 2>&1; then
   if [ "$(id -u)" = "0" ]; then exec systemctl restart "$SERVICE"; fi
+  # The polkit rule from deploy/install-system-units.sh allows this without a
+  # password; sudo is only the fallback when that rule is not installed.
+  if systemctl restart --no-ask-password "$SERVICE" 2>/dev/null; then exit 0; fi
   exec sudo systemctl restart "$SERVICE"
 fi
 echo "no $SERVICE unit found in either manager; skipping restart" >&2

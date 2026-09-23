@@ -12,10 +12,14 @@ import { promptWithPaneFallback } from './prompt-retry';
 
 const DEFAULT_SOCKET = join(homedir(), '.config', 'herdr', 'sessions', 'main', 'herdr.sock');
 
-/** `…/sessions/<name>/herdr.sock` — the directory above the socket names it. */
+/**
+ * `…/sessions/<name>/herdr.sock` names its session by directory. The default
+ * session's socket sits in herdr's config dir itself (`~/.config/herdr/herdr.sock`),
+ * which names nothing — reading the directory there reported "herdr".
+ */
 export function sessionName(socketPath: string): string {
 	const parts = socketPath.split('/').filter(Boolean);
-	return parts.length >= 2 ? parts[parts.length - 2] : 'unknown';
+	return parts.at(-3) === 'sessions' ? parts[parts.length - 2] : 'default';
 }
 const STATUSES: AgentStatus[] = ['idle', 'working', 'blocked', 'done', 'unknown'];
 const RANK: Record<AgentStatus, number> = { blocked: 0, working: 1, done: 2, idle: 3, unknown: 4 };

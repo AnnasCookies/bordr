@@ -254,28 +254,55 @@ reads `.env` when you run the build by hand, and the unit below sets the same.
 
 ### Keep it running
 
+Pick one. Bordr works with either and finds whichever you installed; Settings →
+System shows which one it is driving.
+
+**System units** (recommended on a machine that stays up):
+
 ```bash
-deploy/install-system-units.sh                  # renders deploy/system/* into /etc/systemd/system
+deploy/install-system-units.sh --session main   # renders deploy/system/* into /etc/systemd/system
 bun run build && bun scripts/publish-build.ts   # the copy the unit runs
 sudo systemctl enable --now herdr-session bordr
 ```
 
-**System units, not user units.** A user unit dies with the systemd user
+**User units** (a single-user desktop, no root needed):
+
+```bash
+mkdir -p ~/.config/systemd/user
+cp deploy/user/herdr-session@.service deploy/user/bordr.service ~/.config/systemd/user/
+# edit WorkingDirectory, EnvironmentFile and ExecStart (`which bun`, `which herdr`)
+bun run build && bun scripts/publish-build.ts
+systemctl --user daemon-reload
+systemctl --user enable --now herdr-session@main bordr
+loginctl enable-linger "$USER"   # so it runs without a login and starts at boot
+```
+
+`--session` / `herdr-session@<name>` is the herdr session bordr follows —
+`default` for the one plain `herdr` attaches to. Run only one of the two:
+two servers for one session fight over the same socket.
+
+**Why system units are recommended.** A user unit dies with the systemd user
 manager, and that is not hypothetical: on 2026-09-20 a stray SIGTERM to
 `user@1000` made it run `exit.target`, which stopped herdr, bordr and all 18
 agent panes at once and SIGKILLed six agents. `loginctl enable-linger` keeps a
 manager alive across logouts but never resurrects one that has _exited_, so
-nothing came back until the next login. `deploy/user/` still holds the
-user-manager variant if you are on a single-user desktop and prefer it — the
-instructions above were that variant until this release.
+nothing came back until the next login.
+
+The system installer also adds a polkit rule
+(`/etc/polkit-1/rules.d/50-bordr.rules`) letting your user start, stop and
+restart `herdr-session` and `bordr` — those two units, those three verbs —
+without a password. Settings → System and `bun run deploy` need it: they run as
+you, with no terminal to answer a sudo prompt.
 
 Editing the units by hand is not required: the installer fills in your user,
 group, home, this checkout's path, and the `bun` and `herdr` it finds on `PATH`
 (override with `BUN_BIN=… HERDR_BIN=…`). Do it in `deploy/system/` if you need other changes, not in
 `/etc/systemd/system`, or your next install quietly reverts them.
 
-`herdr-session.service` runs `herdr --session main server` headlessly so the
-session exists at boot. This matters more than it looks: if you reach herdr
+The herdr unit runs `herdr --session <name> server` headlessly so the
+session exists at boot, and its `ExitType=cgroup` is what lets a live-handoff
+restart (Settings → System → Restart herdr) keep your agents running. This
+matters more than it looks: if you reach herdr
 through a browser terminal such as ttyd, that spawns `herdr --session main`
 **per connection**, so after a reboot no herdr server exists until a human
 opens the terminal, and bordr comes up pointing at nothing.

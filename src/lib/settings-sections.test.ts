@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { SECTIONS } from './settings-sections';
+import { ROUTED, SECTIONS } from './settings-sections';
 
 /**
  * The nav lists the sections; the page renders them. They are two files, so
@@ -29,8 +29,8 @@ describe('settings sections', () => {
 		const headings = [...page.matchAll(/<SettingsSection heading="([^"]+)">/g)].map((m) =>
 			m[1].trim().replace(/&amp;/g, '&')
 		);
-		// Connection is the one section with no heading of its own — it is a
-		// single link out to its own route.
-		expect(headings).toEqual(SECTIONS.filter((s) => s !== 'connection'));
+		// Routed sections have no heading of their own — each is a single link
+		// out to its own route.
+		expect(headings).toEqual(SECTIONS.filter((s) => !ROUTED.includes(s)));
 	});
 });

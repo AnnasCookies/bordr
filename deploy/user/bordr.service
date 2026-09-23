@@ -1,9 +1,9 @@
 [Unit]
 Description=bordr — mobile workspace for herdr
 # Ordering only: bordr degrades gracefully without herdr and must not pull a
-# unit in on every restart. herdr-session is WantedBy=default.target and
+# unit in on every restart. herdr-session@<name> is WantedBy=default.target and
 # starts at boot on its own.
-After=network-online.target herdr-session.service
+After=network-online.target herdr-session@main.service herdr-session@default.service
 
 [Service]
 Type=simple
