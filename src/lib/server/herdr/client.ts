@@ -56,7 +56,7 @@ export class HerdrHangupError extends Error {
 
 export class HerdrClient {
 	constructor(
-		private socketPath: string,
+		readonly socketPath: string,
 		private timeoutMs = 10_000
 	) {}
 

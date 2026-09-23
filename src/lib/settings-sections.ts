@@ -14,7 +14,11 @@ export const SECTIONS = [
 	'chat bubbles',
 	'transcript',
 	'notifications',
-	'connection'
+	'connection',
+	'system'
 ] as const;
+
+/** Sections that are routes of their own rather than panes of `/settings`. */
+export const ROUTED: readonly string[] = ['connection', 'system'];
 
 export type SettingsSection = (typeof SECTIONS)[number];

@@ -15,7 +15,7 @@
 	import { screen, watchWide } from '$lib/wide.svelte';
 	import SettingsNav from '$lib/components/settings-nav.svelte';
 	import SettingsSection from '$lib/components/settings-section.svelte';
-	import { SECTIONS } from '$lib/settings-sections';
+	import { ROUTED, SECTIONS } from '$lib/settings-sections';
 	import { page } from '$app/state';
 	import Icon from '$lib/components/icon.svelte';
 	import { checkPush, togglePushDetailed, type PushState } from '$lib/push-client';
@@ -275,13 +275,13 @@
 	 * window, with no way to get to `notifications` except to travel past
 	 * everything else.
 	 *
-	 * `connection` is the exception. It is a route of its own, and the nav
-	 * sends a desktop straight there, so the card here that links to it would
-	 * only ever be a link to the page you just asked for.
+	 * `connection` and `system` are the exceptions. Each is a route of its own,
+	 * and the nav sends a desktop straight there, so the card here that links to
+	 * it would only ever be a link to the page you just asked for.
 	 */
 	function shown(key: string): boolean {
 		if (!screen.wide) return true;
-		return key !== 'connection' && section === key;
+		return !ROUTED.includes(key) && section === key;
 	}
 </script>
 
@@ -1926,6 +1926,21 @@
 								class="flex min-h-11 items-center gap-3 px-3.5 py-3"
 							>
 								<span class="flex-1 text-[15px]">Connection</span>
+								<span class="shrink-0 text-faint"><Icon name="arrow-up-right" size={16} /></span>
+							</a>
+						</div>
+					</section>
+				{/if}
+
+				{#if shown('system')}
+					<section>
+						<div class="overflow-hidden rounded-xl border border-hairline bg-card">
+							<a
+								href={resolve('/settings/system')}
+								class="flex min-h-11 items-center gap-3 px-3.5 py-3"
+							>
+								<span class="flex-1 text-[15px]">System</span>
+								<span class="font-mono text-[11px] text-faint">herdr, updates, commands</span>
 								<span class="shrink-0 text-faint"><Icon name="arrow-up-right" size={16} /></span>
 							</a>
 						</div>

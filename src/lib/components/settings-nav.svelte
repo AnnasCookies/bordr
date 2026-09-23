@@ -1,7 +1,7 @@
 <script lang="ts">
 	import { resolve } from '$app/paths';
 	import type { ResolvedPathname } from '$app/types';
-	import { SECTIONS } from '$lib/settings-sections';
+	import { ROUTED, SECTIONS } from '$lib/settings-sections';
 
 	/**
 	 * The settings sections, as a desktop nav.
@@ -18,12 +18,12 @@
 	let { active }: { active: string } = $props();
 
 	/**
-	 * Connection is its own route — it has live state and a back button of its
-	 * own — so it is the one entry that navigates rather than switching a pane.
+	 * Connection and system are routes of their own — they have live state and
+	 * a back button of their own — so they navigate rather than switching a pane.
 	 */
 	const href = (key: string): ResolvedPathname =>
-		key === 'connection'
-			? resolve('/settings/connection')
+		ROUTED.includes(key)
+			? ((resolve('/settings') + `/${key}`) as ResolvedPathname)
 			: ((resolve('/settings') + `?s=${encodeURIComponent(key)}`) as ResolvedPathname);
 </script>
 

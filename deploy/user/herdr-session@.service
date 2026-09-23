@@ -3,12 +3,12 @@
 # Previously only ttyd started at boot, and ttyd spawns `herdr --session
 # main` per CONNECTION — so after a reboot no server existed until a human
 # opened the terminal or SSH'd in, and bordr came up pointing at nothing.
-Description=herdr headless session (main)
+Description=herdr headless session (%i)
 After=network-online.target
 
 [Service]
 Type=simple
-ExecStart=%h/.local/bin/herdr --session main server
+ExecStart=%h/.local/bin/herdr --session %i server
 Restart=on-failure
 # A second server for the same session exits 1 with "already running" and
 # leaves the first untouched. That is this unit's job already DONE, not a
@@ -21,6 +21,12 @@ RestartSec=10
 # The session owns long-lived agent panes; never let a stop race them.
 TimeoutStopSec=20
 KillMode=mixed
+# Live handoff (Settings → System → Restart, or `herdr update --handoff`)
+# starts a new server that takes over the panes, then the old one exits. By
+# default systemd reads that exit as the service ending and kills the new
+# server with every agent in it. cgroup keeps the unit up while any of its
+# processes are.
+ExitType=cgroup
 
 [Install]
 WantedBy=default.target

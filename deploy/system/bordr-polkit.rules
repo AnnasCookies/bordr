@@ -1,0 +1,16 @@
+// Lets __USER__ start, stop and restart bordr's two system units without a
+// password, and nothing else. Settings → System starts and stops herdr, and
+// `bun run deploy` restarts bordr; both run as __USER__ with no terminal to
+// type a sudo password into.
+polkit.addRule(function (action, subject) {
+	if (action.id !== 'org.freedesktop.systemd1.manage-units') return;
+	if (subject.user !== '__USER__') return;
+	var unit = action.lookup('unit');
+	var verb = action.lookup('verb');
+	if (
+		(unit === 'herdr-session.service' || unit === 'bordr.service') &&
+		(verb === 'start' || verb === 'stop' || verb === 'restart')
+	) {
+		return polkit.Result.YES;
+	}
+});
