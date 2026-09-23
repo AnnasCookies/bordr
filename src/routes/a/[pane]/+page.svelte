@@ -535,7 +535,16 @@
 	const controlTargets = $derived(
 		[
 			{ scope: 'pane' as const, id: detail.paneId, label: detail.title || detail.paneId },
-			detail.tabId ? { scope: 'tab' as const, id: detail.tabId, label: detail.tabLabel } : null
+			detail.tabId ? { scope: 'tab' as const, id: detail.tabId, label: detail.tabLabel } : null,
+			// The name in the sidebar. Left out, a rename from here only ever
+			// reached the pane, which nothing on the phone shows.
+			detail.workspaceId
+				? {
+						scope: 'workspace' as const,
+						id: detail.workspaceId,
+						label: detail.workspaceLabel
+					}
+				: null
 		].filter((target) => target !== null)
 	);
 	const shownControlTargets = $derived(

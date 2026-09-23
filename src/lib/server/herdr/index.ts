@@ -131,9 +131,17 @@ export function toSummary(
 	const readdress = (bare: string) => (bare ? formatPane(machineId, bare) : '');
 	// The label maps come from this host's herdr, keyed by herdr's own ids.
 	const workspaceLabel = workspaceLabels.get(bareWorkspace);
-	const named =
-		(typeof raw.name === 'string' && raw.name) ||
-		(workspaceLabel && !/^\d+$/.test(workspaceLabel) ? workspaceLabel : '');
+	// bordr has to name an agent to start it, and with nothing typed that name
+	// is the harness (`claude`, or `claude-w38-p1` when taken). That says
+	// nothing, and ranking it first hid the workspace's real name.
+	const kind = typeof raw.agent === 'string' ? raw.agent : '';
+	const given =
+		typeof raw.name === 'string' &&
+		raw.name &&
+		!(kind && (raw.name === kind || new RegExp(`^${kind}-w[0-9a-z]+-p\\d+$`).test(raw.name)))
+			? raw.name
+			: '';
+	const named = given || (workspaceLabel && !/^\d+$/.test(workspaceLabel) ? workspaceLabel : '');
 	// A default tab is labelled with its own number, which says nothing the
 	// pane address does not already say.
 	const tabLabel = tabName(tabLabels.get(bareTab) ?? '');
