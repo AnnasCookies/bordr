@@ -58,6 +58,8 @@ export interface SubagentSummary {
 	done: boolean;
 	/** The sub-agent that spawned it, for anything deeper than a direct child. */
 	parentAgentId: string;
+	/** The Claude Code workflow run it belongs to, when a workflow started it. */
+	workflow?: { runId: string; name: string };
 }
 
 function sessionDir(transcriptPath: string): string {
@@ -249,6 +251,106 @@ async function listPiSubagents(transcriptPath: string): Promise<SubagentSummary[
 	return out;
 }
 
+/**
+ * Claude Code workflow runs keep their agents a level further down, one
+ * directory per run, with a journal the workflow engine appends to:
+ *
+ *   <session>/subagents/workflows/wf_<run>/
+ *       journal.jsonl            {"type":"started","agentId":…} then {"type":"result","agentId":…}
+ *       agent-<id>.jsonl         the agent's own transcript
+ *       agent-<id>.meta.json     { description: <label>, workflowPhase, … }
+ *   <session>/workflows/scripts/<name>-wf_<run>.js
+ *
+ * An agent is finished when the journal has its result. Its own transcript
+ * cannot say so: it ends on the structured-output tool result, which reads
+ * the same as a turn still in progress.
+ *
+ * ponytail: a run killed mid-way leaves its unfinished agents looking like
+ * they are still running, because nothing records the kill where bordr can
+ * read it. Read the parent's task-notification for the run if that bites.
+ */
+const WF_RUN = /^wf_[A-Za-z0-9-]+$/;
+const WF_ID = /^(wf_[A-Za-z0-9-]+)\.(agent-[A-Za-z0-9_-]+)$/;
+
+/**
+ * Line count and last timestamp per agent file, trusted while size and mtime
+ * hold. Every run a session ever started is listed on every poll, and a
+ * finished run's files never change again.
+ */
+const wfScans = new Map<
+	string,
+	{ size: number; mtimeMs: number; entries: number; lastAt: number }
+>();
+
+async function scanWorkflowAgent(path: string) {
+	const { size, mtimeMs } = await stat(path);
+	const cached = wfScans.get(path);
+	if (cached && cached.size === size && cached.mtimeMs === mtimeMs) return cached;
+	const text = await readFile(path, 'utf8');
+	const scan = {
+		size,
+		mtimeMs,
+		entries: text.split('\n').filter((l) => l.trim()).length,
+		lastAt: lastTimestamp(text)
+	};
+	wfScans.set(path, scan);
+	if (wfScans.size > PI_SCAN_LIMIT) wfScans.delete(wfScans.keys().next().value as string);
+	return scan;
+}
+
+async function listWorkflowAgents(transcriptPath: string): Promise<SubagentSummary[]> {
+	const root = join(subagentsDir(transcriptPath), 'workflows');
+	let runs: string[];
+	try {
+		runs = (await readdir(root)).filter((r) => WF_RUN.test(r));
+	} catch {
+		return [];
+	}
+	const scripts = await readdir(join(sessionDir(transcriptPath), 'workflows', 'scripts')).catch(
+		() => [] as string[]
+	);
+
+	const out: SubagentSummary[] = [];
+	for (const runId of runs) {
+		const dir = join(root, runId);
+		const script = scripts.find((f) => f.endsWith(`-${runId}.js`));
+		const name = script ? script.slice(0, -`-${runId}.js`.length) : runId;
+		const returned = new Set<string>();
+		const journal = await readFile(join(dir, 'journal.jsonl'), 'utf8').catch(() => '');
+		for (const line of journal.split('\n')) {
+			try {
+				const row = JSON.parse(line) as { type?: string; agentId?: string };
+				if (row.type === 'result' && row.agentId) returned.add(row.agentId);
+			} catch {
+				// A half-written final line is normal while the run is going.
+			}
+		}
+		for (const file of await readdir(dir).catch(() => [] as string[])) {
+			if (!file.endsWith('.meta.json')) continue;
+			const id = file.replace(/\.meta\.json$/, '');
+			try {
+				const meta = JSON.parse(await readFile(join(dir, file), 'utf8')) as Record<string, unknown>;
+				const scan = await scanWorkflowAgent(join(dir, `${id}.jsonl`));
+				out.push({
+					id: `${runId}.${id}`,
+					agentType: typeof meta.workflowPhase === 'string' ? meta.workflowPhase : 'workflow',
+					description: typeof meta.description === 'string' ? meta.description : '',
+					toolUseId: '',
+					spawnDepth: typeof meta.spawnDepth === 'number' ? meta.spawnDepth : 1,
+					parentAgentId: '',
+					entries: scan.entries,
+					lastAt: scan.lastAt,
+					done: returned.has(id.replace(/^agent-/, '')),
+					workflow: { runId, name }
+				});
+			} catch {
+				// A sidecar whose transcript has not appeared yet.
+			}
+		}
+	}
+	return out;
+}
+
 /** The timestamp of the last entry, without parsing the whole file. */
 function lastTimestamp(text: string): number {
 	const lines = text.split('\n');
@@ -340,7 +442,11 @@ export async function listSubagents(
 		delete (agent as { ended?: boolean }).ended;
 	}
 
-	return [...out, ...(await listPiSubagents(transcriptPath))].sort((a, b) => b.lastAt - a.lastAt);
+	return [
+		...out,
+		...(await listWorkflowAgents(transcriptPath)),
+		...(await listPiSubagents(transcriptPath))
+	].sort((a, b) => b.lastAt - a.lastAt);
 }
 
 /** One sub-agent's raw transcript, for the adapter to parse. */
@@ -349,6 +455,17 @@ export async function readSubagent(transcriptPath: string, id: string): Promise<
 	if (/^agent-[A-Za-z0-9_-]+$/.test(id)) {
 		try {
 			return await readFile(join(subagentsDir(transcriptPath), `${id}.jsonl`), 'utf8');
+		} catch {
+			return null;
+		}
+	}
+	const wf = WF_ID.exec(id);
+	if (wf) {
+		try {
+			return await readFile(
+				join(subagentsDir(transcriptPath), 'workflows', wf[1], `${wf[2]}.jsonl`),
+				'utf8'
+			);
 		} catch {
 			return null;
 		}

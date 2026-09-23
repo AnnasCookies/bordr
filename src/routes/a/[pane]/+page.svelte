@@ -571,6 +571,20 @@
 	// the session ever spawned, with no count to expand.
 	const shownSubs = $derived(strip === 'all' || showFinished ? [...running, ...finished] : running);
 	const openSubAgent = $derived(subs.find((a) => a.id === openSub) ?? null);
+	/**
+	 * Claude Code workflow runs still going, one chip each: a run of nine
+	 * agents reads as one job with a count, not nine unrelated ones.
+	 */
+	const workflows = $derived.by(() => {
+		const runs: Record<string, { name: string; total: number; done: number }> = {};
+		for (const a of subs) {
+			if (!a.workflow) continue;
+			const run = (runs[a.workflow.runId] ??= { name: a.workflow.name, total: 0, done: 0 });
+			run.total++;
+			if (a.done) run.done++;
+		}
+		return Object.entries(runs).filter(([, r]) => r.done < r.total);
+	});
 
 	/**
 	 * Restore and save the composer by pane. The store collapses a typing burst
@@ -3214,6 +3228,16 @@
 					<span class="shrink-0 font-mono text-[10px] tracking-[.06em] text-faint uppercase"
 						>agents</span
 					>
+					{#each workflows as [runId, run] (runId)}
+						<span
+							class="flex shrink-0 items-center gap-1.5 rounded-full border border-edge bg-chip px-2.5 py-1 text-[11.5px]"
+							title="Claude Code workflow {runId}"
+						>
+							<Spinner size={11} label="running" />
+							<span class="max-w-[10rem] truncate font-mono text-working">{run.name}</span>
+							<span class="font-mono text-[10px] text-faint">{run.done}/{run.total}</span>
+						</span>
+					{/each}
 					{#each shownSubs as sub (sub.id)}
 						<button
 							class="flex shrink-0 items-center gap-1.5 rounded-full border px-2.5 py-1 text-[11.5px] transition-colors hover:bg-chip {sub.done

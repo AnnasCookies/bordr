@@ -319,3 +319,53 @@ describe('readSubagent', () => {
 		}
 	});
 });
+
+describe('workflow agents', () => {
+	it('lists each run agent, done only once the journal has its result', async () => {
+		const transcript = session([]);
+		const sess = transcript.replace(/\.jsonl$/, '');
+		const run = join(sess, 'subagents', 'workflows', 'wf_abc-123');
+		mkdirSync(run, { recursive: true });
+		mkdirSync(join(sess, 'workflows', 'scripts'), { recursive: true });
+		writeFileSync(join(sess, 'workflows', 'scripts', 'kb-import-wf_abc-123.js'), '');
+		for (const [id, label] of [
+			['a1', 'write:email'],
+			['a2', 'write:apps']
+		]) {
+			writeFileSync(
+				join(run, `agent-${id}.meta.json`),
+				JSON.stringify({
+					agentType: 'workflow-subagent',
+					description: label,
+					workflowPhase: 'Write'
+				})
+			);
+			writeFileSync(join(run, `agent-${id}.jsonl`), entry('2026-09-23T18:00:00Z'));
+		}
+		writeFileSync(
+			join(run, 'journal.jsonl'),
+			[
+				{ type: 'launched' },
+				{ type: 'started', agentId: 'a1' },
+				{ type: 'started', agentId: 'a2' },
+				{ type: 'result', agentId: 'a1' }
+			]
+				.map((r) => JSON.stringify(r))
+				.join('\n')
+		);
+
+		const agents = await listSubagents(transcript);
+		const byLabel = Object.fromEntries(agents.map((a) => [a.description, a]));
+		expect(byLabel['write:email']).toMatchObject({
+			id: 'wf_abc-123.agent-a1',
+			agentType: 'Write',
+			done: true,
+			workflow: { runId: 'wf_abc-123', name: 'kb-import' }
+		});
+		expect(byLabel['write:apps'].done).toBe(false);
+		expect(await readSubagent(transcript, 'wf_abc-123.agent-a2')).toBe(
+			entry('2026-09-23T18:00:00Z')
+		);
+		expect(await readSubagent(transcript, 'wf_abc-123.agent-a2/../../x')).toBeNull();
+	});
+});
