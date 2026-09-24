@@ -1,7 +1,14 @@
 import { beforeEach, describe, expect, it } from 'vitest';
 import { rmSync } from 'node:fs';
 import { join } from 'node:path';
-import { isWatched, markRead, readState, setWatched, watchedPanes } from './state-store';
+import {
+	isWatched,
+	markRead,
+	readState,
+	seenStatus,
+	setWatched,
+	watchedPanes
+} from './state-store';
 
 const DATA_DIR = process.env.BORDR_DATA_DIR;
 
@@ -36,5 +43,16 @@ describe('done watches', () => {
 		setWatched('b', true);
 		setWatched('a', false);
 		expect(watchedPanes()).toEqual(['b']);
+	});
+});
+
+describe('seenStatus', () => {
+	it('turns done to idle once read at or past the seq it finished on', () => {
+		expect(seenStatus('done', 7, undefined)).toBe('done');
+		expect(seenStatus('done', 7, 6)).toBe('done');
+		expect(seenStatus('done', 7, 7)).toBe('idle');
+		// Only done is acknowledged; a read never hides work or a question.
+		expect(seenStatus('blocked', 7, 9)).toBe('blocked');
+		expect(seenStatus('working', 7, 9)).toBe('working');
 	});
 });
