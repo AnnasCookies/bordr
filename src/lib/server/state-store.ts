@@ -38,6 +38,20 @@ export function markRead(paneId: string, seq: number): void {
 	saveJson(READ_FILE, state);
 }
 
+/**
+ * herdr's `done` means finished and not yet looked at: its terminal turns
+ * the tick back to idle once the pane has been on screen. herdr only does
+ * that for its own client, so bordr does the same from its read state — a
+ * `done` pane read at or past the seq it finished on shows as idle.
+ */
+export function seenStatus<S extends string>(
+	status: S,
+	seq: number,
+	readSeq: number | undefined
+): S | 'idle' {
+	return status === 'done' && readSeq !== undefined && readSeq >= seq ? 'idle' : status;
+}
+
 // --- done-watches: panes whose done transitions push, until unwatched ---
 
 const WATCH_FILE = 'watch-done.json';

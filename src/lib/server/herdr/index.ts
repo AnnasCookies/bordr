@@ -9,6 +9,7 @@ import { SubscriptionManager } from './subscriptions';
 import { ensureConnection } from './connections';
 import { formatPane, parsePane } from './address';
 import { promptWithPaneFallback } from './prompt-retry';
+import { readState, seenStatus } from '../state-store';
 
 const DEFAULT_SOCKET = join(homedir(), '.config', 'herdr', 'sessions', 'main', 'herdr.sock');
 
@@ -115,7 +116,8 @@ export async function getManager(): Promise<SubscriptionManager> {
 export function toSummary(
 	raw: Record<string, unknown>,
 	workspaceLabels: Map<string, string> = new Map(),
-	tabLabels: Map<string, string> = new Map()
+	tabLabels: Map<string, string> = new Map(),
+	read: Record<string, number> = readState()
 ): AgentSummary {
 	const status = raw.agent_status as AgentStatus;
 	const paneId = String(raw.pane_id ?? '');
@@ -145,13 +147,14 @@ export function toSummary(
 	// A default tab is labelled with its own number, which says nothing the
 	// pane address does not already say.
 	const tabLabel = tabName(tabLabels.get(bareTab) ?? '');
+	const seq = Number(raw.state_change_seq ?? 0);
 	return {
 		paneId,
 		agent: String(raw.agent ?? 'unknown'),
 		title: named || String(raw.terminal_title_stripped ?? ''),
-		status: STATUSES.includes(status) ? status : 'unknown',
+		status: seenStatus(STATUSES.includes(status) ? status : 'unknown', seq, read[paneId]),
 		cwd: String(raw.cwd ?? ''),
-		seq: Number(raw.state_change_seq ?? 0),
+		seq,
 		workspaceId: readdress(bareWorkspace),
 		workspaceLabel: workspaceLabel && !/^\d+$/.test(workspaceLabel) ? workspaceLabel : '',
 		tabId: readdress(bareTab),
@@ -203,7 +206,8 @@ export async function listAgents(): Promise<AgentSummary[]> {
 		workspaceLabels(),
 		tabLabels()
 	]);
-	return sortAgents(result.agents.map((a) => toSummary(a, labels, tabs)));
+	const read = readState();
+	return sortAgents(result.agents.map((a) => toSummary(a, labels, tabs, read)));
 }
 
 /**
