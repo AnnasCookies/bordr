@@ -175,8 +175,46 @@ const MAX_FOOTER_GAP = 8;
  * (`after_last_horizontal_rule`) truncates mid-picker and is not usable here —
  * see spec §7a.
  */
+/**
+ * Claude Code's AskUserQuestion with previews draws the preview in a box to
+ * the RIGHT of the options, with a notes hint under it:
+ *
+ *     ❯ 1. Nested                       ┌──────────┐
+ *       2. Flat                         │ a        │
+ *                                       │   b      │
+ *                                       └──────────┘
+ *
+ *                                       Notes: press n to add notes
+ *
+ * Read as it stands, the box leaked into the labels ("2. Flat │ a"), and its
+ * height pushed the footer past MAX_FOOTER_GAP, so the options were thrown
+ * away as prose. The box follows the highlight, too, so a label that held a
+ * piece of it changed under the phone and the answer was refused as a
+ * different question. Everything from the box's column rightwards goes, and
+ * the rows left empty with it.
+ */
+function dropPreviewPanel(lines: string[]): string[] {
+	// The last box: a table in the agent's prose above can draw one too.
+	const top = lines.findLastIndex((line) => line.indexOf('┌') > 0);
+	if (top < 0) return lines;
+	const column = lines[top].indexOf('┌');
+	const bottom = lines.findIndex((line, i) => i > top && line[column] === '└');
+	if (bottom < 0) return lines;
+	const out: string[] = [];
+	lines.forEach((line, i) => {
+		const inPanel = i >= top && i <= bottom;
+		// The notes hint shares the column but not the box, so it is told
+		// apart by nothing but blanks to its left.
+		const beside = i > bottom && i <= bottom + 3 && line.slice(0, column).trim() === '';
+		if (!inPanel && !(beside && line.length > column)) return out.push(line);
+		const left = line.slice(0, column).trimEnd();
+		if (left) out.push(left);
+	});
+	return out;
+}
+
 export function parsePicker(visible: string): Picker | null {
-	const lines = visible.split('\n');
+	const lines = dropPreviewPanel(visible.split('\n'));
 	const options: PickerOption[] = [];
 	let firstOptionLine = -1;
 	let lastOptionLine = -1;
