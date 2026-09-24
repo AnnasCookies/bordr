@@ -169,7 +169,10 @@ function ghPull(cwd: string, branch: string): Promise<Pull | null> {
 	return new Promise((resolve) => {
 		execFile(
 			'gh',
-			['pr', 'view', branch, '--json', FIELDS],
+			// The branch comes from reading .git/HEAD directly, so it is whatever
+			// the file says. `--` keeps a name such as `--web` or `--repo=x`
+			// from being parsed as a flag; gh wants its flags before it.
+			['pr', 'view', '--json', FIELDS, '--', branch],
 			// Long enough for a cold API call, short enough that a hung gh does
 			// not hold a cache entry open forever.
 			{ cwd, timeout: 8_000, maxBuffer: 4 * 1024 * 1024 },
