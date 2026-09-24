@@ -36,4 +36,15 @@ describe('rewriteLocalPaths', () => {
 		);
 		expect(rewriteLocalPaths('[x](./notes.md)')).toBe('[x](./notes.md)');
 	});
+
+	it('leaves a target with a malformed escape as written instead of throwing', () => {
+		// decodeURI('/100%') throws URIError; before this, one such link in
+		// agent text failed the whole transcript parse.
+		const malformed = 'coverage is [done](/100%) now';
+		expect(rewriteLocalPaths(malformed)).toBe(malformed);
+		// And a good link beside it is still rewritten.
+		expect(rewriteLocalPaths('[a](/100%) and ![b](/home/tony/repos/out.png)')).toBe(
+			'[a](/100%) and ![b](/raw/repos/out.png)'
+		);
+	});
 });
