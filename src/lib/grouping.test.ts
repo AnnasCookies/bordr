@@ -7,12 +7,13 @@ import {
 	flatOrder,
 	holdsAnswer,
 	isDirty,
+	nestWorktrees,
 	partitionAgents,
 	pickerKey,
 	rollupCounts,
 	sortAgents
 } from './grouping';
-import type { AgentStatus, AgentSummary } from './types';
+import type { AgentStatus, AgentSummary, WorkspaceNode } from './types';
 
 function agent(over: Partial<AgentSummary> & { paneId: string }): AgentSummary {
 	return {
@@ -375,4 +376,44 @@ it('does not hold a same-word approval for a different subject or write-in meani
 			8000
 		)
 	).toBe(false);
+});
+
+describe('nestWorktrees', () => {
+	const ws = (id: string, repo?: string, linked = false): WorkspaceNode => ({
+		workspaceId: id,
+		machine: '',
+		label: id,
+		number: 0,
+		focused: false,
+		branch: '',
+		ahead: 0,
+		behind: 0,
+		worktree: repo ? { repoKey: repo, repoName: repo, linked } : undefined,
+		tabs: []
+	});
+	const shape = (rows: ReturnType<typeof nestWorktrees>) =>
+		rows.map((r) =>
+			r.kind === 'repo' ? `#${r.name}` : `${r.nested ? '  ' : ''}${r.workspace.workspaceId}`
+		);
+
+	it('puts worktrees under the main checkout, wherever herdr listed them', () => {
+		const rows = nestWorktrees([
+			ws('wt1', 'ccd', true),
+			ws('plain'),
+			ws('ccd', 'ccd'),
+			ws('wt2', 'ccd', true)
+		]);
+		// wt1 comes before its main checkout, so the repo heading goes there instead.
+		expect(shape(rows)).toEqual(['#ccd', '  wt1', '  wt2', 'plain', 'ccd']);
+	});
+
+	it('nests under the main checkout when it comes first', () => {
+		const rows = nestWorktrees([ws('ccd', 'ccd'), ws('x'), ws('wt', 'ccd', true)]);
+		expect(shape(rows)).toEqual(['ccd', '  wt', 'x']);
+	});
+
+	it('leaves a second workspace on the same checkout flat', () => {
+		const rows = nestWorktrees([ws('a', 'r'), ws('b', 'r')]);
+		expect(shape(rows)).toEqual(['a', 'b']);
+	});
 });

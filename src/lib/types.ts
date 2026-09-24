@@ -224,7 +224,17 @@ export interface WorkspaceNode {
 	ahead: number;
 	/** Commits behind the branch's upstream. Zero outside a repo or with no upstream. */
 	behind: number;
+	/** herdr's git checkout for the workspace; absent outside a repo or on an older herdr. */
+	worktree?: WorkspaceWorktree;
 	tabs: TabNode[];
+}
+
+export interface WorkspaceWorktree {
+	/** Same for every checkout of one repository: its common git dir. */
+	repoKey: string;
+	repoName: string;
+	/** A `git worktree` rather than the original clone. */
+	linked: boolean;
 }
 
 export type { Activity };
