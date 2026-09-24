@@ -27,7 +27,12 @@ export const GET: RequestHandler = async ({ params, url, request }) => {
 	} catch {
 		throw error(404, 'not found');
 	}
-	if (stat.isDirectory()) throw error(400, 'not a file');
+	// Regular files only, not merely "not a directory": a named pipe under a
+	// root passes resolveSafe and reports size 0, and the synchronous read
+	// below would then block the whole event loop until something wrote to
+	// it, stalling every request rather than just this one. Sockets and
+	// device nodes are refused for the same reason.
+	if (!stat.isFile()) throw error(400, 'not a file');
 	if (stat.size > MAX_BYTES) {
 		return new Response(
 			`This file is ${Math.round(stat.size / 1024 / 1024)}MB; bordr serves up to 50MB.\n`,
