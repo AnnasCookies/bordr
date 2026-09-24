@@ -144,6 +144,9 @@ async function treeFor(
 
 	const nodes = workspaces.workspaces.map((raw) => {
 		const workspaceId = formatPane(machineId, String(raw.workspace_id ?? ''));
+		// herdr 0.9.1+ names the repository each workspace sits in. A pane's cwd
+		// cannot say that: two worktrees of one repo have nothing in common.
+		const wt = raw.worktree as Record<string, unknown> | undefined;
 		return {
 			workspaceId,
 			machine: machineLabel,
@@ -153,6 +156,14 @@ async function treeFor(
 			branch: '',
 			ahead: 0,
 			behind: 0,
+			worktree:
+				wt && typeof wt.repo_key === 'string'
+					? {
+							repoKey: wt.repo_key,
+							repoName: String(wt.repo_name ?? ''),
+							linked: wt.is_linked_worktree === true
+						}
+					: undefined,
 			tabs: (byWorkspace.get(workspaceId) ?? []).sort((a, b) => a.number - b.number)
 		} satisfies WorkspaceNode;
 	});

@@ -4,7 +4,7 @@
 	import { showBackArrow, touchPoints } from '$lib/header-chrome';
 	import Icon from './icon.svelte';
 	import { SvelteSet } from 'svelte/reactivity';
-	import { agentTitle, compareAgentPriority } from '$lib/grouping';
+	import { agentTitle, compareAgentPriority, nestWorktrees } from '$lib/grouping';
 	import { agentStore } from '$lib/agents.svelte';
 	import { prefs, type AgentOrder } from '$lib/prefs.svelte';
 	import { followPointer } from '$lib/pointer-drag';
@@ -400,34 +400,44 @@
 				</button>
 
 				{#if !folded}
-					{#each group.workspaces as workspace (workspace.workspaceId)}
-						{@const c = counts(workspace)}
-						<a
-							href={paneHref(workspaceTarget(workspace))}
-							onclick={(event) => select(event, workspaceTarget(workspace))}
-							class="flex w-full items-center gap-2 border-l-2 py-1 pr-2 pl-3.5 transition-colors hover:bg-chip/60 {workspace.workspaceId ===
-							currentWorkspace
-								? 'border-l-working bg-chip'
-								: 'border-l-transparent'}"
-							aria-current={workspace.workspaceId === currentWorkspace ? 'true' : undefined}
-						>
-							{@render indicator(c.blocked > 0 ? 'blocked' : 'idle', true)}
-							<span class="min-w-0 flex-1">
-								<span class="block truncate text-[12.5px]"
-									>{workspace.label || workspace.workspaceId}</span
-								>
-								{#if workspace.branch && prefs.value.showBranches}
-									<span class="block truncate font-mono text-[10px] text-branch">
-										&#xe0a0; {workspace.branch}{#if workspace.ahead}<span class="text-ahead"
-												>&nbsp;&uarr;{workspace.ahead}</span
-											>{/if}{#if workspace.behind}<span class="text-behind"
-												>&nbsp;&darr;{workspace.behind}</span
-											>{/if}
-									</span>
-								{/if}
-							</span>
-							<span class="shrink-0 font-mono text-[10px] text-faint">{c.agents}</span>
-						</a>
+					{#each nestWorktrees(group.workspaces) as row (row.kind === 'repo' ? `repo:${row.key}` : row.workspace.workspaceId)}
+						{#if row.kind === 'repo'}
+							<p class="truncate py-1 pr-2 pl-4 font-mono text-[11px] text-muted">{row.name}</p>
+						{:else}
+							{@const workspace = row.workspace}
+							{@const c = counts(workspace)}
+							<a
+								href={paneHref(workspaceTarget(workspace))}
+								onclick={(event) => select(event, workspaceTarget(workspace))}
+								class="flex w-full items-center gap-2 border-l-2 py-1 pr-2 {row.nested
+									? 'pl-7'
+									: 'pl-3.5'} transition-colors hover:bg-chip/60 {workspace.workspaceId ===
+								currentWorkspace
+									? 'border-l-working bg-chip'
+									: 'border-l-transparent'}"
+								aria-current={workspace.workspaceId === currentWorkspace ? 'true' : undefined}
+							>
+								{@render indicator(c.blocked > 0 ? 'blocked' : 'idle', true)}
+								<span class="min-w-0 flex-1">
+									<span class="block truncate text-[12.5px]"
+										>{#if workspace.worktree?.linked}<span
+												class="text-faint"
+												title="worktree of {workspace.worktree.repoName}">⑂&nbsp;</span
+											>{/if}{workspace.label || workspace.workspaceId}</span
+									>
+									{#if workspace.branch && prefs.value.showBranches}
+										<span class="block truncate font-mono text-[10px] text-branch">
+											&#xe0a0; {workspace.branch}{#if workspace.ahead}<span class="text-ahead"
+													>&nbsp;&uarr;{workspace.ahead}</span
+												>{/if}{#if workspace.behind}<span class="text-behind"
+													>&nbsp;&darr;{workspace.behind}</span
+												>{/if}
+										</span>
+									{/if}
+								</span>
+								<span class="shrink-0 font-mono text-[10px] text-faint">{c.agents}</span>
+							</a>
+						{/if}
 					{/each}
 				{/if}
 			{/each}
