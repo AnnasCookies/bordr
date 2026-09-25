@@ -18,7 +18,17 @@ const MD_IMAGE = /(!?)\[([^\]]*)\]\((\/[^)\s]+)\)/g;
 
 export function rewriteLocalPaths(text: string): string {
 	return text.replace(MD_IMAGE, (whole, bang: string, label: string, path: string) => {
-		const url = servableUrl(decodeURI(path));
+		// decodeURI throws on a malformed escape such as `/100%`, and the
+		// throw would take the whole transcript parse with it: one quoted
+		// README line was enough to blank a conversation. A target that will
+		// not decode cannot name a servable file, so leave it as written.
+		let decoded: string;
+		try {
+			decoded = decodeURI(path);
+		} catch {
+			return whole;
+		}
+		const url = servableUrl(decoded);
 		if (!url) return whole;
 		// A link to a file opens the viewer, which can page images, render
 		// markdown and offer a download; an image renders in place.
