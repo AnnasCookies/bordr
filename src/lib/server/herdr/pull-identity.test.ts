@@ -16,9 +16,10 @@ import { pullFor } from './pulls';
 it('queries and caches the displayed branch, not the mutable checkout', async () => {
 	expect(pullFor(null, '/fixture/repo', 'A')).toBeNull();
 	expect(pullFor(null, '/fixture/repo', 'B')).toBeNull();
-	expect(calls.map((call) => call.args.slice(0, 3))).toEqual([
-		['pr', 'view', 'A'],
-		['pr', 'view', 'B']
+	// The branch sits after `--`, so a name like `--web` stays a branch.
+	expect(calls.map((call) => [...call.args.slice(0, 2), ...call.args.slice(-2)])).toEqual([
+		['pr', 'view', '--', 'A'],
+		['pr', 'view', '--', 'B']
 	]);
 	calls[0].done(null, JSON.stringify({ number: 1 }));
 	calls[1].done(null, JSON.stringify({ number: 2 }));
