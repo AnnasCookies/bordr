@@ -63,6 +63,49 @@ export function subscriptionCount(): number {
 	return load().length;
 }
 
+/** An endpoint that accepts the connection and never answers held the whole
+ *  Promise.all open: the test button never returned, dead subscriptions in
+ *  that batch were never pruned, and a socket leaked per notification. The
+ *  real push services answer in well under a second. */
+const SEND_TIMEOUT_MS = 10_000;
+
+/**
+ * sendNotification, but with a deadline that holds under Bun.
+ *
+ * web-push's own `timeout` option relies on node:https's 'timeout' event,
+ * which Bun never fires while a connection is stuck in the TLS handshake:
+ * measured against a tarpit, the send still hung past 8s with a 3s timeout
+ * under Bun 1.4, where Node rejects. So web-push builds the encrypted,
+ * signed request and fetch sends it under an AbortSignal, which Bun honours.
+ * Redirects are not followed, matching web-push, and a non-2xx answer throws
+ * the same WebPushError it would have, so the 404/410 pruning is unchanged.
+ */
+async function deliver(sub: PushSubscription, body: string, ttlSeconds: number): Promise<void> {
+	const request = webpush.generateRequestDetails(sub, body, { TTL: ttlSeconds });
+	const headers = new Headers();
+	for (const [name, value] of Object.entries(request.headers)) {
+		// fetch computes the length of the body it actually sends.
+		if (name.toLowerCase() !== 'content-length') headers.set(name, String(value));
+	}
+	const response = await fetch(request.endpoint, {
+		method: request.method,
+		headers,
+		// Same Buffer-to-BodyInit bridge the /raw route uses.
+		body: request.body ? new Uint8Array(request.body) : null,
+		redirect: 'manual',
+		signal: AbortSignal.timeout(SEND_TIMEOUT_MS)
+	});
+	if (response.status < 200 || response.status > 299) {
+		throw new WebPushError(
+			'Received unexpected response code',
+			response.status,
+			Object.fromEntries(response.headers),
+			await response.text().catch(() => ''),
+			request.endpoint
+		);
+	}
+}
+
 export async function sendToAll(
 	payload: Record<string, unknown>,
 	/** Seconds the push service may queue an undelivered notification. Web
@@ -75,7 +118,7 @@ export async function sendToAll(
 	const results = await Promise.all(
 		subs.map(async (sub) => {
 			try {
-				await webpush.sendNotification(sub, JSON.stringify(payload), { TTL: ttlSeconds });
+				await deliver(sub, JSON.stringify(payload), ttlSeconds);
 				return { endpoint: sub.endpoint.slice(0, 60), ok: true };
 			} catch (e) {
 				// 404/410 mean the browser dropped the subscription — prune it.
