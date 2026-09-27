@@ -46,7 +46,7 @@
 	   the glyphs a harness status line is built from — so they stayed tofu
 	   while the font sat in the browser already holding them. */
 	unicode-range:
-		U+E000-E00A, U+E200-E2A9, U+E300-E3E3, U+E5FA-E6B7, U+E700-E8EF, U+EA60-EC1E, U+ED00-EFCE,
+		U+E000-E00A, U+E200-E2A9, U+E300-E3E3, U+E5FA-E6B7, U+E700-E8EF, U+EA60-ECFF, U+ED00-EFCE,
 		U+F000-F8FF;
 }
 

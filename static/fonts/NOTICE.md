@@ -15,3 +15,7 @@ travels with the font as the OFL requires.
 
 Regenerate with `scripts/build-nerd-subset.sh`, which reads a Nerd Font from
 the host rather than vendoring the 2.9MB original.
+
+Built from **Nerd Fonts 3.5.0** (`CaskaydiaMonoNerdFontMono-Regular.ttf`, "Version 2407.024;
+Nerd Fonts 3.5.0"). 3.5.0 is the first release whose Codicons carry the Claude (U+EC82)
+and OpenAI (U+EC81) logos, which is why the icons range runs to U+ECFF.
