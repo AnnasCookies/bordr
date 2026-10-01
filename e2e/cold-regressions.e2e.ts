@@ -85,6 +85,7 @@ async function fixture(
 			label: string;
 		}>,
 		extraBlocks: [] as unknown[],
+		userMessages: [] as string[],
 		trees: 0,
 		selected: 1,
 		options: [
@@ -211,6 +212,12 @@ async function fixture(
 				pull: null,
 				model: 'fixture-model',
 				messages: [
+					...state.userMessages.map((text) => ({
+						role: 'user',
+						text,
+						tools: [],
+						blocks: [{ kind: 'text', text }]
+					})),
 					{
 						role: 'assistant',
 						at: stamp,
@@ -561,6 +568,45 @@ test('restored interrupted sends stay recoverable; Off retains all children in t
 	await page.getByRole('button', { name: 'Restore draft', exact: true }).click();
 	await expect(page.locator('textarea').first()).toHaveValue('uncertain fixture send');
 });
+
+for (const [screen, viewport] of Object.entries({
+	phone: { width: 390, height: 844 },
+	desktop: { width: 1400, height: 900 }
+})) {
+	for (const repeated of [false, true]) {
+		test(`timestamp-free ${repeated ? 'repeated' : 'new'} prompts retire their pending copy on ${screen}`, async ({
+			page
+		}) => {
+			await page.setViewportSize(viewport);
+			const state = await fixture(page);
+			state.picker = false;
+			const text = 'Please inspect the fixture output.';
+			if (repeated) state.userMessages.push(text);
+			await openPane(page);
+			const composer = page.locator('textarea').first();
+			await composer.fill(text);
+			await composer.press('Control+Enter');
+			await expect.poll(() => state.promptCalls.length).toBe(1);
+			const copies = page.locator('.transcript-rows').getByText(text, { exact: true });
+			await expect(copies).toHaveCount(repeated ? 2 : 1);
+			await expect
+				.poll(async () =>
+					page.evaluate(() => JSON.parse(localStorage.getItem('bordr-pending:a') ?? '[]')[0]?.state)
+				)
+				.toBe('queued');
+
+			state.userMessages.push(text);
+			await openPane(page, 'b');
+			await openPane(page, 'a');
+			await expect(copies).toHaveCount(repeated ? 2 : 1);
+			await expect
+				.poll(async () =>
+					page.evaluate(() => JSON.parse(localStorage.getItem('bordr-pending:a') ?? '[]').length)
+				)
+				.toBe(0);
+		});
+	}
+}
 
 test('All includes finished-only children and desktop Files/Search menus have visible drawers', async ({
 	page

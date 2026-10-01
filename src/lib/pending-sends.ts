@@ -1,3 +1,5 @@
+import type { Message } from './server/transcript/types';
+
 /**
  * When an unacknowledged prompt should stop being shown.
  *
@@ -17,6 +19,10 @@ export interface PendingSend {
 	id: number;
 	text: string;
 	at: number;
+	/** Matching untimed transcript entries already present when this was sent. */
+	seen?: number;
+	/** Read window in MiB: widening history can add old matches, not new deliveries. */
+	window?: number;
 	/** Request lifecycle; accepted commands carry a browser-visible receipt. */
 	state?: 'sending' | 'unconfirmed' | 'queued' | 'accepted';
 	/** Slash-command word, without `/`, when this is terminal UI control. */
@@ -56,6 +62,31 @@ export function say(text: string): string {
 export function landedIn(text: string, landed: string[]): boolean {
 	const mine = say(text);
 	return mine !== '' && landed.some((l) => l === mine || l.startsWith(mine));
+}
+
+interface LandedPrompt {
+	text: string;
+	at: number;
+}
+
+/** One extraction rule for pre-send snapshots and later transcript acknowledgements. */
+export function transcriptPrompts(messages: Message[]): LandedPrompt[] {
+	const landed: LandedPrompt[] = [];
+	for (const message of messages) {
+		if (message.role !== 'user') continue;
+		if (say(message.text)) landed.push({ text: say(message.text), at: message.at ?? 0 });
+		for (const block of message.blocks ?? []) {
+			if (block.kind !== 'tool' || (block.name !== '!' && block.name !== '!!')) continue;
+			const command = say(String(block.input?.command ?? ''));
+			if (command) landed.push({ text: `${block.name}${command}`, at: message.at ?? 0 });
+		}
+	}
+	return landed;
+}
+
+/** Counts cannot mistake an earlier identical untimed prompt for the new send. */
+export function seenIn(text: string, landed: LandedPrompt[]): number {
+	return landed.filter((message) => !message.at && landedIn(text, [say(message.text)])).length;
 }
 
 /**
@@ -103,17 +134,37 @@ export const GRACE_MS = 20_000;
  */
 export function keepPending(
 	pending: PendingSend[],
-	landed: { text: string; at: number }[],
+	landed: LandedPrompt[],
 	settled: boolean,
-	now: number
+	now: number,
+	window?: number
 ): PendingSend[] {
 	return pending.filter((p) => {
 		// Still in the air. Nothing has been decided about it yet, and the
 		// request's own success or failure is what will decide.
 		if (p.state === 'sending' || p.state === 'unconfirmed') return true;
 		const matching = landed.filter((m) => m.at >= p.at && landedIn(p.text, [say(m.text)]));
+		// Grok and other adapters supply no timestamps. A new matching occurrence
+		// acknowledges the send, but only within the same read window: loading
+		// older history must not turn an old identical prompt into a receipt.
+		const untimed =
+			p.seen !== undefined &&
+			p.window === window &&
+			seenIn(p.text, landed) === p.seen + 1 &&
+			// A longer prompt may also match a shorter pending send. One entry
+			// must not acknowledge both; keep that ambiguous delivery visible.
+			!pending.some(
+				(other) =>
+					other.id !== p.id &&
+					landed.some(
+						(message) =>
+							!message.at &&
+							landedIn(p.text, [say(message.text)]) &&
+							landedIn(other.text, [say(message.text)])
+					)
+			);
 		if (
-			matching.length === 1 &&
+			(matching.length === 1 || (matching.length === 0 && untimed)) &&
 			pending.filter((other) => say(other.text) === say(p.text)).length === 1
 		)
 			return false;

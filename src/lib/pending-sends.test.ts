@@ -6,6 +6,8 @@ import {
 	landedIn,
 	onScreen,
 	say,
+	seenIn,
+	transcriptPrompts,
 	type PendingSend
 } from './pending-sends';
 
@@ -35,6 +37,35 @@ describe('keepPending', () => {
 		expect(keepPending([pending()], [{ text: 'run the tests', at: NOW }], false, NOW)).toEqual([]);
 	});
 
+	it('retires a single new matching prompt when the harness supplies no timestamp', () => {
+		expect(
+			keepPending(
+				[pending({ seen: 0, window: 1 })],
+				[{ text: 'run the tests', at: 0 }],
+				false,
+				NOW,
+				1
+			)
+		).toEqual([]);
+	});
+
+	it('does not manufacture acknowledgement for an older saved send without a snapshot', () => {
+		const legacy = pending();
+		expect(keepPending([legacy], [{ text: 'run the tests', at: 0 }], false, NOW, 1)).toEqual([
+			legacy
+		]);
+	});
+
+	it('does not acknowledge two prefix-overlapping sends from one untimed prompt', () => {
+		const sends = [
+			pending({ seen: 0, window: 1 }),
+			pending({ id: 2, text: 'run the tests twice', seen: 0, window: 1 })
+		];
+		expect(keepPending(sends, [{ text: 'run the tests twice', at: 0 }], false, NOW, 1)).toEqual(
+			sends
+		);
+	});
+
 	it('retires a delivered one the agent never took, once it has settled', () => {
 		expect(keepPending([pending()], [], true, NOW)).toEqual([]);
 	});
@@ -47,6 +78,65 @@ describe('keepPending', () => {
 		const fresh = pending({ at: NOW - 1_000 });
 		expect(keepPending([fresh], [], true, NOW)).toHaveLength(1);
 	});
+
+	it('does not acknowledge a repeated untimed send from the earlier identical turn', () => {
+		const repeated = pending({ seen: 1, window: 1 });
+		const earlier = { text: 'run the tests', at: 0 };
+		expect(keepPending([repeated], [earlier], false, NOW, 1)).toEqual([repeated]);
+		expect(keepPending([repeated], [earlier, earlier], false, NOW, 1)).toEqual([]);
+	});
+
+	it('does not use old matches added by widening the transcript window', () => {
+		const fresh = pending({ seen: 0, window: 1 });
+		expect(keepPending([fresh], [{ text: 'run the tests', at: 0 }], false, NOW, 4)).toEqual([
+			fresh
+		]);
+	});
+
+	it('does not discard ambiguous duplicate sends or multiple new untimed matches', () => {
+		const sent = pending({ seen: 0, window: 1 });
+		const landed = { text: 'run the tests', at: 0 };
+		expect(keepPending([sent, { ...sent, id: 2 }], [landed], false, NOW, 1)).toHaveLength(2);
+		expect(keepPending([sent], [landed, landed], false, NOW, 1)).toEqual([sent]);
+	});
+
+	it('keeps an in-flight or interrupted send even when an untimed match exists', () => {
+		for (const state of ['sending', 'unconfirmed'] as const) {
+			const sent = pending({ state, seen: 0, window: 1 });
+			expect(keepPending([sent], [{ text: 'run the tests', at: 0 }], false, NOW, 1)).toEqual([
+				sent
+			]);
+		}
+	});
+});
+
+it('snapshots the same normalised user prompts and shell commands that cleanup matches', () => {
+	const landed = transcriptPrompts([
+		{ role: 'assistant', text: 'run the tests', tools: [] },
+		{ role: 'user', text: 'run\n the   tests', tools: [] },
+		{
+			role: 'user',
+			text: '',
+			at: NOW,
+			tools: [],
+			blocks: [
+				{
+					kind: 'tool',
+					name: '!',
+					summary: '',
+					input: { command: 'echo   fixture' },
+					result: null,
+					diffs: []
+				}
+			]
+		}
+	]);
+	expect(landed).toEqual([
+		{ text: 'run the tests', at: 0 },
+		{ text: '!echo fixture', at: NOW }
+	]);
+	expect(seenIn('run the tests', landed)).toBe(1);
+	expect(seenIn('!echo fixture', landed)).toBe(0);
 });
 
 describe('landedIn', () => {

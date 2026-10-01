@@ -80,7 +80,13 @@
 	import { afterClose } from '$lib/after-close';
 	import { echoesAnswer, holdsAnswer } from './answer-echo';
 	import { glideInterrupted } from './glide-interrupt';
-	import { keepPending, restorePending, say, type PendingSend } from '$lib/pending-sends';
+	import {
+		keepPending,
+		restorePending,
+		seenIn,
+		transcriptPrompts,
+		type PendingSend
+	} from '$lib/pending-sends';
 	import { uniqueKeys } from '$lib/row-keys';
 	import { queueVerdict } from '$lib/queue';
 	import { pickerShortcut, pickerIdentity } from '$lib/picker-shortcut';
@@ -1228,26 +1234,14 @@
 		 * agent had read it and answered.
 		 */
 
-		// An array rather than a Set: this is a local scratch value, and the
-		// lint rule that steers reactive state to SvelteSet cannot tell the
-		// difference. There are only ever a handful of unsent prompts.
-		const landed: { text: string; at: number }[] = [];
-		for (const message of detail.messages) {
-			if (message.role !== 'user') continue;
-			if (say(message.text)) landed.push({ text: say(message.text), at: message.at ?? 0 });
-			for (const block of message.blocks ?? []) {
-				if (block.kind !== 'tool' || (block.name !== '!' && block.name !== '!!')) continue;
-				const command = say(String(block.input?.command ?? ''));
-				if (command) landed.push({ text: `${block.name}${command}`, at: message.at ?? 0 });
-			}
-		}
+		const landed = transcriptPrompts(detail.messages);
 
 		// The rule itself is in $lib/pending-sends.ts, with its tests — it is the
 		// one that lost messages, and it is easier to get wrong than it looks.
 		const settled = detail.status === 'idle' || detail.status === 'done';
 		// The clock, not Date.now(): reading it is what re-runs this as time
 		// passes. It trails real time by at most one tick.
-		const still = keepPending(pendingSends, landed, settled, pendingClock);
+		const still = keepPending(pendingSends, landed, settled, pendingClock, data.megabytes);
 		if (still.length !== pendingSends.length) pendingSends = still;
 	});
 
@@ -2175,13 +2169,16 @@
 		// the retire and confirm paths below leave the list alone.
 		const echo = echoesAnswer(picker) ? ++pendingSeq : null;
 		if (echo !== null) {
+			const echoText = text ?? chose?.label ?? String(index);
 			pendingSends = [
 				...pendingSends,
 				{
 					id: echo,
-					text: text ?? chose?.label ?? String(index),
+					text: echoText,
 					question: picker?.question ?? '',
 					at: Date.now(),
+					seen: seenIn(echoText, transcriptPrompts(detail.messages)),
+					window: data.megabytes,
 					state: 'sending'
 				}
 			];
@@ -2505,6 +2502,8 @@
 					id: optimistic,
 					text,
 					at: Date.now(),
+					seen: seenIn(text, transcriptPrompts(detail.messages)),
+					window: data.megabytes,
 					state: 'sending',
 					...(command && { command })
 				}
