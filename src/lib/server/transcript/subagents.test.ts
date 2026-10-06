@@ -171,6 +171,29 @@ describe('listSubagents', () => {
 		expect((await listSubagents(t, launch))[0].done).toBe(false);
 	});
 
+	it('finishes a child whose result scrolled out of the transcript tail', async () => {
+		const t = session([
+			{
+				id: 'agent-old',
+				meta: { agentType: 'Explore', toolUseId: 'toolu_gone' },
+				// Last wrote at 06:26; the tail below starts at 09:00, and holds no result.
+				lines: [
+					JSON.stringify({
+						type: 'user',
+						timestamp: '2026-10-06T06:26:22.180Z',
+						message: { role: 'user' }
+					})
+				]
+			}
+		]);
+		const tail = entry('2026-10-06T09:00:00.000Z');
+		expect((await listSubagents(t, tail))[0].done).toBe(true);
+		// Still inside the window: no result yet means still running.
+		expect((await listSubagents(t, entry('2026-10-06T06:00:00.000Z')))[0].done).toBe(false);
+		// No tail given at all says nothing about it either way.
+		expect((await listSubagents(t))[0].done).toBe(false);
+	});
+
 	it('uses an async completion notification but honours a later resume', async () => {
 		const t = session([
 			{
