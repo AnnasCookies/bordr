@@ -265,6 +265,20 @@ function lastTimestamp(text: string): number {
 	return 0;
 }
 
+/** The timestamp of the first complete entry: where a tail of a transcript starts. */
+function firstTimestamp(text: string): number {
+	for (const line of text.split('\n')) {
+		if (!line.trim()) continue;
+		try {
+			const at = Date.parse((JSON.parse(line) as { timestamp?: string }).timestamp ?? '');
+			if (at) return at;
+		} catch {
+			// A tail starts part-way through a line; skip the stump.
+		}
+	}
+	return 0;
+}
+
 /**
  * Every sub-agent of a session, newest activity first.
  *
@@ -330,8 +344,18 @@ export async function listSubagents(
 		return found;
 	};
 
+	// The caller hands over a tail, not the whole transcript. A result written
+	// before the tail starts is invisible to it, so a direct child that went
+	// quiet before that point and has no result in view finished off-screen:
+	// otherwise it spins for the rest of the session once enough has been
+	// written after it.
+	// ponytail: a child silent for a whole tail's worth of parent output is
+	// taken as finished; one genuinely stuck that long reads as done too.
+	const windowStart = firstTimestamp(sessionText);
 	for (const agent of withText) {
-		agent.done = agent.ended || isDone(agent, resolvedFor(agent.parentAgentId));
+		const offscreen =
+			!agent.parentAgentId && windowStart > 0 && agent.lastAt > 0 && agent.lastAt < windowStart;
+		agent.done = agent.ended || isDone(agent, resolvedFor(agent.parentAgentId)) || offscreen;
 	}
 	// The transcripts themselves were only ever needed to answer that; sending
 	// several megabytes of them to a phone would be absurd.
