@@ -78,7 +78,7 @@
 	import { showChrome, touchPoints } from '$lib/header-chrome';
 	import { screen as layout, watchWide } from '$lib/wide.svelte';
 	import { afterClose } from '$lib/after-close';
-	import { echoesAnswer, holdsAnswer } from './answer-echo';
+	import { cardHeld, echoesAnswer, holdsAnswer } from './answer-echo';
 	import { glideInterrupted } from './glide-interrupt';
 	import {
 		keepPending,
@@ -365,6 +365,8 @@
 	 */
 	let answeredKey = $state('');
 	let answeredAt = $state(0);
+	/** The question being answered right now: hidden from the tap, not from the reply. */
+	let sendingKey = $state('');
 
 	const pickerKey = $derived(pickerIdentity(detail.picker));
 
@@ -389,7 +391,7 @@
 	});
 
 	const askHidden = $derived(
-		answeredKey !== '' && answeredKey === pickerKey && now - answeredAt < ANSWERED_HOLD_MS
+		cardHeld({ pickerKey, sendingKey, answeredKey, answeredAt, now }, ANSWERED_HOLD_MS)
 	);
 
 	// The picker went away, which is the answer landing: forget it, so an
@@ -2169,6 +2171,10 @@
 		// the retire and confirm paths below leave the list alone.
 		const echo = echoesAnswer(picker) ? ++pendingSeq : null;
 		if (echo !== null) {
+			// Gone at the tap. On a slow link the reply is seconds away and a card
+			// that sits there untouched reads as a dead button. Every way the send
+			// can fail clears this in `finally`, which puts the card back.
+			sendingKey = dialog;
 			const echoText = text ?? chose?.label ?? String(index);
 			pendingSends = [
 				...pendingSends,
@@ -2248,6 +2254,7 @@
 		} finally {
 			busy = false;
 			sendingIndex = -1;
+			sendingKey = '';
 		}
 		refreshSoon();
 		return ok;
