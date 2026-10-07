@@ -86,6 +86,32 @@ export function viewerKind(name: string): ViewerKind {
 }
 
 /**
+ * The one dot-folder bordr will serve from, and only for pictures.
+ *
+ * Playwright's MCP server writes its screenshots to `.playwright-mcp/`, so
+ * every screenshot an agent mentions lived behind the dotfile rule and showed
+ * as a broken image on the phone. Narrow on purpose: exactly that folder
+ * name, as a directory, and only an image at the end of the path. Its console
+ * logs and page snapshots, `.env`, `.git`, `.ssh` and every other dot-name
+ * stay refused.
+ */
+const SCREENSHOT_DIR = '.playwright-mcp';
+const SCREENSHOT_FILE = /\.(png|jpe?g|gif|webp)$/i;
+
+/** True when any segment is a dot-name, apart from the one allowed case. */
+function hidden(segments: string[]): boolean {
+	const dots = segments.filter((segment) => segment.startsWith('.'));
+	if (dots.length === 0) return false;
+	const last = segments.length - 1;
+	return !(
+		dots.length === 1 &&
+		dots[0] === SCREENSHOT_DIR &&
+		segments.indexOf(SCREENSHOT_DIR) < last &&
+		SCREENSHOT_FILE.test(segments[last])
+	);
+}
+
+/**
  * Map a /f path like "dev/bordr/main/report.html" onto the filesystem,
  * refusing anything that escapes its root — lexically (..) AND after
  * symlink resolution, so a link inside the estate pointing outside it
@@ -105,7 +131,7 @@ export function resolveSafe(
 	// Dotfiles are refused at the RESOLVER, not merely hidden from the listing:
 	// omitting them from the list while still serving a direct URL is theatre,
 	// and `.env` holds the VAPID private key. This also subsumes `..`.
-	if (rest.some((segment) => segment.startsWith('.'))) return null;
+	if (hidden(rest)) return null;
 
 	const absolute = resolve(root, rest.join('/'));
 	if (absolute !== root && !absolute.startsWith(root + sep)) return null;
@@ -122,13 +148,7 @@ export function resolveSafe(
 	if (real !== realRoot && !real.startsWith(realRoot + sep)) return null;
 	// The dotfile rule again, on the RESOLVED path: `ln -s .env notes.txt`
 	// inside a root would otherwise serve the thing the rule exists to hide.
-	if (
-		relative(realRoot, real)
-			.split(sep)
-			.some((segment) => segment.startsWith('.'))
-	) {
-		return null;
-	}
+	if (hidden(relative(realRoot, real).split(sep))) return null;
 	return real;
 }
 
