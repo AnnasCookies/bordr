@@ -144,6 +144,7 @@ export function tabViewport(node: HTMLElement, initial: TabViewportOptions) {
 	let renewedAt = 0;
 	let active = false;
 	let stopped = false;
+	let focused = document.hasFocus?.() ?? true;
 	let destroyed = false;
 	let unsupported = false;
 	/** A claim is in flight for this generation. A second one would orphan a lease. */
@@ -288,7 +289,7 @@ export function tabViewport(node: HTMLElement, initial: TabViewportOptions) {
 	}
 
 	async function sync(heartbeat = false) {
-		if (destroyed || !enabled() || stopped || unsupported) return;
+		if (destroyed || !enabled() || stopped || unsupported || !focused) return;
 		if (document.visibilityState === 'hidden') return;
 		// Without a lease, a claim in flight or a pending retry owns the next
 		// attempt. Detail updates arrive every two seconds while an agent works,
@@ -455,10 +456,13 @@ export function tabViewport(node: HTMLElement, initial: TabViewportOptions) {
 	// until timeout leaves the real PTYs at Bordr's rows. Blur hands geometry
 	// back immediately; focus claims it again only when Bordr is active.
 	const onWindowBlur = () => {
+		// Every claim path goes through sync, including detail polls and resize.
+		focused = false;
 		clearTimers();
 		void release(true);
 	};
 	const onWindowFocus = () => {
+		focused = true;
 		if (document.visibilityState === 'hidden' || unsupported || !enabled()) return;
 		stopped = false;
 		void sync();

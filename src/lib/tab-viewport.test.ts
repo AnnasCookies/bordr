@@ -295,8 +295,8 @@ describe('tabViewport lease', () => {
 		expect(writesOf('claim')).toHaveLength(2);
 	});
 
-	it('hands geometry back while a visible desktop window is unfocused', async () => {
-		const { activity } = mount();
+	it('hands geometry back and cannot reclaim it while the window is unfocused', async () => {
+		const { action, options, activity } = mount();
 		await vi.advanceTimersByTimeAsync(16);
 		window.dispatchEvent(new Event('blur'));
 		await vi.advanceTimersByTimeAsync(0);
@@ -304,6 +304,13 @@ describe('tabViewport lease', () => {
 			expect.objectContaining({ tabId: 'w1:t1', leaseId: 'lease-1' })
 		]);
 		expect(activity).toEqual([true, false]);
+
+		// Detail polls, resizing and visibility changes must not steal it back.
+		action.update({ ...options });
+		window.dispatchEvent(new Event('resize'));
+		setVisibility('visible');
+		await vi.advanceTimersByTimeAsync(1_000);
+		expect(writesOf('claim')).toHaveLength(1);
 
 		window.dispatchEvent(new Event('focus'));
 		await vi.advanceTimersByTimeAsync(0);
