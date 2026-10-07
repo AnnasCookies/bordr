@@ -1,5 +1,5 @@
 /// <reference lib="webworker" />
-import { version } from '$service-worker';
+import { build, files, version } from '$service-worker';
 import { actionFor, chosenIndex, MAX_ACTIONS } from '$lib/notify';
 
 declare const self: ServiceWorkerGlobalScope;
@@ -204,8 +204,43 @@ self.addEventListener('notificationclick', (event) => {
 	event.waitUntil(openTarget(url));
 });
 
-// No fetch caching — bordr is a live tool; stale UI is worse than no cache.
 self.addEventListener('install', () => void self.skipWaiting());
+
+/**
+ * The build's own files, served from the phone once it has them.
+ *
+ * Only what cannot be stale: the hashed bundle SvelteKit emits, and the icon
+ * fonts, which sit under a cache named for THIS build, so a new build starts
+ * from empty rather than serving the old font. The page, the API and the event
+ * stream are never touched — bordr is a live tool, and stale data is worse than
+ * none. Cached on first use rather than all at install, because a multi-megabyte
+ * install over a bad link would hold the update up for exactly the people this
+ * is for.
+ */
+const ASSET_CACHE = `bordr-assets-${BUILD}`;
+const ASSETS = new Set([...build, ...files.filter((f) => f.startsWith('/fonts/'))]);
+
+self.addEventListener('fetch', (event) => {
+	const { request } = event;
+	if (request.method !== 'GET' || request.headers.has('range')) return;
+	const url = new URL(request.url);
+	if (url.origin !== self.location.origin || !ASSETS.has(url.pathname)) return;
+	event.respondWith(
+		(async () => {
+			try {
+				const cache = await caches.open(ASSET_CACHE);
+				const hit = await cache.match(request);
+				if (hit) return hit;
+				const response = await fetch(request);
+				if (response.ok) void cache.put(request, response.clone()).catch(() => undefined);
+				return response;
+			} catch {
+				// Cache API unavailable: behave as if there were no worker here.
+				return fetch(request);
+			}
+		})()
+	);
+});
 
 /**
  * A new build must reach the pages already open on the old one.
@@ -222,6 +257,9 @@ self.addEventListener('activate', (event) => {
 	event.waitUntil(
 		(async () => {
 			await self.clients.claim();
+			// Each build owns one asset cache; the previous ones are dead weight.
+			for (const key of await caches.keys())
+				if (key.startsWith('bordr-assets-') && key !== ASSET_CACHE) await caches.delete(key);
 			console.info(`bordr service worker active for build ${BUILD}`);
 
 			// Hidden clients may still own attachments or an in-flight POST.

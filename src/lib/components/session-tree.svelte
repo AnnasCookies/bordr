@@ -1,8 +1,10 @@
 <script lang="ts">
+	import { recall, remember } from '$lib/last-seen';
 	import { resolve } from '$app/paths';
 	import { page } from '$app/state';
 	import { showBackArrow, touchPoints } from '$lib/header-chrome';
 	import Icon from './icon.svelte';
+	import { untrack } from 'svelte';
 	import { SvelteSet } from 'svelte/reactivity';
 	import { agentTitle, compareAgentPriority, nestWorktrees } from '$lib/grouping';
 	import { agentStore } from '$lib/agents.svelte';
@@ -74,12 +76,24 @@
 			workspaces = body.workspaces ?? [];
 			machines = body.machines ?? [];
 			offered = body.offered ?? [];
+			remember('panes', body);
 		} catch {
 			// A failed poll keeps the last tree rather than blanking it.
 		}
 	}
 
 	$effect(() => {
+		// Last time's tree while the first answer is on its way. In an effect,
+		// not the initial state: the server rendered it empty and hydration
+		// must find the same.
+		// untracked, or each poll result re-runs this effect and restarts the poll.
+		if (untrack(() => workspaces.length) === 0) {
+			const last = recall<{ workspaces?: WorkspaceNode[]; machines?: MachineStatus[] }>('panes');
+			if (last) {
+				workspaces = last.workspaces ?? [];
+				machines = last.machines ?? [];
+			}
+		}
 		void load();
 		// The tree changes when panes open and close, far less often than a
 		// status flips — a slow beat is plenty and costs one call.
