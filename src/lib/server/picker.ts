@@ -26,8 +26,10 @@ export interface Picker {
 	options: PickerOption[];
 	/** True for checkbox pickers: digits toggle, Enter submits. */
 	multi: boolean;
-	/** False for caret-only lists (Claude Code's trust prompt): no digit shortcuts, arrows and Enter. */
+	/** Whether digit shortcuts are safe. Caret lists and preview questions use one-shot arrows/Enter. */
 	numbered: boolean;
+	/** The selected preview's subject, retained so same-worded replacement questions differ. */
+	preview?: string[];
 	/**
 	 * 'text': the question came from the transcript, not the screen, so the
 	 * option is typed back as a prompt — unless codex has it collapsed on
@@ -193,28 +195,49 @@ const MAX_FOOTER_GAP = 8;
  * different question. Everything from the box's column rightwards goes, and
  * the rows left empty with it.
  */
-function dropPreviewPanel(lines: string[]): string[] {
-	// The last box: a table in the agent's prose above can draw one too.
-	const top = lines.findLastIndex((line) => line.indexOf('┌') > 0);
-	if (top < 0) return lines;
+function dropPreviewPanel(lines: string[]): { lines: string[]; preview?: string[] } {
+	// A prose table is not a preview: the box must sit beside actual option rows.
+	const top = lines.findLastIndex((line) => {
+		const column = line.indexOf('┌');
+		return column > 0 && OPTION.test(line.slice(0, column));
+	});
+	if (top < 0) return { lines };
 	const column = lines[top].indexOf('┌');
 	const bottom = lines.findIndex((line, i) => i > top && line[column] === '└');
-	if (bottom < 0) return lines;
+	if (bottom < 0) return { lines };
+	const footer = lines.findIndex((line, i) => i > bottom && FOOTER.test(line));
+	if (footer < 0 || lines.slice(bottom + 1, footer).some((line) => OPTION.exec(line)?.[2] === '1'))
+		return { lines };
+	if (
+		!lines.slice(top, footer).some((line) => {
+			const option = OPTION.exec(line.slice(0, column));
+			return option && (option[1] || option[3] === '●' || option[3] === '◉');
+		})
+	)
+		return { lines };
+	const preview = lines.slice(top + 1, bottom).map((line) =>
+		line
+			.slice(column + 1)
+			.replace(/│\s*$/, '')
+			.trimEnd()
+	);
 	const out: string[] = [];
 	lines.forEach((line, i) => {
 		const inPanel = i >= top && i <= bottom;
-		// The notes hint shares the column but not the box, so it is told
-		// apart by nothing but blanks to its left.
-		const beside = i > bottom && i <= bottom + 3 && line.slice(0, column).trim() === '';
-		if (!inPanel && !(beside && line.length > column)) return out.push(line);
+		const notes =
+			i > bottom &&
+			i <= bottom + 3 &&
+			line.slice(0, column).trim() === '' &&
+			/^Notes: press n to add notes\s*$/i.test(line.slice(column));
+		if (!inPanel && !notes) return out.push(line);
 		const left = line.slice(0, column).trimEnd();
 		if (left) out.push(left);
 	});
-	return out;
+	return { lines: out, preview };
 }
 
 export function parsePicker(visible: string): Picker | null {
-	const lines = dropPreviewPanel(visible.split('\n'));
+	const { lines, preview } = dropPreviewPanel(visible.split('\n'));
 	const options: PickerOption[] = [];
 	let firstOptionLine = -1;
 	let lastOptionLine = -1;
@@ -289,11 +312,20 @@ export function parsePicker(visible: string): Picker | null {
 		return parseSlider(lines) ?? parseUnnumbered(lines);
 	}
 
+	const asked = askedAt(lines, firstOptionLine);
 	return {
-		...askedAt(lines, firstOptionLine),
+		...asked,
+		context: preview
+			? [
+					...asked.context,
+					'Preview (highlighted option):',
+					...preview.slice(0, 6).map((line) => line.slice(0, 160))
+				]
+			: asked.context,
 		options,
 		multi: options.some((o) => o.checked !== undefined),
-		numbered: true
+		numbered: preview === undefined,
+		...(preview ? { preview } : {})
 	};
 }
 

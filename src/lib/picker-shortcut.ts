@@ -39,7 +39,7 @@ export function pickerShortcut(
 export function pickerIdentity(
 	picker:
 		| (Pick<Picker, 'question' | 'options'> &
-				Partial<Pick<Picker, 'context' | 'multi' | 'axis' | 'answer'>>)
+				Partial<Pick<Picker, 'context' | 'multi' | 'axis' | 'answer' | 'preview'>>)
 		| null
 ): string {
 	return picker
@@ -49,6 +49,7 @@ export function pickerIdentity(
 				picker.multi,
 				picker.axis,
 				picker.answer,
+				picker.preview ?? [],
 				picker.options.map((o) => [o.index, o.label, Boolean(o.writeIn)])
 			])
 		: '';

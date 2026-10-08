@@ -291,7 +291,8 @@ export async function enrichAgents(agents: AgentSummary[]): Promise<AgentSummary
 								multi: picker.multi,
 								context: picker.context,
 								axis: picker.axis,
-								answer: picker.answer
+								answer: picker.answer,
+								preview: picker.preview
 							}
 						: null,
 					// A menu the person opened is not a blocked agent, so the

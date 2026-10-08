@@ -1,4 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { parsePicker } from '$lib/server/picker';
+import { pickerIdentity } from '$lib/picker-shortcut';
 
 /**
  * The answer route against three real dialects, with herdr doubled: the
@@ -140,6 +142,33 @@ describe('answer route: dialects', () => {
 		expect(result.outcome).toBe('unknown');
 	});
 });
+
+const preview = (subject: string) =>
+	[
+		'Apply this change?',
+		'❯ 1. Yes'.padEnd(34) + '┌──────────────────────┐',
+		'  2. No'.padEnd(34) + `│ ${subject.padEnd(20)} │`,
+		' '.repeat(34) + '└──────────────────────┘',
+		'Enter to select · ↑/↓ to navigate · Esc to cancel'
+	].join('\n');
+
+it('refuses a stale preview even when the replacement question has identical labels', async () => {
+	herdr.screens.push(preview('subject B'));
+	await expect(
+		post({ index: 1, dialog: pickerIdentity(parsePicker(preview('subject A'))) })
+	).rejects.toMatchObject({ status: 409 });
+	expect(herdr.sent).toEqual([]);
+});
+
+it.each(['subject A', 'subject B'])(
+	'confirms a preview once without pressing Enter into successor %s',
+	async (subject) => {
+		herdr.screens.push(preview('subject A'), preview(subject));
+		const result = await answer(1);
+		expect(herdr.sent).toEqual([['enter']]);
+		expect(result.outcome).toBe('unknown');
+	}
+);
 
 describe('answer route: write-in rows', () => {
 	/** pi's ask extension (rpiv-ask-user-question): its last row takes text. */

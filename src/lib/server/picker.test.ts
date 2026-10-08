@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { asyncQuestionKey, keysForOption, menuFooter, parsePicker, suggestionFrom } from './picker';
+import { pickerIdentity } from '../picker-shortcut';
 
 const ASK_USER_QUESTION = `
 ❯ Use the AskUserQuestion tool to ask me to pick a colour.
@@ -715,7 +716,30 @@ describe('Claude Code question with previews', () => {
 	it('reads the options without the preview box beside them', () => {
 		const picker = parsePicker(screen);
 		expect(picker?.question).toBe('Pick a layout?');
-		expect(picker?.numbered).toBe(true);
+		expect(picker?.numbered).toBe(false);
+		expect(picker?.preview?.join('\n')).toContain('a');
 		expect(picker?.options.map((o) => o.label)).toEqual(['Nested', 'Flat']);
+	});
+
+	it('retains a changed preview subject in the dialog identity', () => {
+		expect(pickerIdentity(parsePicker(screen))).not.toBe(
+			pickerIdentity(parsePicker(screen.replace('│ a', '│ z')))
+		);
+	});
+
+	it('does not collapse a prose box and promote an earlier numbered paragraph', () => {
+		const visible = [
+			'Old numbered prose',
+			'  1. Old choice A',
+			'  2. Old choice B',
+			'    ┌────────────┐',
+			...Array(12).fill('    │ prose      │'),
+			'    └────────────┘',
+			'Actual choice?',
+			'❯ Yes',
+			'  No',
+			'Enter to select · Esc to cancel'
+		].join('\n');
+		expect(parsePicker(visible)?.options.map((o) => o.label)).toEqual(['Yes', 'No']);
 	});
 });

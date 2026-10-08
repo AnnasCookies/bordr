@@ -43,7 +43,7 @@ export interface AgentSummary {
 	 */
 	picker?:
 		| (Pick<Picker, 'question' | 'options' | 'multi'> &
-				Partial<Pick<Picker, 'context' | 'axis' | 'answer'>>)
+				Partial<Pick<Picker, 'context' | 'axis' | 'answer' | 'preview'>>)
 		| null;
 	/**
 	 * A menu or panel is open on the terminal that bordr could not turn into
