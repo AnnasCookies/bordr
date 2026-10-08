@@ -1,4 +1,5 @@
-import type { Dirent } from 'node:fs';
+import { createReadStream, type Dirent } from 'node:fs';
+import { createInterface } from 'node:readline';
 import { readdir, readFile, stat } from 'node:fs/promises';
 import { basename, dirname, join } from 'node:path';
 import { claudeRunEnded, isDone, resolvedToolUseTimes } from './subagent-done';
@@ -367,6 +368,36 @@ function lastTimestamp(text: string): number {
 	return 0;
 }
 
+const parentScans = new Map<
+	string,
+	{ size: number; mtimeMs: number; resolved: Map<string, number> }
+>();
+
+/** Recover authoritative results outside a tail without retaining the parent's text. */
+async function earlierResults(path: string): Promise<Map<string, number>> {
+	const { size, mtimeMs } = await stat(path);
+	const cached = parentScans.get(path);
+	if (cached && cached.size === size && cached.mtimeMs === mtimeMs) return cached.resolved;
+	const resolved = new Map<string, number>();
+	const stream = createReadStream(path, { encoding: 'utf8' });
+	const lines = createInterface({ input: stream, crlfDelay: Infinity });
+	try {
+		for await (const line of lines) {
+			for (const [id, at] of resolvedToolUseTimes(line)) {
+				if (at >= (resolved.get(id) ?? 0)) resolved.set(id, at);
+			}
+		}
+	} finally {
+		lines.close();
+		stream.destroy();
+	}
+	// ponytail: rescan on parent writes; use an incremental index if long sessions make this costly.
+	parentScans.set(path, { size, mtimeMs, resolved });
+	if (parentScans.size > PI_SCAN_LIMIT)
+		parentScans.delete(parentScans.keys().next().value as string);
+	return resolved;
+}
+
 /** The timestamp of the first complete entry: where a tail of a transcript starts. */
 function firstTimestamp(text: string): number {
 	for (const line of text.split('\n')) {
@@ -446,18 +477,35 @@ export async function listSubagents(
 		return found;
 	};
 
-	// The caller hands over a tail, not the whole transcript. A result written
-	// before the tail starts is invisible to it, so a direct child that went
-	// quiet before that point and has no result in view finished off-screen:
-	// otherwise it spins for the rest of the session once enough has been
-	// written after it.
-	// ponytail: a child silent for a whole tail's worth of parent output is
-	// taken as finished; one genuinely stuck that long reads as done too.
+	// A tail cannot disprove completion, but silence cannot prove it either.
+	// Recover older harness records only when an unresolved direct child's
+	// latest write predates this window; timestamps still protect later resumes.
 	const windowStart = firstTimestamp(sessionText);
+	if (
+		withText.some(
+			(agent) =>
+				!agent.parentAgentId &&
+				!agent.ended &&
+				!isDone(agent, resolvedFor('')) &&
+				windowStart > 0 &&
+				agent.lastAt > 0 &&
+				agent.lastAt < windowStart
+		)
+	) {
+		try {
+			const full = await earlierResults(transcriptPath);
+			const results = new Map(full);
+			for (const [id, at] of resolvedFor('')) {
+				if (at >= (results.get(id) ?? 0)) results.set(id, at);
+			}
+			resolvedIn.set('\u0000session', results);
+		} catch (error) {
+			console.warn('bordr: could not read earlier sub-agent completions', error);
+			// Unknown stays running rather than being presented as a success.
+		}
+	}
 	for (const agent of withText) {
-		const offscreen =
-			!agent.parentAgentId && windowStart > 0 && agent.lastAt > 0 && agent.lastAt < windowStart;
-		agent.done = agent.ended || isDone(agent, resolvedFor(agent.parentAgentId)) || offscreen;
+		agent.done = agent.ended || isDone(agent, resolvedFor(agent.parentAgentId));
 	}
 	// The transcripts themselves were only ever needed to answer that; sending
 	// several megabytes of them to a phone would be absurd.

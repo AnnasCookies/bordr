@@ -187,11 +187,31 @@ describe('listSubagents', () => {
 			}
 		]);
 		const tail = entry('2026-10-06T09:00:00.000Z');
-		expect((await listSubagents(t, tail))[0].done).toBe(true);
-		// Still inside the window: no result yet means still running.
+		// Silence is not completion: a long-running tool may not have written yet.
+		expect((await listSubagents(t, tail))[0].done).toBe(false);
 		expect((await listSubagents(t, entry('2026-10-06T06:00:00.000Z')))[0].done).toBe(false);
-		// No tail given at all says nothing about it either way.
 		expect((await listSubagents(t))[0].done).toBe(false);
+		appendFileSync(
+			t,
+			JSON.stringify({
+				type: 'queue-operation',
+				timestamp: '2026-10-06T06:30:00.000Z',
+				content:
+					'<task-notification><tool-use-id>toolu_gone</tool-use-id><status>completed</status></task-notification>'
+			}) + '\n'
+		);
+		expect((await listSubagents(t, tail))[0].done).toBe(true);
+		// A later resume can also be older than the tail. The old result cannot finish it.
+		appendFileSync(
+			join(subagentsDir(t), 'agent-old.jsonl'),
+			'\n' +
+				JSON.stringify({
+					type: 'user',
+					timestamp: '2026-10-06T08:00:00.000Z',
+					message: { role: 'user' }
+				})
+		);
+		expect((await listSubagents(t, tail))[0].done).toBe(false);
 	});
 
 	it('uses an async completion notification but honours a later resume', async () => {
