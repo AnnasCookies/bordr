@@ -403,13 +403,19 @@ describe('nestWorktrees', () => {
 			ws('ccd', 'ccd'),
 			ws('wt2', 'ccd', true)
 		]);
-		// wt1 comes before its main checkout, so the repo heading goes there instead.
-		expect(shape(rows)).toEqual(['#ccd', '  wt1', '  wt2', 'plain', 'ccd']);
+		// Encountering a worktree first must not hide its actual main checkout.
+		expect(shape(rows)).toEqual(['plain', 'ccd', '  wt1', '  wt2']);
 	});
 
 	it('nests under the main checkout when it comes first', () => {
 		const rows = nestWorktrees([ws('ccd', 'ccd'), ws('x'), ws('wt', 'ccd', true)]);
 		expect(shape(rows)).toEqual(['ccd', '  wt', 'x']);
+	});
+
+	it('uses a repository heading only when no main checkout workspace exists', () => {
+		expect(shape(nestWorktrees([ws('wt1', 'r', true), ws('plain'), ws('wt2', 'r', true)]))).toEqual(
+			['#r', '  wt1', '  wt2', 'plain']
+		);
 	});
 
 	it('leaves a second workspace on the same checkout flat', () => {

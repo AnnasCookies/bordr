@@ -314,6 +314,12 @@ export function nestWorktrees(workspaces: WorkspaceNode[]): WorkspaceRow[] {
 			rows.push({ kind: 'workspace', workspace, nested: false });
 			continue;
 		}
+		// Defer a linked checkout until its main workspace, even when listed later.
+		if (
+			wt.linked &&
+			workspaces.some((w) => w.worktree?.repoKey === wt.repoKey && !w.worktree.linked)
+		)
+			continue;
 		placed.add(`repo:${wt.repoKey}`);
 		if (wt.linked) rows.push({ kind: 'repo', key: wt.repoKey, name: wt.repoName });
 		else rows.push({ kind: 'workspace', workspace, nested: false });
