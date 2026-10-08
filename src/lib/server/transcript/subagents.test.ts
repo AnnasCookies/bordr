@@ -397,7 +397,10 @@ describe('workflow agents', () => {
 				.join('\n')
 		);
 
+		writeFileSync(join(run, 'invalid name.meta.json'), '{}');
+		writeFileSync(join(run, 'invalid name.jsonl'), entry('2026-09-23T18:00:00Z'));
 		const agents = await listSubagents(transcript);
+		expect(agents).toHaveLength(2);
 		const byLabel = Object.fromEntries(agents.map((a) => [a.description, a]));
 		expect(byLabel['write:email']).toMatchObject({
 			id: 'wf_abc-123.agent-a1',
@@ -410,5 +413,50 @@ describe('workflow agents', () => {
 			entry('2026-09-23T18:00:00Z')
 		);
 		expect(await readSubagent(transcript, 'wf_abc-123.agent-a2/../../x')).toBeNull();
+		appendFileSync(
+			join(run, 'journal.jsonl'),
+			'\n' + JSON.stringify({ type: 'started', agentId: 'a1' })
+		);
+		expect(
+			(await listSubagents(transcript)).find((a) => a.id === 'wf_abc-123.agent-a1')?.done
+		).toBe(false);
+	});
+
+	it('does not invent running children when their lifecycle journal is unreadable', async () => {
+		const transcript = session([]);
+		const run = join(transcript.replace(/\.jsonl$/, ''), 'subagents', 'workflows', 'wf_denied');
+		mkdirSync(run, { recursive: true });
+		writeFileSync(join(run, 'agent-a.meta.json'), '{}');
+		writeFileSync(join(run, 'agent-a.jsonl'), entry('2026-10-06T06:00:00Z'));
+		vi.mocked(readFile).mockRejectedValueOnce(
+			Object.assign(new Error('fixture denied'), { code: 'EACCES' })
+		);
+		const warning = vi.spyOn(console, 'warn').mockImplementation(() => {});
+		try {
+			expect(await listSubagents(transcript)).toEqual([]);
+			expect(warning).toHaveBeenCalled();
+		} finally {
+			warning.mockRestore();
+		}
+	});
+
+	it('keeps cache hits when a workflow has more files than the cache can hold', async () => {
+		const transcript = session([]);
+		const run = join(transcript.replace(/\.jsonl$/, ''), 'subagents', 'workflows', 'wf_large');
+		mkdirSync(run, { recursive: true });
+		writeFileSync(join(run, 'journal.jsonl'), '{}\n');
+		for (let n = 0; n < 300; n++) {
+			writeFileSync(join(run, `agent-${n}.meta.json`), '{}');
+			writeFileSync(join(run, `agent-${n}.jsonl`), entry('2026-10-06T06:00:00Z'));
+		}
+		expect(await listSubagents(transcript)).toHaveLength(300);
+		vi.mocked(readFile).mockClear();
+		await listSubagents(transcript);
+		const reads = vi
+			.mocked(readFile)
+			.mock.calls.filter(
+				([path]) => String(path).endsWith('.jsonl') && !String(path).endsWith('journal.jsonl')
+			);
+		expect(reads).toHaveLength(44);
 	});
 });

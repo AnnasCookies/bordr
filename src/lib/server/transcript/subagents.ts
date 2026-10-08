@@ -278,14 +278,12 @@ const WF_ID = /^(wf_[A-Za-z0-9-]+)\.(agent-[A-Za-z0-9_-]+)$/;
  * hold. Every run a session ever started is listed on every poll, and a
  * finished run's files never change again.
  */
-const wfScans = new Map<
-	string,
-	{ size: number; mtimeMs: number; entries: number; lastAt: number }
->();
+type WorkflowScan = { size: number; mtimeMs: number; entries: number; lastAt: number };
+const wfScans = new Map<string, Map<string, WorkflowScan>>();
 
-async function scanWorkflowAgent(path: string) {
+async function scanWorkflowAgent(path: string, scans: Map<string, WorkflowScan>) {
 	const { size, mtimeMs } = await stat(path);
-	const cached = wfScans.get(path);
+	const cached = scans.get(path);
 	if (cached && cached.size === size && cached.mtimeMs === mtimeMs) return cached;
 	const text = await readFile(path, 'utf8');
 	const scan = {
@@ -294,8 +292,9 @@ async function scanWorkflowAgent(path: string) {
 		entries: text.split('\n').filter((l) => l.trim()).length,
 		lastAt: lastTimestamp(text)
 	};
-	wfScans.set(path, scan);
-	if (wfScans.size > PI_SCAN_LIMIT) wfScans.delete(wfScans.keys().next().value as string);
+	// Keep a bounded stable subset instead of evicting every hit in a cyclic
+	// scan larger than the cache. Overflow files are read normally, not stale.
+	if (scans.has(path) || scans.size < PI_SCAN_LIMIT) scans.set(path, scan);
 	return scan;
 }
 
@@ -311,27 +310,40 @@ async function listWorkflowAgents(transcriptPath: string): Promise<SubagentSumma
 		() => [] as string[]
 	);
 
+	const scans = wfScans.get(root) ?? new Map<string, WorkflowScan>();
+	wfScans.delete(root);
+	wfScans.set(root, scans);
+	if (wfScans.size > 32) wfScans.delete(wfScans.keys().next().value as string);
 	const out: SubagentSummary[] = [];
 	for (const runId of runs) {
 		const dir = join(root, runId);
 		const script = scripts.find((f) => f.endsWith(`-${runId}.js`));
 		const name = script ? script.slice(0, -`-${runId}.js`.length) : runId;
 		const returned = new Set<string>();
-		const journal = await readFile(join(dir, 'journal.jsonl'), 'utf8').catch(() => '');
+		let journal: string;
+		try {
+			journal = await readFile(join(dir, 'journal.jsonl'), 'utf8');
+		} catch (cause) {
+			if ((cause as NodeJS.ErrnoException).code !== 'ENOENT')
+				console.warn(`bordr: workflow ${runId} journal could not be read`, cause);
+			// Missing lifecycle evidence is not evidence that all its children are running.
+			continue;
+		}
 		for (const line of journal.split('\n')) {
 			try {
 				const row = JSON.parse(line) as { type?: string; agentId?: string };
 				if (row.type === 'result' && row.agentId) returned.add(row.agentId);
+				if (row.type === 'started' && row.agentId) returned.delete(row.agentId);
 			} catch {
 				// A half-written final line is normal while the run is going.
 			}
 		}
 		for (const file of await readdir(dir).catch(() => [] as string[])) {
-			if (!file.endsWith('.meta.json')) continue;
+			if (!/^agent-[A-Za-z0-9_-]+\.meta\.json$/.test(file)) continue;
 			const id = file.replace(/\.meta\.json$/, '');
 			try {
 				const meta = JSON.parse(await readFile(join(dir, file), 'utf8')) as Record<string, unknown>;
-				const scan = await scanWorkflowAgent(join(dir, `${id}.jsonl`));
+				const scan = await scanWorkflowAgent(join(dir, `${id}.jsonl`), scans);
 				out.push({
 					id: `${runId}.${id}`,
 					agentType: typeof meta.workflowPhase === 'string' ? meta.workflowPhase : 'workflow',
