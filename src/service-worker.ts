@@ -258,8 +258,13 @@ self.addEventListener('activate', (event) => {
 		(async () => {
 			await self.clients.claim();
 			// Each build owns one asset cache; the previous ones are dead weight.
-			for (const key of await caches.keys())
-				if (key.startsWith('bordr-assets-') && key !== ASSET_CACHE) await caches.delete(key);
+			try {
+				for (const key of await caches.keys())
+					if (key.startsWith('bordr-assets-') && key !== ASSET_CACHE) await caches.delete(key);
+			} catch {
+				// Storage may be blocked or full; optional cleanup must not hide a deploy.
+				console.info('bordr: old asset caches could not be cleared');
+			}
 			console.info(`bordr service worker active for build ${BUILD}`);
 
 			// Hidden clients may still own attachments or an in-flight POST.

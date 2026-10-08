@@ -365,8 +365,10 @@
 	 */
 	let answeredKey = $state('');
 	let answeredAt = $state(0);
+	let answeredPaneId = $state('');
 	/** The question being answered right now: hidden from the tap, not from the reply. */
 	let sendingKey = $state('');
+	let sendingPaneId = $state('');
 
 	const pickerKey = $derived(pickerIdentity(detail.picker));
 
@@ -391,7 +393,19 @@
 	});
 
 	const askHidden = $derived(
-		cardHeld({ pickerKey, sendingKey, answeredKey, answeredAt, now }, ANSWERED_HOLD_MS)
+		cardHeld(
+			{
+				paneId: detail.paneId,
+				pickerKey,
+				sendingPaneId,
+				sendingKey,
+				answeredPaneId,
+				answeredKey,
+				answeredAt,
+				now
+			},
+			ANSWERED_HOLD_MS
+		)
 	);
 
 	// The picker went away, which is the answer landing: forget it, so an
@@ -2198,6 +2212,7 @@
 			// that sits there untouched reads as a dead button. Every way the send
 			// can fail clears this in `finally`, which puts the card back.
 			sendingKey = dialog;
+			sendingPaneId = paneId;
 			const echoText = text ?? chose?.label ?? String(index);
 			pendingSends = [
 				...pendingSends,
@@ -2219,9 +2234,7 @@
 				fetch(`/api/agents/${encodeURIComponent(paneId)}/answer`, {
 					method: 'POST',
 					headers: { 'content-type': 'application/json' },
-					body: JSON.stringify(
-						submit ? { submit: true } : { index, text, ...(target && { dialog: target.dialog }) }
-					)
+					body: JSON.stringify(submit ? { submit: true, dialog } : { index, text, dialog })
 				})
 			);
 			const body = (await r.json().catch(() => null)) as {
@@ -2264,6 +2277,7 @@
 				// stay up with its Submit button while the rest are ticked.
 				if (holdsAnswer(picker, body?.outcome)) {
 					answeredKey = dialog;
+					answeredPaneId = paneId;
 					answeredAt = Date.now();
 					now = answeredAt;
 				}
@@ -2278,6 +2292,7 @@
 			busy = false;
 			sendingIndex = -1;
 			sendingKey = '';
+			sendingPaneId = '';
 		}
 		refreshSoon();
 		return ok;

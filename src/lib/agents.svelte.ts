@@ -1,6 +1,6 @@
 import type { AgentSummary } from '$lib/types';
 import { untrack } from 'svelte';
-import { recall, remember } from '$lib/last-seen';
+import { cachedAgents, recall, remember } from '$lib/last-seen';
 import type { Connection } from '$lib/components/connection-banner.svelte';
 
 export interface CompatInfo {
@@ -95,7 +95,7 @@ export function createAgentStore() {
 		armGrace();
 		source.addEventListener('agents', (e) => {
 			agents = JSON.parse((e as MessageEvent).data) as AgentSummary[];
-			remember('agents', agents);
+			remember('agents', cachedAgents(agents));
 			heard();
 			backoff = 1000;
 		});
@@ -184,7 +184,8 @@ export function createAgentStore() {
 			// Last time's list until the stream's first snapshot replaces it.
 			// untracked: start() is called from an effect, and reading `agents` there
 			// would make every snapshot restart the stream.
-			if (untrack(() => agents.length) === 0) agents = recall<AgentSummary[]>('agents') ?? [];
+			if (untrack(() => agents.length) === 0)
+				agents = cachedAgents(recall<unknown>('agents')) ?? [];
 			open();
 			// A phone that slept can hold a half-open connection that never
 			// errors — re-check whenever the tab becomes visible again.

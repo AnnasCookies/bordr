@@ -36,7 +36,16 @@ describe('answering a picker', () => {
 });
 
 describe('holding the question card', () => {
-	const base = { pickerKey: 'q1', sendingKey: '', answeredKey: '', answeredAt: 0, now: 1000 };
+	const base = {
+		paneId: 'a',
+		sendingPaneId: 'a',
+		answeredPaneId: 'a',
+		pickerKey: 'q1',
+		sendingKey: '',
+		answeredKey: '',
+		answeredAt: 0,
+		now: 1000
+	};
 
 	it('hides the card the moment an option is tapped, before the server replies', () => {
 		expect(cardHeld({ ...base, sendingKey: 'q1' }, 8000)).toBe(true);
@@ -50,6 +59,13 @@ describe('holding the question card', () => {
 		const held = { ...base, answeredKey: 'q1', answeredAt: 1000 };
 		expect(cardHeld({ ...held, now: 5000 }, 8000)).toBe(true);
 		expect(cardHeld({ ...held, now: 9001 }, 8000)).toBe(false);
+	});
+
+	it('never hides another pane with an identical question while a reply is in flight', () => {
+		expect(cardHeld({ ...base, paneId: 'b', sendingKey: 'q1' }, 8000)).toBe(false);
+		expect(cardHeld({ ...base, paneId: 'b', answeredKey: 'q1', answeredAt: 1000 }, 8000)).toBe(
+			false
+		);
 	});
 
 	it('never swallows a different question', () => {

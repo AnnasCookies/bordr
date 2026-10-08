@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { recall, remember } from '$lib/last-seen';
+	import { cachedPanes, recall, remember } from '$lib/last-seen';
 	import { resolve } from '$app/paths';
 	import { page } from '$app/state';
 	import { showBackArrow, touchPoints } from '$lib/header-chrome';
@@ -76,7 +76,7 @@
 			workspaces = body.workspaces ?? [];
 			machines = body.machines ?? [];
 			offered = body.offered ?? [];
-			remember('panes', body);
+			remember('panes', { workspaces });
 		} catch {
 			// A failed poll keeps the last tree rather than blanking it.
 		}
@@ -88,11 +88,8 @@
 		// must find the same.
 		// untracked, or each poll result re-runs this effect and restarts the poll.
 		if (untrack(() => workspaces.length) === 0) {
-			const last = recall<{ workspaces?: WorkspaceNode[]; machines?: MachineStatus[] }>('panes');
-			if (last) {
-				workspaces = last.workspaces ?? [];
-				machines = last.machines ?? [];
-			}
+			const last = cachedPanes(recall<unknown>('panes'));
+			if (last) workspaces = last.workspaces;
 		}
 		void load();
 		// The tree changes when panes open and close, far less often than a

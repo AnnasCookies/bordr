@@ -47,16 +47,25 @@ export function holdsAnswer(
  */
 export function cardHeld(
 	state: {
+		paneId: string;
 		pickerKey: string;
+		sendingPaneId: string;
 		sendingKey: string;
+		answeredPaneId: string;
 		answeredKey: string;
 		answeredAt: number;
 		now: number;
 	},
 	holdMs: number
 ): boolean {
-	if (state.sendingKey !== '' && state.sendingKey === state.pickerKey) return true;
+	if (
+		state.sendingPaneId === state.paneId &&
+		state.sendingKey !== '' &&
+		state.sendingKey === state.pickerKey
+	)
+		return true;
 	return (
+		state.answeredPaneId === state.paneId &&
 		state.answeredKey !== '' &&
 		state.answeredKey === state.pickerKey &&
 		state.now - state.answeredAt < holdMs

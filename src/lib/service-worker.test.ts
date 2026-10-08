@@ -6,7 +6,10 @@ import * as notify from './notify';
 
 type Handler = (event: unknown) => void;
 
-function loadWorker(extra: Record<string, unknown> = {}) {
+function loadWorker(
+	extra: Record<string, unknown> = {},
+	clients: Array<{ postMessage(value: unknown): void }> = []
+) {
 	const listeners = new Map<string, Handler>();
 	const source = readFileSync(new URL('../service-worker.ts', import.meta.url), 'utf8');
 	const compiled = transpileModule(source, {
@@ -28,7 +31,7 @@ function loadWorker(extra: Record<string, unknown> = {}) {
 			location: { origin: 'https://bordr.test' },
 			navigator: { userAgent: 'fixture' },
 			addEventListener: (name: string, listener: Handler) => listeners.set(name, listener),
-			clients: { claim: async () => {}, matchAll: async () => [] }
+			clients: { claim: async () => {}, matchAll: async () => clients }
 		},
 		...extra
 	});
@@ -60,6 +63,38 @@ it("serves only the build's own files from the phone, never the page or the API"
 	expect(seen('/_app/immutable/a.js', { method: 'POST' })).toBe(false);
 	expect(seen('/_app/immutable/a.js', { range: true })).toBe(false);
 });
+
+it.each(['keys', 'delete'])(
+	'notifies clients even when cache %s fails on activation',
+	async (failure) => {
+		const client = { postMessage: vi.fn() };
+		const listeners = loadWorker(
+			{
+				caches: {
+					keys: async () => {
+						if (failure === 'keys') throw new Error('storage blocked');
+						return ['bordr-assets-old'];
+					},
+					delete: async () => {
+						throw new Error('storage blocked');
+					}
+				}
+			},
+			[client]
+		);
+		let work: Promise<void> | undefined;
+		listeners.get('activate')!({
+			waitUntil: (pending: Promise<void>) => {
+				work = pending;
+			}
+		});
+		await work;
+		expect(client.postMessage).toHaveBeenCalledWith({
+			type: 'bordr:updated',
+			build: 'fixture-build'
+		});
+	}
+);
 
 it('activation notifies hidden and visible clients without destroying their drafts or uploads', async () => {
 	const listeners = new Map<

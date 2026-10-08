@@ -217,7 +217,7 @@
 				fetch(`/api/agents/${encodeURIComponent(agent.paneId)}/answer`, {
 					method: 'POST',
 					headers: { 'content-type': 'application/json' },
-					body: JSON.stringify({ index })
+					body: JSON.stringify({ index, dialog: pickerKey(agent.picker) })
 				})
 			);
 			const body = (await response.json().catch(() => null)) as {
