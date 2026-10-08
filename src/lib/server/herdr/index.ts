@@ -199,7 +199,7 @@ export function sortAgents(agents: AgentSummary[]): AgentSummary[] {
 	return [...agents].sort((a, b) => RANK[a.status] - RANK[b.status]);
 }
 
-export async function listAgents(): Promise<AgentSummary[]> {
+export async function listAgents(read = readState()): Promise<AgentSummary[]> {
 	const herdr = getClient();
 	// In parallel: three round trips cost what one does, and the list is on a
 	// two-second beat, so doing them in turn would show.
@@ -208,7 +208,6 @@ export async function listAgents(): Promise<AgentSummary[]> {
 		workspaceLabels(),
 		tabLabels()
 	]);
-	const read = readState();
 	return sortAgents(result.agents.map((a) => toSummary(a, labels, tabs, read)));
 }
 

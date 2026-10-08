@@ -277,7 +277,7 @@ export async function startPushWatcher(): Promise<void> {
 			const reconcile = setInterval(() => {
 				// Enriched, so a pi question (herdr: working, screen: dialog)
 				// notifies from here even when no phone has the list open.
-				void listAgents()
+				void listAgents({})
 					.then(enrichAgents)
 					.then((agents) => {
 						for (const a of agents) observeStatus(a.paneId, a.status);
@@ -291,7 +291,7 @@ export async function startPushWatcher(): Promise<void> {
 		}
 
 		// Catch anything that blocked while we were away, once listeners exist.
-		const agents = await listAgents()
+		const agents = await listAgents({})
 			.then(enrichAgents)
 			.catch(() => []);
 		for (const a of agents) observeStatus(a.paneId, a.status);

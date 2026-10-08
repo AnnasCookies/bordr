@@ -1,5 +1,8 @@
 import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
+import { parsePane } from './herdr/address';
+import { connectionKey } from './herdr/connections';
+import { listMachines } from './herdr/machines';
 
 /**
  * Overridable so tests never touch live state: the service's
@@ -27,14 +30,56 @@ export function saveJson(name: string, value: unknown): void {
 
 const READ_FILE = 'read-state.json';
 
+type ReadMarker = { seq: number; scope: string };
+
+function readMarkers(): Record<string, number | ReadMarker> {
+	const value = loadJson<unknown>(READ_FILE, {});
+	return Object.assign(
+		Object.create(null),
+		value !== null && typeof value === 'object' && !Array.isArray(value) ? value : {}
+	) as Record<string, number | ReadMarker>;
+}
+
+function readScope(paneId: string): string | null {
+	const { machineId } = parsePane(paneId);
+	if (!machineId) return '';
+	const machine = listMachines().find((m) => m.id === machineId && m.enabled);
+	return machine ? connectionKey(machine) : null;
+}
+
+function readSeq(
+	marker: number | ReadMarker | undefined,
+	scope: string | null
+): number | undefined {
+	// Legacy remote markers have no target identity: never carry them to another host.
+	const seq =
+		typeof marker === 'number'
+			? scope === ''
+				? marker
+				: undefined
+			: marker?.scope === scope && scope !== null
+				? marker.seq
+				: undefined;
+	return typeof seq === 'number' && Number.isSafeInteger(seq) && seq >= 0 ? seq : undefined;
+}
+
 export function readState(): Record<string, number> {
-	return loadJson<Record<string, number>>(READ_FILE, {});
+	const read: Record<string, number> = Object.create(null);
+	for (const [paneId, marker] of Object.entries(readMarkers())) {
+		const seq = readSeq(marker, readScope(paneId));
+		if (seq !== undefined) read[paneId] = seq;
+	}
+	return read;
 }
 
 export function markRead(paneId: string, seq: number): void {
-	const state = readState();
-	if ((state[paneId] ?? -1) >= seq) return;
-	state[paneId] = seq;
+	if (!paneId || !Number.isSafeInteger(seq) || seq < 0) throw new Error('invalid read marker');
+	const scope = readScope(paneId);
+	if (scope === null) throw new Error('read marker machine is not permitted');
+	const state = readMarkers();
+	const previous = readSeq(state[paneId], scope);
+	if (previous !== undefined && previous >= seq) return;
+	state[paneId] = { seq, scope };
 	saveJson(READ_FILE, state);
 }
 
