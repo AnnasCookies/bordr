@@ -52,7 +52,8 @@ const workspaces = [
 async function fixture(
 	page: Page,
 	prefs: Record<string, unknown> = {},
-	fleet: typeof agents = agents
+	fleet: typeof agents = agents,
+	initialDelay = 50
 ) {
 	const state = {
 		details: 0,
@@ -116,7 +117,7 @@ async function fixture(
 		]
 	};
 	await page.addInitScript(
-		({ agents, prefs }) => {
+		({ agents, prefs, initialDelay }) => {
 			localStorage.setItem(
 				'bordr-prefs',
 				JSON.stringify({
@@ -142,14 +143,14 @@ async function fixture(
 					);
 					setTimeout(
 						() => this.dispatchEvent(new MessageEvent('agents', { data: JSON.stringify(agents) })),
-						50
+						initialDelay
 					);
 				}
 				close() {}
 			}
 			Object.defineProperty(window, 'EventSource', { value: FixtureSource });
 		},
-		{ agents: fleet, prefs }
+		{ agents: fleet, prefs, initialDelay }
 	);
 	await page.route('**/api/**', async (route) => {
 		const url = new URL(route.request().url());
@@ -625,6 +626,68 @@ test('All includes finished-only children and desktop Files/Search menus have vi
 		await page.getByRole('button', { name: 'Close the session list' }).click();
 	}
 });
+
+for (const width of [390, 1400]) {
+	test.describe(`recalled state at ${width}px`, () => {
+		test.use({ viewport: { width, height: 844 } });
+		test('cached questions are inert until a live snapshot and answers carry its identity', async ({
+			page
+		}) => {
+			const state = await fixture(page, {}, agents, 60_000);
+			const live = {
+				...agents[0],
+				status: 'blocked',
+				picker: {
+					question: 'New fixture question',
+					context: [],
+					multi: false,
+					options: [
+						{ index: 1, label: 'Live answer', selected: true },
+						{ index: 2, label: 'Decline', selected: false }
+					]
+				}
+			};
+			await page.addInitScript(
+				(cached) =>
+					localStorage.setItem(
+						'bordr:last:agents',
+						JSON.stringify({ at: Date.now(), value: [cached] })
+					),
+				{
+					...live,
+					picker: {
+						...live.picker,
+						question: 'Old question',
+						options: [{ index: 1, label: 'Stale answer', selected: true }]
+					}
+				}
+			);
+			await page.goto('/');
+			await expect(page.locator('a[href="/a/a"]').first()).toBeVisible();
+			await expect(page.getByRole('button', { name: /Stale answer/ })).toHaveCount(0);
+			await page.evaluate(
+				(value) => window.dispatchEvent(new CustomEvent('fixture-agents', { detail: [value] })),
+				live
+			);
+			await page.getByRole('button', { name: /Live answer/ }).click();
+			await expect.poll(() => state.answers.length).toBe(1);
+			expect(state.answers[0].dialog).toContain('New fixture question');
+		});
+
+		test('malformed nested caches cannot break a later live list', async ({ page }) => {
+			await fixture(page);
+			await page.addInitScript(() => {
+				for (const [key, value] of Object.entries({ agents: [null], panes: { workspaces: [{}] } }))
+					localStorage.setItem(`bordr:last:${key}`, JSON.stringify({ at: Date.now(), value }));
+			});
+			await page.goto('/');
+			await expect(page.locator('a[href="/a/a"]').first()).toBeVisible();
+			expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(
+				true
+			);
+		});
+	});
+}
 
 test.describe('mobile', () => {
 	test.use({ viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true });
