@@ -310,6 +310,8 @@ export function tabViewport(node: HTMLElement, initial: TabViewportOptions) {
 			if (!response.ok) {
 				if (mine !== generation) return;
 				const message = await response.text();
+				// Reading a slow body can outlive release and a replacement claim.
+				if (mine !== generation) return;
 				if (response.status === 501) {
 					unsupported = true;
 					stopAfterNativeTakeover();

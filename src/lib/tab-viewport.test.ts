@@ -318,6 +318,28 @@ describe('tabViewport lease', () => {
 		expect(activity).toEqual([true, false, true]);
 	});
 
+	it('ignores an old error body that arrives after blur and a fresh focused claim', async () => {
+		let finishBody = (_message: string) => {};
+		const old = reply(409);
+		vi.spyOn(old, 'text').mockImplementation(
+			() =>
+				new Promise((resolve) => {
+					finishBody = resolve;
+				})
+		);
+		respond = (write) =>
+			write.action === 'update' && write.leaseId === 'lease-1' ? old : grantAll(write);
+		const { activity } = mount();
+		await vi.advanceTimersByTimeAsync(5_016);
+		window.dispatchEvent(new Event('blur'));
+		window.dispatchEvent(new Event('focus'));
+		await vi.advanceTimersByTimeAsync(0);
+		finishBody('viewport_not_owned');
+		await vi.advanceTimersByTimeAsync(5_000);
+		expect(activity).toEqual([true, false, true]);
+		expect(writesOf('update').at(-1)?.leaseId).toBe('lease-2');
+	});
+
 	it('releases a lease on the machine it was claimed from when the tab changes', async () => {
 		const { action, options } = mount({ tabId: 'tm-dev~w1:t1' });
 		await vi.advanceTimersByTimeAsync(16);
