@@ -131,7 +131,7 @@ export function toSummary(
 	// format is the one the pane tree already uses.
 	const { machineId } = parsePane(paneId);
 	const readdress = (bare: string) => (bare ? formatPane(machineId, bare) : '');
-	// The label maps come from this host's herdr, keyed by herdr's own ids.
+	// Label maps come from the pane's own Herdr instance, keyed by its bare ids.
 	const workspaceLabel = workspaceLabels.get(bareWorkspace);
 	// bordr has to name an agent to start it, and with nothing typed that name
 	// is the harness (`claude`, or `claude-w38-p1` when taken). That says
@@ -140,7 +140,11 @@ export function toSummary(
 	const given =
 		typeof raw.name === 'string' &&
 		raw.name &&
-		!(kind && (raw.name === kind || new RegExp(`^${kind}-w[0-9a-z]+-p\\d+$`).test(raw.name)))
+		!(
+			kind &&
+			(raw.name === kind ||
+				(raw.name.startsWith(kind) && /^-w[0-9a-z]+-p\d+$/.test(raw.name.slice(kind.length))))
+		)
 			? raw.name
 			: '';
 	const named = given || (workspaceLabel && !/^\d+$/.test(workspaceLabel) ? workspaceLabel : '');
@@ -162,8 +166,7 @@ export function toSummary(
 	};
 }
 
-export async function workspaceLabels(): Promise<Map<string, string>> {
-	const herdr = getClient();
+export async function workspaceLabels(herdr = getClient()): Promise<Map<string, string>> {
 	try {
 		const result = await herdr.request<{ workspaces?: Array<Record<string, unknown>> }>(
 			'workspace.list'
@@ -183,8 +186,7 @@ export async function workspaceLabels(): Promise<Map<string, string>> {
  * so the name it is filed under — which is the name YOU gave it in herdr, and
  * usually the most recognisable thing about a pane — needs the second call.
  */
-export async function tabLabels(): Promise<Map<string, string>> {
-	const herdr = getClient();
+export async function tabLabels(herdr = getClient()): Promise<Map<string, string>> {
 	try {
 		const result = await herdr.request<{ tabs?: Array<Record<string, unknown>> }>('tab.list');
 		return new Map((result.tabs ?? []).map((t) => [String(t.tab_id ?? ''), String(t.label ?? '')]));

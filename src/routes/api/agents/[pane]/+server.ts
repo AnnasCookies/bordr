@@ -1,16 +1,18 @@
 import { createHash } from 'node:crypto';
 import { error } from '@sveltejs/kit';
 import {
+	clientFor,
 	rawAgent,
 	rawPane,
 	readPane,
 	readVisible,
 	toSummary,
+	tabLabels,
 	workspaceLabels
 } from '$lib/server/herdr';
 import { adapterFor } from '$lib/server/transcript';
 import { agentCwd } from '$lib/server/transcript/cwd';
-import { isRemote, parsePane } from '$lib/server/herdr/address';
+import { parsePane } from '$lib/server/herdr/address';
 import { branchesFor } from '$lib/server/herdr/branches';
 import { pullFor } from '$lib/server/herdr/pulls';
 import { ensureConnection, remoteTranscriptTail } from '$lib/server/herdr/connections';
@@ -118,8 +120,9 @@ export const GET: RequestHandler = async ({ params, url, request }) => {
 			if (!pane) throw error(404, `no pane ${params.pane}`);
 			raw = pane;
 		}
-		// The labels are this host's; a remote pane's workspace ids are another's.
-		summary = toSummary(raw, isRemote(params.pane) ? undefined : await workspaceLabels());
+		const herdr = await clientFor(parsePane(params.pane).machineId);
+		const [workspaces, tabs] = await Promise.all([workspaceLabels(herdr), tabLabels(herdr)]);
+		summary = toSummary(raw, workspaces, tabs);
 		visible = await readVisible(summary.paneId);
 	} catch (e) {
 		// A socket error is a plain Error, which SvelteKit renders as a bare
