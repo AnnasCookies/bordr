@@ -148,7 +148,17 @@ export function resolveSafe(
 	if (real !== realRoot && !real.startsWith(realRoot + sep)) return null;
 	// The dotfile rule again, on the RESOLVED path: `ln -s .env notes.txt`
 	// inside a root would otherwise serve the thing the rule exists to hide.
-	if (hidden(relative(realRoot, real).split(sep))) return null;
+	const resolvedSegments = relative(realRoot, real).split(sep);
+	if (hidden(resolvedSegments)) return null;
+	if (rest.includes(SCREENSHOT_DIR) || resolvedSegments.includes(SCREENSHOT_DIR)) {
+		// A .png-named directory must not expose a hidden listing, nor may a
+		// .png-named link widen the exception to a non-picture target.
+		try {
+			if (!SCREENSHOT_FILE.test(real) || !statSync(real).isFile()) return null;
+		} catch {
+			return null; // vanished since realpath
+		}
+	}
 	return real;
 }
 

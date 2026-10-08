@@ -20,6 +20,8 @@ writeFileSync(join(ROOT, '.playwright-mcp', 'deep', 'shot.JPG'), 'jpg');
 writeFileSync(join(ROOT, '.playwright-mcp', 'console.log'), 'log');
 writeFileSync(join(ROOT, '.playwright-mcp', 'page.yml'), 'yml');
 symlinkSync(join(ROOT, '.env'), join(ROOT, '.playwright-mcp', 'sneaky.png'));
+symlinkSync(join(ROOT, 'notes.md'), join(ROOT, '.playwright-mcp', 'text.png'));
+mkdirSync(join(ROOT, '.playwright-mcp', 'folder.png'));
 mkdirSync(join(ROOT, '.git'));
 writeFileSync(join(ROOT, '.git', 'x.png'), 'png');
 writeFileSync(join(ROOT, 'sub', 'real.txt'), 'yes');
@@ -107,8 +109,10 @@ describe('resolveSafe: the screenshot folder', () => {
 		expect(resolveSafe('t/.playwright-mcp-old/shot.png', ROOTS)).toBeNull();
 	});
 
-	it('still refuses a picture-named link that really points at a dotfile', () => {
+	it('requires a regular picture file, including after resolving aliases', () => {
 		expect(resolveSafe('t/.playwright-mcp/sneaky.png', ROOTS)).toBeNull();
+		expect(resolveSafe('t/.playwright-mcp/text.png', ROOTS)).toBeNull();
+		expect(resolveSafe('t/.playwright-mcp/folder.png', ROOTS)).toBeNull();
 	});
 });
 
