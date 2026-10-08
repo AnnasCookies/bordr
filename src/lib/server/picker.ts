@@ -199,7 +199,8 @@ function dropPreviewPanel(lines: string[]): { lines: string[]; preview?: string[
 	// A prose table is not a preview: the box must sit beside actual option rows.
 	const top = lines.findLastIndex((line) => {
 		const column = line.indexOf('┌');
-		return column > 0 && OPTION.test(line.slice(0, column));
+		const left = line.slice(0, column);
+		return column > 0 && !/[│┃]/.test(left) && OPTION.test(left);
 	});
 	if (top < 0) return { lines };
 	const column = lines[top].indexOf('┌');

@@ -721,6 +721,11 @@ describe('Claude Code question with previews', () => {
 		expect(picker?.options.map((o) => o.label)).toEqual(['Nested', 'Flat']);
 	});
 
+	it('recognises the outer panel when the preview itself draws a box', () => {
+		const nested = screen.replace('│ a', '│ ┌').replace('│   b', '│ └ b');
+		expect(parsePicker(nested)?.options.map((o) => o.label)).toEqual(['Nested', 'Flat']);
+	});
+
 	it('retains a changed preview subject in the dialog identity', () => {
 		expect(pickerIdentity(parsePicker(screen))).not.toBe(
 			pickerIdentity(parsePicker(screen.replace('│ a', '│ z')))
