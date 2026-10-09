@@ -18,6 +18,8 @@ export interface AgentSummary {
 	cwd: string;
 	/** herdr state_change_seq — monotonic per pane; drives unread badges. */
 	seq: number;
+	/** Target/session that supplied a remote snapshot, used to bind read acknowledgements. */
+	readScope?: string;
 	workspaceId: string;
 	workspaceLabel: string;
 	tabId: string;

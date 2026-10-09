@@ -40,7 +40,7 @@ function readMarkers(): Record<string, number | ReadMarker> {
 	) as Record<string, number | ReadMarker>;
 }
 
-function readScope(paneId: string): string | null {
+export function readScopeFor(paneId: string): string | null {
 	const { machineId } = parsePane(paneId);
 	if (!machineId) return '';
 	const machine = listMachines().find((m) => m.id === machineId && m.enabled);
@@ -66,16 +66,18 @@ function readSeq(
 export function readState(): Record<string, number> {
 	const read: Record<string, number> = Object.create(null);
 	for (const [paneId, marker] of Object.entries(readMarkers())) {
-		const seq = readSeq(marker, readScope(paneId));
+		const seq = readSeq(marker, readScopeFor(paneId));
 		if (seq !== undefined) read[paneId] = seq;
 	}
 	return read;
 }
 
-export function markRead(paneId: string, seq: number): void {
+export function markRead(paneId: string, seq: number, expectedScope?: string): void {
 	if (!paneId || !Number.isSafeInteger(seq) || seq < 0) throw new Error('invalid read marker');
-	const scope = readScope(paneId);
+	const scope = readScopeFor(paneId);
 	if (scope === null) throw new Error('read marker machine is not permitted');
+	if ((scope !== '' || expectedScope !== undefined) && expectedScope !== scope)
+		throw new Error('read marker scope changed');
 	const state = readMarkers();
 	const previous = readSeq(state[paneId], scope);
 	if (previous !== undefined && previous >= seq) return;

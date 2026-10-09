@@ -57,7 +57,9 @@ export class HerdrHangupError extends Error {
 export class HerdrClient {
 	constructor(
 		readonly socketPath: string,
-		private timeoutMs = 10_000
+		private timeoutMs = 10_000,
+		/** Immutable target/session identity of a remote forward; empty for this host. */
+		readonly sourceScope = ''
 	) {}
 
 	/**

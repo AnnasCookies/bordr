@@ -228,7 +228,7 @@ async function connect(machine: Machine): Promise<Connection | null> {
 			connections.set(connectionKey(machine), {
 				machine,
 				socketPath: '',
-				client: new HerdrClient(''),
+				client: new HerdrClient('', undefined, connectionKey(machine)),
 				error: reason
 			});
 			return null;
@@ -244,7 +244,7 @@ async function connect(machine: Machine): Promise<Connection | null> {
 			connections.set(connectionKey(machine), {
 				machine,
 				socketPath,
-				client: new HerdrClient(socketPath),
+				client: new HerdrClient(socketPath, undefined, connectionKey(machine)),
 				error: `could not reach ${machine.target} over ssh`
 			});
 			return null;
@@ -305,7 +305,7 @@ async function connect(machine: Machine): Promise<Connection | null> {
 			connections.set(connectionKey(machine), {
 				machine,
 				socketPath,
-				client: new HerdrClient(socketPath),
+				client: new HerdrClient(socketPath, undefined, connectionKey(machine)),
 				error: stderr.trim().split('\n').pop() || 'ssh forward did not come up'
 			});
 			return null;
@@ -314,7 +314,7 @@ async function connect(machine: Machine): Promise<Connection | null> {
 		const connection: Connection = {
 			machine,
 			socketPath,
-			client: new HerdrClient(socketPath),
+			client: new HerdrClient(socketPath, undefined, connectionKey(machine)),
 			error: null
 		};
 		connections.set(connectionKey(machine), connection);
@@ -408,7 +408,7 @@ export function connectionStates(): Connection[] {
 				connections.get(connectionKey(m)) ?? {
 					machine: m,
 					socketPath: '',
-					client: new HerdrClient(''),
+					client: new HerdrClient('', undefined, connectionKey(m)),
 					error: null
 				}
 		);

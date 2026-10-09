@@ -9,7 +9,7 @@ import { SubscriptionManager } from './subscriptions';
 import { ensureConnection } from './connections';
 import { formatPane, parsePane } from './address';
 import { promptWithPaneFallback } from './prompt-retry';
-import { readState, seenStatus } from '../state-store';
+import { readScopeFor, readState, seenStatus } from '../state-store';
 
 const DEFAULT_SOCKET = join(homedir(), '.config', 'herdr', 'sessions', 'main', 'herdr.sock');
 
@@ -152,13 +152,25 @@ export function toSummary(
 	// pane address does not already say.
 	const tabLabel = tabName(tabLabels.get(bareTab) ?? '');
 	const seq = Number(raw.state_change_seq ?? 0);
+	const scope = machineId
+		? typeof raw.bordr_read_scope === 'string'
+			? raw.bordr_read_scope
+			: undefined
+		: '';
 	return {
 		paneId,
 		agent: String(raw.agent ?? 'unknown'),
 		title: named || String(raw.terminal_title_stripped ?? ''),
-		status: seenStatus(STATUSES.includes(status) ? status : 'unknown', seq, read[paneId]),
+		status: seenStatus(
+			STATUSES.includes(status) ? status : 'unknown',
+			seq,
+			!machineId || (scope !== undefined && scope === readScopeFor(paneId))
+				? read[paneId]
+				: undefined
+		),
 		cwd: String(raw.cwd ?? ''),
 		seq,
+		...(machineId && scope ? { readScope: scope } : {}),
 		workspaceId: readdress(bareWorkspace),
 		workspaceLabel: workspaceLabel && !/^\d+$/.test(workspaceLabel) ? workspaceLabel : '',
 		tabId: readdress(bareTab),
@@ -230,7 +242,7 @@ export async function rawAgent(address: string): Promise<Record<string, unknown>
 	const herdr = await clientFor(machineId);
 	const result = await herdr.request<{ agents: Record<string, unknown>[] }>('agent.list');
 	const agent = result.agents.find((a) => a.pane_id === paneId);
-	return agent ? { ...agent, pane_id: address } : null;
+	return agent ? { ...agent, pane_id: address, bordr_read_scope: herdr.sourceScope } : null;
 }
 
 /** Wait until herdr lists a newly started pane as an active agent. */
@@ -260,7 +272,7 @@ export async function rawPane(address: string): Promise<Record<string, unknown> 
 	const result = await herdr.request<{ panes: Record<string, unknown>[] }>('pane.list');
 	const pane = result.panes.find((p) => p.pane_id === paneId);
 	// Re-addressed on the way out so callers keep working in bordr's ids.
-	return pane ? { ...pane, pane_id: address } : null;
+	return pane ? { ...pane, pane_id: address, bordr_read_scope: herdr.sourceScope } : null;
 }
 
 export async function readVisible(paneId: string): Promise<string> {

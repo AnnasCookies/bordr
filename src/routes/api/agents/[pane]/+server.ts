@@ -1,4 +1,5 @@
 import { createHash } from 'node:crypto';
+import { readScopeFor } from '$lib/server/state-store';
 import { error } from '@sveltejs/kit';
 import {
 	clientFor,
@@ -397,6 +398,8 @@ export const GET: RequestHandler = async ({ params, url, request }) => {
 	// This route can carry megabytes of transcript and is polled while open.
 	// Most polls are byte-identical. Validate them without sending or parsing
 	// the same JSON again; the server still computes current truth first.
+	if (summary.readScope !== undefined && summary.readScope !== readScopeFor(params.pane))
+		throw error(409, 'the pane target changed while its detail was being read');
 	const body = JSON.stringify(payload);
 	const etag = `"${createHash('sha256').update(body).digest('base64url').slice(0, 24)}"`;
 	const headers = {

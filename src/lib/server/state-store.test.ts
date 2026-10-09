@@ -5,6 +5,7 @@ import {
 	isWatched,
 	markRead,
 	readState,
+	readScopeFor,
 	seenStatus,
 	saveJson,
 	setWatched,
@@ -16,6 +17,7 @@ vi.mock('./herdr/machines', () => ({
 	listMachines: () => [{ id: 'remote', label: 'remote', enabled: true, ...remote }]
 }));
 
+vi.mock('./projector', () => ({ projector: { poke: vi.fn() } }));
 const DATA_DIR = process.env.BORDR_DATA_DIR;
 
 beforeEach(() => {
@@ -39,13 +41,31 @@ describe('read state', () => {
 });
 
 it('does not acknowledge a replacement target or session with an old remote marker', () => {
-	markRead('remote~w1:p1', 9);
+	const originalScope = readScopeFor('remote~w1:p1')!;
+	markRead('remote~w1:p1', 9, originalScope);
 	expect(readState()['remote~w1:p1']).toBe(9);
 	remote.target = 'fixture-b';
 	expect(seenStatus('done', 2, readState()['remote~w1:p1'])).toBe('done');
-	markRead('remote~w1:p1', 2);
+	expect(() => markRead('remote~w1:p1', 9, originalScope)).toThrow('read marker scope changed');
+	expect(() => markRead('remote~w1:p1', 2)).toThrow('read marker scope changed');
+	markRead('remote~w1:p1', 2, readScopeFor('remote~w1:p1')!);
 	expect(seenStatus('done', 2, readState()['remote~w1:p1'])).toBe('idle');
 	remote.session = 'other';
+	expect(readState()['remote~w1:p1']).toBeUndefined();
+});
+
+it('refuses a delayed old-view acknowledgement at the HTTP boundary after retargeting', async () => {
+	const { POST } = await import('../../routes/api/read-state/+server');
+	const scope = readScopeFor('remote~w1:p1');
+	remote.target = 'fixture-b';
+	await expect(
+		POST({
+			request: new Request('http://fixture/api/read-state', {
+				method: 'POST',
+				body: JSON.stringify({ paneId: 'remote~w1:p1', seq: 9, scope })
+			})
+		} as never)
+	).rejects.toMatchObject({ status: 409 });
 	expect(readState()['remote~w1:p1']).toBeUndefined();
 });
 

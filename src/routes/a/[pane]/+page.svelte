@@ -2069,17 +2069,18 @@
 	 * local record cleared nothing. Fire-and-forget: a lost mark only leaves
 	 * a dot on until the next look.
 	 */
-	let marked: { paneId: string; seq: number } | null = null;
+	let marked: { paneId: string; seq: number; scope: string } | null = null;
 	function markRead() {
 		if (document.visibilityState !== 'visible') return;
 		const { paneId, seq } = detail;
-		if (marked?.paneId === paneId && marked.seq === seq) return;
-		const attempted = { paneId, seq };
+		const scope = detail.readScope ?? '';
+		if (marked?.paneId === paneId && marked.seq === seq && marked.scope === scope) return;
+		const attempted = { paneId, seq, scope };
 		marked = attempted;
 		fetch('/api/read-state', {
 			method: 'POST',
 			headers: { 'content-type': 'application/json' },
-			body: JSON.stringify({ paneId, seq })
+			body: JSON.stringify(attempted)
 		})
 			.then((response) => {
 				if (!response.ok) {

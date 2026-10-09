@@ -1,6 +1,7 @@
 import { expect, it, vi } from 'vitest';
 import type { HerdrClient } from './client';
 import { tabLabels, toSummary, workspaceLabels } from './index';
+vi.mock('./machines', () => ({ listMachines: () => [] }));
 
 it('reads names from the supplied instance even when local and remote bare ids collide', async () => {
 	for (const machine of ['', 'remote']) {
@@ -27,6 +28,22 @@ it('reads names from the supplied instance even when local and remote bare ids c
 		expect(summary.tabLabel).toBe(`${machine || 'local'} tab`);
 		expect(summary.workspaceId).toBe(`${machine ? `${machine}~` : ''}w8`);
 	}
+});
+
+it('carries the scope attached to a remote snapshot rather than deriving it from an editable id', () => {
+	const snapshot = toSummary(
+		{
+			pane_id: 'remote~w8:p1',
+			agent_status: 'done',
+			state_change_seq: 2,
+			bordr_read_scope: 'captured-target'
+		},
+		new Map(),
+		new Map(),
+		{ 'remote~w8:p1': 9 }
+	);
+	expect(snapshot.readScope).toBe('captured-target');
+	expect(snapshot.status).toBe('done');
 });
 
 it('treats a harness name as literal text rather than a regular expression', () => {
