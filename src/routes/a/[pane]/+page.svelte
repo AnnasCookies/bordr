@@ -2073,17 +2073,24 @@
 	function markRead() {
 		if (document.visibilityState !== 'visible') return;
 		const { paneId, seq } = detail;
-		if (marked?.paneId === paneId && marked.seq >= seq) return;
-		marked = { paneId, seq };
+		if (marked?.paneId === paneId && marked.seq === seq) return;
+		const attempted = { paneId, seq };
+		marked = attempted;
 		fetch('/api/read-state', {
 			method: 'POST',
 			headers: { 'content-type': 'application/json' },
 			body: JSON.stringify({ paneId, seq })
 		})
 			.then((response) => {
-				if (!response.ok) console.warn(`read-state refused: ${response.status}`);
+				if (!response.ok) {
+					if (marked === attempted) marked = null;
+					console.warn(`read-state refused: ${response.status}`);
+				}
 			})
-			.catch((e: unknown) => console.warn('read-state failed', e));
+			.catch((e: unknown) => {
+				if (marked === attempted) marked = null;
+				console.warn('read-state failed', e);
+			});
 	}
 
 	// On arrival, and again each time the pane's seq advances while the page

@@ -57,6 +57,9 @@ async function fixture(
 ) {
 	const state = {
 		details: 0,
+		detailSeq: 1,
+		readStatus: 200,
+		reads: [] as Array<{ paneId: string; seq: number }>,
 		operations: [] as string[],
 		agentData: fleet,
 		treeData: workspaces,
@@ -162,6 +165,10 @@ async function fixture(
 			return respond({ workspaces: state.treeData });
 		}
 		if (path === '/api/agents') return respond({ agents: state.agentData });
+		if (path === '/api/read-state' && route.request().method() === 'POST') {
+			state.reads.push(route.request().postDataJSON());
+			return respond({ ok: true }, state.readStatus);
+		}
 		if (path === '/api/control') {
 			state.controlCalls++;
 			state.controlBodies.push(route.request().postDataJSON());
@@ -205,6 +212,7 @@ async function fixture(
 			return respond({
 				...(agents.find((a) => a.paneId === paneId) ?? agents[0]),
 				paneId,
+				seq: state.detailSeq,
 				paneCwd: '/fixture',
 				branch: '',
 				ahead: 0,
@@ -688,6 +696,24 @@ for (const width of [390, 1400]) {
 		});
 	});
 }
+
+test('a retargeted pane with a lower sequence is acknowledged again', async ({ page }) => {
+	const state = await fixture(page);
+	state.detailSeq = 9;
+	await openPane(page);
+	await expect.poll(() => state.reads.some((r) => r.seq === 9)).toBe(true);
+	state.detailSeq = 2;
+	await expect.poll(() => state.reads.some((r) => r.seq === 2), { timeout: 10_000 }).toBe(true);
+});
+
+test('a refused read marker is retried on the next detail refresh', async ({ page }) => {
+	const state = await fixture(page);
+	state.readStatus = 503;
+	await openPane(page);
+	await expect.poll(() => state.reads.length).toBeGreaterThan(0);
+	state.readStatus = 200;
+	await expect.poll(() => state.reads.length, { timeout: 10_000 }).toBeGreaterThan(1);
+});
 
 test.describe('mobile', () => {
 	test.use({ viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true });
