@@ -198,12 +198,12 @@ const MAX_FOOTER_GAP = 8;
 function dropPreviewPanel(lines: string[]): { lines: string[]; preview?: string[] } {
 	// A prose table is not a preview: the box must sit beside actual option rows.
 	const top = lines.findLastIndex((line) => {
-		const column = line.indexOf('┌');
-		const left = line.slice(0, column);
-		return column > 0 && !/[│┃]/.test(left) && OPTION.test(left);
+		const column = line.lastIndexOf('┌');
+		// The outer panel starts beside option 1; an inner drawing starts lower.
+		return column > 0 && OPTION.exec(line.slice(0, column))?.[2] === '1';
 	});
 	if (top < 0) return { lines };
-	const column = lines[top].indexOf('┌');
+	const column = lines[top].lastIndexOf('┌');
 	const bottom = lines.findIndex((line, i) => i > top && line[column] === '└');
 	if (bottom < 0) return { lines };
 	const footer = lines.findIndex((line, i) => i > bottom && FOOTER.test(line));

@@ -721,6 +721,16 @@ describe('Claude Code question with previews', () => {
 		expect(picker?.options.map((o) => o.label)).toEqual(['Nested', 'Flat']);
 	});
 
+	it('does not mistake a box glyph inside an option label for panel furniture', () => {
+		for (const glyph of ['│', '┌']) {
+			const label = `Nes${glyph}ed`;
+			expect(parsePicker(screen.replace('Nested', label))?.options.map((o) => o.label)).toEqual([
+				label,
+				'Flat'
+			]);
+		}
+	});
+
 	it('recognises the outer panel when the preview itself draws a box', () => {
 		const nested = screen.replace('│ a', '│ ┌').replace('│   b', '│ └ b');
 		expect(parsePicker(nested)?.options.map((o) => o.label)).toEqual(['Nested', 'Flat']);
