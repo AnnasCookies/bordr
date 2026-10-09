@@ -136,7 +136,8 @@ describe('listDirectory', () => {
 });
 
 it('does not inherit object methods as MIME types for unknown extensions', () => {
-	for (const extension of ['constructor', '__proto__', 'toString']) expect(MIME[extension]).toBeUndefined();
+	for (const extension of ['constructor', '__proto__', 'toString'])
+		expect(MIME[extension]).toBeUndefined();
 });
 
 describe('viewerKind', () => {
