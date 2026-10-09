@@ -47,7 +47,7 @@ function existingRoots(roots: Record<string, string>): Record<string, string> {
 
 export const FILE_ROOTS: Record<string, string> = existingRoots(parseRoots());
 
-export const MIME: Record<string, string> = {
+export const MIME: Record<string, string> = Object.assign(Object.create(null), {
 	html: 'text/html; charset=utf-8',
 	htm: 'text/html; charset=utf-8',
 	svg: 'image/svg+xml',
@@ -69,7 +69,7 @@ export const MIME: Record<string, string> = {
 	yaml: 'text/plain; charset=utf-8',
 	yml: 'text/plain; charset=utf-8',
 	toml: 'text/plain; charset=utf-8'
-};
+});
 
 /** How the viewer should render a file, from its extension alone. */
 export type ViewerKind = 'markdown' | 'image' | 'pdf' | 'sandboxed' | 'text' | 'binary';

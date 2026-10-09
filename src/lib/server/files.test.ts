@@ -2,7 +2,7 @@ import { afterAll, describe, expect, it } from 'vitest';
 import { mkdtempSync, mkdirSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { listDirectory, resolveSafe, viewerKind } from './files';
+import { listDirectory, MIME, resolveSafe, viewerKind } from './files';
 
 // A throwaway root with a real file, plus a symlink escaping it.
 const OUTSIDE = mkdtempSync(join(tmpdir(), 'bordr-outside-'));
@@ -133,6 +133,10 @@ describe('listDirectory', () => {
 	it('puts directories first', () => {
 		expect(names[0]).toBe('sub');
 	});
+});
+
+it('does not inherit object methods as MIME types for unknown extensions', () => {
+	for (const extension of ['constructor', '__proto__', 'toString']) expect(MIME[extension]).toBeUndefined();
 });
 
 describe('viewerKind', () => {
