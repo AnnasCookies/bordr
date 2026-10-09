@@ -42,7 +42,9 @@ function loadWorker(
 it.each([undefined, 'f'.repeat(64)])(
 	'only answers notification buttons bound to a question (%s)',
 	async (dialogHash) => {
-		const fetch = vi.fn(async (_url: string, _init: RequestInit) => ({ ok: true }));
+		const fetch = vi.fn<(url: string, init: RequestInit) => Promise<{ ok: boolean }>>(async () => ({
+			ok: true
+		}));
 		const open = vi.fn(async () => null);
 		const listeners = loadWorker({ fetch }, [], open);
 		let work: Promise<void> | undefined;

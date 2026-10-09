@@ -319,7 +319,7 @@ describe('tabViewport lease', () => {
 	});
 
 	it('ignores an old error body that arrives after blur and a fresh focused claim', async () => {
-		let finishBody = (_message: string) => {};
+		let finishBody: (message: string) => void = () => {};
 		const old = reply(409);
 		vi.spyOn(old, 'text').mockImplementation(
 			() =>
