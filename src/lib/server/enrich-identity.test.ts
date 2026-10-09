@@ -89,7 +89,7 @@ it('reads new-host approvals immediately on warm retarget/session change and onl
 	} as Parameters<typeof POST>[0]);
 	await vi.runAllTimersAsync();
 	expect((await result).status).toBe(200);
-	expect(fixture.keys).toHaveBeenCalledWith(summary.paneId, 'new-host', ['1']);
+	expect(fixture.keys).toHaveBeenCalledWith(summary.paneId, 'new-host', ['enter']);
 });
 for (const revoke of ['disable', 'remove']) {
 	it(`revokes warm actionable readings on ${revoke} and does not revive them on re-add`, async () => {

@@ -98,27 +98,41 @@ beforeEach(() => {
 });
 
 describe('answer route: dialects', () => {
-	it('Claude style: the digit selects and confirms, one keystroke', async () => {
+	it('Claude style: selects and confirms in one key sequence', async () => {
 		herdr.screens.push(DIALOG, PROMPT);
 		const result = await answer(2);
-		expect(herdr.sent).toEqual([['2']]);
+		expect(herdr.sent).toEqual([['down', 'enter']]);
 		expect(result).toMatchObject({ chose: 'Green', outcome: 'accepted' });
 	});
 
-	/** pi ignores digits: the same dialog is still up, highlight unmoved. */
-	it('pi style: navigates with arrows and Enter when the digit was inert', async () => {
-		herdr.screens.push(DIALOG, DIALOG, PROMPT);
+	/** pi ignores digits: use its arrows and Enter without a trial keystroke. */
+	it('pi style: navigates and confirms once', async () => {
+		herdr.screens.push(DIALOG, PROMPT);
 		const result = await answer(2);
-		expect(herdr.sent).toEqual([['2'], ['down', 'enter']]);
+		expect(herdr.sent).toEqual([['down', 'enter']]);
 		expect(result).toMatchObject({ chose: 'Green', outcome: 'accepted' });
 	});
 
-	/** A radio dialog: the digit moved the highlight but did not submit. */
-	it('radio style: sends Enter when the digit only moved the highlight', async () => {
+	it('a delayed radio redraw stays unknown, without another Enter', async () => {
 		herdr.screens.push(DIALOG, DIALOG_ON_2, PROMPT);
 		const result = await answer(2);
-		expect(herdr.sent).toEqual([['2'], ['enter']]);
-		expect(result.outcome).toBe('accepted');
+		expect(herdr.sent).toEqual([['down', 'enter']]);
+		expect(result.outcome).toBe('unknown');
+		expect(herdr.screens).toHaveLength(1);
+	});
+
+	it('does not answer a second plain question with identical wording', async () => {
+		herdr.screens.push(DIALOG, DIALOG, PROMPT);
+		const result = await answer(2);
+		expect(herdr.sent).toEqual([['down', 'enter']]);
+		expect(result.outcome).toBe('unknown');
+		expect(herdr.screens).toHaveLength(1);
+	});
+
+	it('uses a digit once when no highlight can be observed', async () => {
+		herdr.screens.push(DIALOG.replace('❯', ' '), PROMPT);
+		expect((await answer(2)).outcome).toBe('accepted');
+		expect(herdr.sent).toEqual([['2']]);
 	});
 
 	it('OMP nerd-symbol ask: navigates with arrows and Enter', async () => {
@@ -139,7 +153,7 @@ describe('answer route: dialects', () => {
 		const other = DIALOG.replace('Which colour?', 'Which size?').replace('Green', 'Large');
 		herdr.screens.push(DIALOG, other);
 		const result = await answer(2);
-		expect(herdr.sent).toEqual([['2']]);
+		expect(herdr.sent).toEqual([['down', 'enter']]);
 		expect(result.outcome).toBe('unknown');
 	});
 });
@@ -280,7 +294,7 @@ describe('answer route: codex questions', () => {
 		// so the answer must go through the question itself.
 		herdr.screens.push(CODEX_COLLAPSED, CODEX_COLLAPSED, CODEX_OPENED, CODEX_IDLE);
 		const result = await answer(2);
-		expect(herdr.sent).toEqual([['alt+up'], ['2']]);
+		expect(herdr.sent).toEqual([['alt+up'], ['down', 'enter']]);
 		expect(result).toMatchObject({ chose: 'Local preview', outcome: 'accepted' });
 	});
 
@@ -316,7 +330,7 @@ describe('answer route: codex questions', () => {
 		try {
 			herdr.screens.push(CODEX_COLLAPSED, CODEX_COLLAPSED, wrapped, CODEX_IDLE);
 			const result = await answer(2);
-			expect(herdr.sent).toEqual([['alt+up'], ['2']]);
+			expect(herdr.sent).toEqual([['alt+up'], ['down', 'enter']]);
 			expect(result.outcome).toBe('accepted');
 		} finally {
 			CODEX_ASK.options[1] = 'Local preview';
