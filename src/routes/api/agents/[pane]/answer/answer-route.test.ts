@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { parsePicker } from '$lib/server/picker';
 import { pickerIdentity } from '$lib/picker-shortcut';
+import { createHash } from 'node:crypto';
 
 /**
  * The answer route against three real dialects, with herdr doubled: the
@@ -141,6 +142,45 @@ describe('answer route: dialects', () => {
 		expect(herdr.sent).toEqual([['2']]);
 		expect(result.outcome).toBe('unknown');
 	});
+});
+
+it('refuses malformed answer input before reading or driving a pane', async () => {
+	herdr.readVisible.mockClear();
+	for (const body of [null, [], { index: -1 }, { index: 1.5 }, { index: 1, submit: 'yes' }])
+		await expect(post(body as never)).rejects.toMatchObject({ status: 400 });
+	const { POST } = await import('./+server');
+	await expect(
+		POST({
+			params: { pane: 'w1:p1' },
+			request: new Request('http://fixture', { method: 'POST', body: 'not JSON' })
+		} as never)
+	).rejects.toMatchObject({ status: 400 });
+	expect(herdr.readVisible).not.toHaveBeenCalled();
+	expect(herdr.sent).toEqual([]);
+});
+
+it('refuses queued notification answers for a different question before sending keys', async () => {
+	const old = DIALOG.replace('Which colour?', 'Old question?');
+	herdr.screens.push(DIALOG);
+	const dialogHash = createHash('sha256')
+		.update(pickerIdentity(parsePicker(old)))
+		.digest('hex');
+	await expect(post({ index: 1, dialogHash })).rejects.toMatchObject({ status: 409 });
+	expect(herdr.sent).toEqual([]);
+});
+
+it('accepts a bound notification and refuses malformed fingerprints before reading the pane', async () => {
+	herdr.screens.push(DIALOG, PROMPT);
+	const dialogHash = createHash('sha256')
+		.update(pickerIdentity(parsePicker(DIALOG)))
+		.digest('hex');
+	expect(await post({ index: 2, dialogHash })).toMatchObject({
+		chose: 'Green',
+		outcome: 'accepted'
+	});
+	herdr.readVisible.mockClear();
+	await expect(post({ index: 1, dialogHash: 'invalid' })).rejects.toMatchObject({ status: 400 });
+	expect(herdr.readVisible).not.toHaveBeenCalled();
 });
 
 const preview = (subject: string) =>

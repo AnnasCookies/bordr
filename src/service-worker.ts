@@ -28,11 +28,14 @@ interface PushPayload {
 	paneId?: string;
 	/** The first couple of single-select options, as notification buttons. */
 	options?: PickerAction[];
+	/** The server's fingerprint of the exact question that generated these buttons. */
+	dialogHash?: string;
 }
 
 interface NotificationData {
 	url?: string;
 	paneId?: string;
+	dialogHash?: string;
 	/** Only on the summary, so a third arrival can count past a collapse. */
 	count?: number;
 }
@@ -79,7 +82,11 @@ function actionsFor(options: PickerAction[] | undefined): NotificationAction[] {
 async function show(data: PushPayload): Promise<void> {
 	await self.registration.showNotification(data.title ?? 'bordr', {
 		body: data.body ?? 'An agent needs you.',
-		data: { url: data.url ?? '/', paneId: data.paneId } satisfies NotificationData,
+		data: {
+			url: data.url ?? '/',
+			paneId: data.paneId,
+			dialogHash: data.dialogHash
+		} satisfies NotificationData,
 		tag: data.url ?? 'bordr', // one notification per agent, not a pile
 		actions: actionsFor(data.options),
 		// An agent waiting on you is not a thing to miss because you happened
@@ -177,12 +184,17 @@ async function openTarget(url: string): Promise<void> {
  * has moved on is refused rather than misapplied — which is why a failure
  * here opens the agent instead of being swallowed.
  */
-async function answer(paneId: string, index: number, url: string): Promise<void> {
+async function answer(
+	paneId: string,
+	index: number,
+	url: string,
+	dialogHash: string
+): Promise<void> {
 	try {
 		const response = await fetch(`/api/agents/${encodeURIComponent(paneId)}/answer`, {
 			method: 'POST',
 			headers: { 'content-type': 'application/json' },
-			body: JSON.stringify({ index })
+			body: JSON.stringify({ index, dialogHash })
 		});
 		if (response.ok) return;
 	} catch {
@@ -197,8 +209,13 @@ self.addEventListener('notificationclick', (event) => {
 	event.notification.close();
 
 	const chosen = chosenIndex(event.action);
-	if (chosen !== null && data.paneId) {
-		event.waitUntil(answer(data.paneId, chosen, url));
+	if (
+		chosen !== null &&
+		data.paneId &&
+		typeof data.dialogHash === 'string' &&
+		/^[a-f0-9]{64}$/.test(data.dialogHash)
+	) {
+		event.waitUntil(answer(data.paneId, chosen, url, data.dialogHash));
 		return;
 	}
 	event.waitUntil(openTarget(url));

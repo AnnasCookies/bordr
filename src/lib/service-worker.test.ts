@@ -8,7 +8,8 @@ type Handler = (event: unknown) => void;
 
 function loadWorker(
 	extra: Record<string, unknown> = {},
-	clients: Array<{ postMessage(value: unknown): void }> = []
+	clients: Array<{ postMessage(value: unknown): void }> = [],
+	openWindow: (url: string) => Promise<unknown> = async () => null
 ) {
 	const listeners = new Map<string, Handler>();
 	const source = readFileSync(new URL('../service-worker.ts', import.meta.url), 'utf8');
@@ -31,12 +32,37 @@ function loadWorker(
 			location: { origin: 'https://bordr.test' },
 			navigator: { userAgent: 'fixture' },
 			addEventListener: (name: string, listener: Handler) => listeners.set(name, listener),
-			clients: { claim: async () => {}, matchAll: async () => clients }
+			clients: { claim: async () => {}, matchAll: async () => clients, openWindow }
 		},
 		...extra
 	});
 	return listeners;
 }
+
+it.each([undefined, 'f'.repeat(64)])(
+	'only answers notification buttons bound to a question (%s)',
+	async (dialogHash) => {
+		const fetch = vi.fn(async (_url: string, _init: RequestInit) => ({ ok: true }));
+		const open = vi.fn(async () => null);
+		const listeners = loadWorker({ fetch }, [], open);
+		let work: Promise<void> | undefined;
+		listeners.get('notificationclick')!({
+			action: 'opt:1',
+			notification: { data: { paneId: 'a', url: '/a/a', dialogHash }, close: vi.fn() },
+			waitUntil: (pending: Promise<void>) => {
+				work = pending;
+			}
+		});
+		await work;
+		if (dialogHash) {
+			expect(JSON.parse(String(fetch.mock.calls[0][1].body))).toEqual({ index: 1, dialogHash });
+			expect(open).not.toHaveBeenCalled();
+		} else {
+			expect(fetch).not.toHaveBeenCalled();
+			expect(open).toHaveBeenCalledWith('/a/a');
+		}
+	}
+);
 
 it("serves only the build's own files from the phone, never the page or the API", () => {
 	const listeners = loadWorker({

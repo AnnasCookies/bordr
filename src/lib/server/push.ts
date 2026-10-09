@@ -1,4 +1,6 @@
 import { env } from '$env/dynamic/private';
+import { createHash } from 'node:crypto';
+import { pickerIdentity } from '$lib/picker-shortcut';
 import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { homedir } from 'node:os';
@@ -215,6 +217,11 @@ async function notifyBlocked(paneId: string): Promise<void> {
 		body: `${question ?? 'Blocked — waiting on you.'}${detail ? `\n${detail}` : ''}`,
 		url: `/a/${paneId}`,
 		paneId,
+		// A compact fingerprint binds queued buttons to this question without
+		// storing its full preview/context in notification data.
+		dialogHash: picker
+			? createHash('sha256').update(pickerIdentity(picker)).digest('hex')
+			: undefined,
 		// Buttons on the notification itself, so a one-tap answer never has to
 		// open the app. Single-select only: a checkbox picker needs a submit
 		// rather than one index, and answering it from a two-button strip would
