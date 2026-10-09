@@ -62,6 +62,8 @@ describe('resolveSafe', () => {
 
 	it('refuses unknown roots and empty paths', () => {
 		expect(resolveSafe('etc/passwd', ROOTS)).toBeNull();
+		for (const name of ['constructor', '__proto__', 'toString'])
+			expect(resolveSafe(`${name}/file.txt`, ROOTS)).toBeNull();
 		expect(resolveSafe('', ROOTS)).toBeNull();
 		expect(resolveSafe('/', ROOTS)).toBeNull();
 	});

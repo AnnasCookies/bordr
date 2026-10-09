@@ -127,7 +127,7 @@ export function resolveSafe(
 	const [rootKey, ...rest] = clean.split('/').filter(Boolean);
 	if (!rootKey) return null;
 	const root = roots[rootKey];
-	if (!root) return null;
+	if (typeof root !== 'string' || !root) return null;
 	// Dotfiles are refused at the RESOLVER, not merely hidden from the listing:
 	// omitting them from the list while still serving a direct URL is theatre,
 	// and `.env` holds the VAPID private key. This also subsumes `..`.
