@@ -409,6 +409,17 @@ describe('workflow agents', () => {
 			workflow: { runId: 'wf_abc-123', name: 'kb-import' }
 		});
 		expect(byLabel['write:apps'].done).toBe(false);
+		const notice = JSON.stringify({
+			type: 'queue-operation',
+			timestamp: '2026-09-23T19:00:00Z',
+			content:
+				'<task-notification><task-id>wf_abc-123</task-id><status>killed</status></task-notification>'
+		});
+		const interrupted = (await listSubagents(transcript, notice)).find(
+			(a) => a.id === 'wf_abc-123.agent-a2'
+		);
+		expect(interrupted?.workflow?.termination).toBe('killed');
+		expect(interrupted?.done).toBe(false); // parent termination is not a successful child result
 		expect(await readSubagent(transcript, 'wf_abc-123.agent-a2')).toBe(
 			entry('2026-09-23T18:00:00Z')
 		);
@@ -420,6 +431,10 @@ describe('workflow agents', () => {
 		expect(
 			(await listSubagents(transcript)).find((a) => a.id === 'wf_abc-123.agent-a1')?.done
 		).toBe(false);
+		expect(
+			(await listSubagents(transcript, notice)).find((a) => a.id === 'wf_abc-123.agent-a1')
+				?.workflow?.termination
+		).toBeUndefined();
 	});
 
 	it('does not invent running children when their lifecycle journal is unreadable', async () => {

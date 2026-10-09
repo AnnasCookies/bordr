@@ -617,6 +617,22 @@ for (const [screen, viewport] of Object.entries({
 	}
 }
 
+test('unreturned workflow children never imply liveness or successful completion', async ({
+	page
+}) => {
+	const state = await fixture(page);
+	state.children = [
+		{
+			...state.children[0],
+			done: false,
+			workflow: { runId: 'wf_fixture', name: 'Fixture workflow', termination: 'killed' }
+		} as (typeof state.children)[number]
+	];
+	await openPane(page);
+	await expect(page.getByText('run killed · results missing', { exact: true })).toBeVisible();
+	await expect(page.getByText('no result recorded', { exact: true })).toBeVisible();
+});
+
 test('All includes finished-only children and desktop Files/Search menus have visible drawers', async ({
 	page
 }) => {

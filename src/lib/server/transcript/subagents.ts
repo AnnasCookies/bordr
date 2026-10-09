@@ -2,7 +2,12 @@ import { createReadStream, type Dirent } from 'node:fs';
 import { createInterface } from 'node:readline';
 import { readdir, readFile, stat } from 'node:fs/promises';
 import { basename, dirname, join } from 'node:path';
-import { claudeRunEnded, isDone, resolvedToolUseTimes } from './subagent-done';
+import {
+	claudeRunEnded,
+	isDone,
+	resolvedToolUseTimes,
+	workflowTerminations
+} from './subagent-done';
 
 /**
  * Claude Code's sub-agents, which have their own transcripts.
@@ -60,7 +65,7 @@ export interface SubagentSummary {
 	/** The sub-agent that spawned it, for anything deeper than a direct child. */
 	parentAgentId: string;
 	/** The Claude Code workflow run it belongs to, when a workflow started it. */
-	workflow?: { runId: string; name: string };
+	workflow?: { runId: string; name: string; termination?: string };
 }
 
 function sessionDir(transcriptPath: string): string {
@@ -266,9 +271,9 @@ async function listPiSubagents(transcriptPath: string): Promise<SubagentSummary[
  * cannot say so: it ends on the structured-output tool result, which reads
  * the same as a turn still in progress.
  *
- * ponytail: a run killed mid-way leaves its unfinished agents looking like
- * they are still running, because nothing records the kill where bordr can
- * read it. Read the parent's task-notification for the run if that bites.
+ * A parent terminal notice can describe the run ending, but cannot prove a
+ * detached child stopped. Unreturned children stay unknown: the viewer says
+ * no result recorded, not running or successfully completed.
  */
 const WF_RUN = /^wf_[A-Za-z0-9-]+$/;
 const WF_ID = /^(wf_[A-Za-z0-9-]+)\.(agent-[A-Za-z0-9_-]+)$/;
@@ -298,7 +303,10 @@ async function scanWorkflowAgent(path: string, scans: Map<string, WorkflowScan>)
 	return scan;
 }
 
-async function listWorkflowAgents(transcriptPath: string): Promise<SubagentSummary[]> {
+async function listWorkflowAgents(
+	transcriptPath: string,
+	sessionText: string
+): Promise<SubagentSummary[]> {
 	const root = join(subagentsDir(transcriptPath), 'workflows');
 	let runs: string[];
 	try {
@@ -310,6 +318,7 @@ async function listWorkflowAgents(transcriptPath: string): Promise<SubagentSumma
 		() => [] as string[]
 	);
 
+	const terminations = workflowTerminations(sessionText);
 	const scans = wfScans.get(root) ?? new Map<string, WorkflowScan>();
 	wfScans.delete(root);
 	wfScans.set(root, scans);
@@ -320,6 +329,8 @@ async function listWorkflowAgents(transcriptPath: string): Promise<SubagentSumma
 		const script = scripts.find((f) => f.endsWith(`-${runId}.js`));
 		const name = script ? script.slice(0, -`-${runId}.js`.length) : runId;
 		const returned = new Set<string>();
+		const starts = new Set<string>();
+		let latestStartAt = 0;
 		let journal: string;
 		try {
 			journal = await readFile(join(dir, 'journal.jsonl'), 'utf8');
@@ -331,9 +342,15 @@ async function listWorkflowAgents(transcriptPath: string): Promise<SubagentSumma
 		}
 		for (const line of journal.split('\n')) {
 			try {
-				const row = JSON.parse(line) as { type?: string; agentId?: string };
+				const row = JSON.parse(line) as { type?: string; agentId?: string; timestamp?: string };
 				if (row.type === 'result' && row.agentId) returned.add(row.agentId);
-				if (row.type === 'started' && row.agentId) returned.delete(row.agentId);
+				if (row.type === 'started' && row.agentId) {
+					const at = Date.parse(row.timestamp ?? '');
+					if (Number.isFinite(at)) latestStartAt = Math.max(latestStartAt, at);
+					else if (starts.has(row.agentId)) latestStartAt = Infinity;
+					starts.add(row.agentId);
+					returned.delete(row.agentId);
+				}
 			} catch {
 				// A half-written final line is normal while the run is going.
 			}
@@ -354,7 +371,15 @@ async function listWorkflowAgents(transcriptPath: string): Promise<SubagentSumma
 					entries: scan.entries,
 					lastAt: scan.lastAt,
 					done: returned.has(id.replace(/^agent-/, '')),
-					workflow: { runId, name }
+					workflow: {
+						runId,
+						name,
+						// A run ending does not prove every detached child succeeded or stopped.
+						termination:
+							(terminations.get(runId)?.at ?? -1) >= Math.max(latestStartAt, scan.lastAt)
+								? terminations.get(runId)?.status
+								: undefined
+					}
 				});
 			} catch {
 				// A sidecar whose transcript has not appeared yet.
@@ -528,7 +553,7 @@ export async function listSubagents(
 
 	return [
 		...out,
-		...(await listWorkflowAgents(transcriptPath)),
+		...(await listWorkflowAgents(transcriptPath, sessionText)),
 		...(await listPiSubagents(transcriptPath))
 	].sort((a, b) => b.lastAt - a.lastAt);
 }

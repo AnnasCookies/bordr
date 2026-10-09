@@ -1,5 +1,11 @@
 import { describe, expect, it } from 'vitest';
-import { claudeRunEnded, isDone, resolvedToolUses, resolvedToolUseTimes } from './subagent-done';
+import {
+	claudeRunEnded,
+	isDone,
+	resolvedToolUses,
+	resolvedToolUseTimes,
+	workflowTerminations
+} from './subagent-done';
 
 const NOW = 1_700_000_000_000;
 
@@ -8,6 +14,22 @@ const result = (id: string) =>
 		type: 'user',
 		message: { content: [{ type: 'tool_result', tool_use_id: id, content: 'done' }] }
 	});
+
+describe('workflow terminal evidence', () => {
+	it.each(['completed', 'failed', 'killed', 'stopped'])(
+		'reads an exact timed harness notice for %s',
+		(status) => {
+			const content = `<task-notification><task-id>wf_abc-123</task-id><status>${status}</status></task-notification>`;
+			const record = { type: 'queue-operation', timestamp: '2026-10-06T10:00:00Z', content };
+			expect(workflowTerminations(JSON.stringify(record)).get('wf_abc-123')?.status).toBe(status);
+			expect(workflowTerminations(JSON.stringify({ ...record, type: 'assistant' })).size).toBe(0);
+			expect(workflowTerminations(JSON.stringify({ ...record, timestamp: undefined })).size).toBe(
+				0
+			);
+			expect(workflowTerminations(JSON.stringify(record)).has('wf_abc')).toBe(false);
+		}
+	);
+});
 
 describe('resolvedToolUses', () => {
 	it('finds the tool calls that have been answered', () => {

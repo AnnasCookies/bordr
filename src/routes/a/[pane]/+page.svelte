@@ -597,16 +597,20 @@
 	const shownSubs = $derived(strip === 'all' || showFinished ? [...running, ...finished] : running);
 	const openSubAgent = $derived(subs.find((a) => a.id === openSub) ?? null);
 	/**
-	 * Claude Code workflow runs still going, one chip each: a run of nine
-	 * agents reads as one job with a count, not nine unrelated ones.
+	 * Workflows with unreturned results, one chip each. A journal proves what
+	 * returned, not process liveness; stopped and unknown runs must not spin.
 	 */
 	const workflows = $derived.by(() => {
-		const runs: Record<string, { name: string; total: number; done: number }> = {};
+		const runs: Record<
+			string,
+			{ name: string; total: number; done: number; termination?: string }
+		> = {};
 		for (const a of subs) {
 			if (!a.workflow) continue;
 			const run = (runs[a.workflow.runId] ??= { name: a.workflow.name, total: 0, done: 0 });
 			run.total++;
 			if (a.done) run.done++;
+			if (a.workflow.termination) run.termination = a.workflow.termination;
 		}
 		return Object.entries(runs).filter(([, r]) => r.done < r.total);
 	});
@@ -3272,7 +3276,11 @@
 							class="flex shrink-0 items-center gap-1.5 rounded-full border border-edge bg-chip px-2.5 py-1 text-[11.5px]"
 							title="Claude Code workflow {runId}"
 						>
-							<Spinner size={11} label="running" />
+							<span class="font-mono text-faint"
+								>{run.termination
+									? `run ${run.termination} · results missing`
+									: 'awaiting results'}</span
+							>
 							<span class="max-w-[10rem] truncate font-mono text-working">{run.name}</span>
 							<span class="font-mono text-[10px] text-faint">{run.done}/{run.total}</span>
 						</span>
@@ -3290,7 +3298,9 @@
 								between working and long finished was an entry count that stops
 								moving, which you have to watch to notice.
 							-->
-							{#if !sub.done}<Spinner size={11} label="running" />{/if}
+							{#if !sub.done && sub.workflow}
+								<span class="font-mono text-[10px] text-faint">no result recorded</span>
+							{:else if !sub.done}<Spinner size={11} label="running" />{/if}
 							<span class="font-mono {sub.done ? 'text-muted' : 'text-working'}"
 								>{sub.agentType}</span
 							>
