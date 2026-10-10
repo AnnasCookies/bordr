@@ -204,8 +204,9 @@ async function notifyBlocked(paneId: string): Promise<void> {
 	const agents = await listAgents().catch(() => []);
 	const agent = agents.find((a) => a.paneId === paneId);
 	let picker: Picker | null = null;
+	const scope = agent?.readScope ?? '';
 	try {
-		picker = parsePicker(await readVisible(paneId));
+		picker = parsePicker(await readVisible(paneId, scope));
 	} catch {
 		// screen unreadable — the generic body still says what matters
 	}
@@ -217,6 +218,7 @@ async function notifyBlocked(paneId: string): Promise<void> {
 		body: `${question ?? 'Blocked — waiting on you.'}${detail ? `\n${detail}` : ''}`,
 		url: `/a/${paneId}`,
 		paneId,
+		scope,
 		// A compact fingerprint binds queued buttons to this question without
 		// storing its full preview/context in notification data.
 		dialogHash: picker

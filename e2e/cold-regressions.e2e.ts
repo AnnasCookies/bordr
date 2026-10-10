@@ -58,6 +58,8 @@ async function fixture(
 	const state = {
 		details: 0,
 		detailSeq: 1,
+		conditionalDetails: false,
+		detail304s: 0,
 		readStatus: 200,
 		reads: [] as Array<{ paneId: string; seq: number }>,
 		operations: [] as string[],
@@ -158,8 +160,13 @@ async function fixture(
 	await page.route('**/api/**', async (route) => {
 		const url = new URL(route.request().url());
 		const path = decodeURIComponent(url.pathname);
-		const respond = (body: unknown, status = 200) =>
-			route.fulfill({ status, contentType: 'application/json', body: JSON.stringify(body) });
+		const respond = (body: unknown, status = 200, headers: Record<string, string> = {}) =>
+			route.fulfill({
+				status,
+				contentType: 'application/json',
+				headers,
+				body: JSON.stringify(body)
+			});
 		if (path === '/api/panes') {
 			state.trees++;
 			return respond({ workspaces: state.treeData });
@@ -209,65 +216,76 @@ async function fixture(
 			state.details++;
 			const paneId = path.split('/').at(-1)!;
 			if (state.missingPanes.has(paneId)) return respond({ message: 'no pane' }, 404);
-			return respond({
-				...(agents.find((a) => a.paneId === paneId) ?? agents[0]),
-				paneId,
-				seq: state.detailSeq,
-				paneCwd: '/fixture',
-				branch: '',
-				ahead: 0,
-				behind: 0,
-				branchUrl: '',
-				pull: null,
-				model: 'fixture-model',
-				messages: [
-					...state.userMessages.map((text) => ({
-						role: 'user',
-						text,
-						tools: [],
-						blocks: [{ kind: 'text', text }]
-					})),
-					{
-						role: 'assistant',
-						at: stamp,
-						text: 'Fixture transcript',
-						tools: [],
-						blocks: [
-							{ kind: 'text', text: 'Fixture transcript' },
-							...state.extraBlocks,
-							{
-								kind: 'tool',
-								name: 'bash',
-								summary: 'inspect fixture',
-								input: { command: 'echo fixture' },
-								result: { text: 'fixture output', isError: false, truncatedLines: 0 },
-								diffs: []
-							}
-						]
-					}
-				],
-				subagents: state.children,
-				queue: [],
-				screenTail: 'fixture terminal',
-				statusLines: [],
-				statusAnsi: [],
-				statusRows: [],
-				degraded: 'none',
-				degradedReason: null,
-				hasMore: false,
-				activity: null,
-				menu: null,
-				suggestion: '',
-				picker: state.picker
-					? {
-							question: state.question,
-							context: [],
-							numbered: true,
-							options: state.options.map((o) => ({ ...o, selected: o.index === state.selected })),
-							multi: state.multi
+			if (
+				state.conditionalDetails &&
+				route.request().headers()['if-none-match'] === '"fixture-detail"'
+			) {
+				state.detail304s++;
+				return route.fulfill({ status: 304, headers: { etag: '"fixture-detail"' }, body: '' });
+			}
+			return respond(
+				{
+					...(agents.find((a) => a.paneId === paneId) ?? agents[0]),
+					paneId,
+					seq: state.detailSeq,
+					paneCwd: '/fixture',
+					branch: '',
+					ahead: 0,
+					behind: 0,
+					branchUrl: '',
+					pull: null,
+					model: 'fixture-model',
+					messages: [
+						...state.userMessages.map((text) => ({
+							role: 'user',
+							text,
+							tools: [],
+							blocks: [{ kind: 'text', text }]
+						})),
+						{
+							role: 'assistant',
+							at: stamp,
+							text: 'Fixture transcript',
+							tools: [],
+							blocks: [
+								{ kind: 'text', text: 'Fixture transcript' },
+								...state.extraBlocks,
+								{
+									kind: 'tool',
+									name: 'bash',
+									summary: 'inspect fixture',
+									input: { command: 'echo fixture' },
+									result: { text: 'fixture output', isError: false, truncatedLines: 0 },
+									diffs: []
+								}
+							]
 						}
-					: null
-			});
+					],
+					subagents: state.children,
+					queue: [],
+					screenTail: 'fixture terminal',
+					statusLines: [],
+					statusAnsi: [],
+					statusRows: [],
+					degraded: 'none',
+					degradedReason: null,
+					hasMore: false,
+					activity: null,
+					menu: null,
+					suggestion: '',
+					picker: state.picker
+						? {
+								question: state.question,
+								context: [],
+								numbered: true,
+								options: state.options.map((o) => ({ ...o, selected: o.index === state.selected })),
+								multi: state.multi
+							}
+						: null
+				},
+				200,
+				state.conditionalDetails ? { etag: '"fixture-detail"' } : {}
+			);
 		}
 		return respond({});
 	});
@@ -725,9 +743,11 @@ test('a retargeted pane with a lower sequence is acknowledged again', async ({ p
 test('a refused read marker is retried on the next detail refresh', async ({ page }) => {
 	const state = await fixture(page);
 	state.readStatus = 503;
+	state.conditionalDetails = true;
 	await openPane(page);
 	await expect.poll(() => state.reads.length).toBeGreaterThan(0);
 	state.readStatus = 200;
+	await expect.poll(() => state.detail304s, { timeout: 10_000 }).toBeGreaterThan(0);
 	await expect.poll(() => state.reads.length, { timeout: 10_000 }).toBeGreaterThan(1);
 });
 

@@ -1,6 +1,7 @@
 <script module lang="ts">
 	export interface TerminalAnswerTarget {
 		paneId: string;
+		scope: string;
 		dialog: string;
 		index: number;
 	}

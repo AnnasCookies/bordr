@@ -366,9 +366,11 @@
 	let answeredKey = $state('');
 	let answeredAt = $state(0);
 	let answeredPaneId = $state('');
+	let answeredScope = $state('');
 	/** The question being answered right now: hidden from the tap, not from the reply. */
 	let sendingKey = $state('');
 	let sendingPaneId = $state('');
+	let sendingScope = $state('');
 
 	const pickerKey = $derived(pickerIdentity(detail.picker));
 
@@ -396,10 +398,13 @@
 		cardHeld(
 			{
 				paneId: detail.paneId,
+				scope: detail.readScope ?? '',
 				pickerKey,
+				sendingScope,
 				sendingPaneId,
 				sendingKey,
 				answeredPaneId,
+				answeredScope,
 				answeredKey,
 				answeredAt,
 				now
@@ -1957,6 +1962,8 @@
 		// dragged back down by the next poll.
 		const pinned = following;
 		await invalidateAll();
+		// A 304 preserves the detail object's identity, so effects do not retry a lost mark.
+		if (live) markRead();
 		if (pinned && !glideActive) requestAnimationFrame(scrollBottom);
 	}
 
@@ -2153,9 +2160,7 @@
 	 * empty. Now the tap points the composer at the row, and Send carries the
 	 * text to the answer route, which types it into that row and confirms.
 	 */
-	let writeIn = $state<{ index: number; label: string; paneId: string; dialog: string } | null>(
-		null
-	);
+	let writeIn = $state<(TerminalAnswerTarget & { label: string }) | null>(null);
 	$effect(() => {
 		const target = writeIn;
 		if (
@@ -2178,6 +2183,7 @@
 			index: option.index,
 			label: option.label,
 			paneId: detail.paneId,
+			scope: detail.readScope ?? '',
 			dialog: pickerKey
 		};
 		uncertain = null;
@@ -2192,7 +2198,13 @@
 		target?: TerminalAnswerTarget
 	): Promise<boolean> {
 		const paneId = target?.paneId ?? detail.paneId;
-		if (busy || paneId !== detail.paneId || (target && target.dialog !== pickerKey)) return false;
+		const scope = target?.scope ?? detail.readScope ?? '';
+		if (
+			busy ||
+			paneId !== detail.paneId ||
+			(target && (target.dialog !== pickerKey || scope !== (detail.readScope ?? '')))
+		)
+			return false;
 		busy = true;
 		sendingIndex = index;
 		uncertain = null;
@@ -2225,6 +2237,7 @@
 			// can fail clears this in `finally`, which puts the card back.
 			sendingKey = dialog;
 			sendingPaneId = paneId;
+			sendingScope = scope;
 			const echoText = text ?? chose?.label ?? String(index);
 			pendingSends = [
 				...pendingSends,
@@ -2246,7 +2259,9 @@
 				fetch(`/api/agents/${encodeURIComponent(paneId)}/answer`, {
 					method: 'POST',
 					headers: { 'content-type': 'application/json' },
-					body: JSON.stringify(submit ? { submit: true, dialog } : { index, text, dialog })
+					body: JSON.stringify(
+						submit ? { submit: true, dialog, scope } : { index, text, dialog, scope }
+					)
 				})
 			);
 			const body = (await r.json().catch(() => null)) as {
@@ -2290,6 +2305,7 @@
 				if (holdsAnswer(picker, body?.outcome)) {
 					answeredKey = dialog;
 					answeredPaneId = paneId;
+					answeredScope = scope;
 					answeredAt = Date.now();
 					now = answeredAt;
 				}
@@ -2305,6 +2321,7 @@
 			sendingIndex = -1;
 			sendingKey = '';
 			sendingPaneId = '';
+			sendingScope = '';
 		}
 		refreshSoon();
 		return ok;
@@ -2494,6 +2511,7 @@
 			ok &&
 			writeIn?.paneId === target.paneId &&
 			writeIn.dialog === target.dialog &&
+			writeIn.scope === target.scope &&
 			writeIn.index === target.index
 		)
 			writeIn = null;

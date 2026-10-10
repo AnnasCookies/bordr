@@ -38,6 +38,9 @@ describe('answering a picker', () => {
 describe('holding the question card', () => {
 	const base = {
 		paneId: 'a',
+		scope: 'original',
+		sendingScope: 'original',
+		answeredScope: 'original',
 		sendingPaneId: 'a',
 		answeredPaneId: 'a',
 		pickerKey: 'q1',
@@ -66,6 +69,13 @@ describe('holding the question card', () => {
 		expect(cardHeld({ ...base, paneId: 'b', answeredKey: 'q1', answeredAt: 1000 }, 8000)).toBe(
 			false
 		);
+	});
+
+	it('does not hold an identical question after the same pane address is retargeted', () => {
+		expect(cardHeld({ ...base, scope: 'replacement', sendingKey: 'q1' }, 8000)).toBe(false);
+		expect(
+			cardHeld({ ...base, scope: 'replacement', answeredKey: 'q1', answeredAt: 1000 }, 8000)
+		).toBe(false);
 	});
 
 	it('never swallows a different question', () => {

@@ -30,12 +30,14 @@ interface PushPayload {
 	options?: PickerAction[];
 	/** The server's fingerprint of the exact question that generated these buttons. */
 	dialogHash?: string;
+	scope?: string;
 }
 
 interface NotificationData {
 	url?: string;
 	paneId?: string;
 	dialogHash?: string;
+	scope?: string;
 	/** Only on the summary, so a third arrival can count past a collapse. */
 	count?: number;
 }
@@ -85,7 +87,8 @@ async function show(data: PushPayload): Promise<void> {
 		data: {
 			url: data.url ?? '/',
 			paneId: data.paneId,
-			dialogHash: data.dialogHash
+			dialogHash: data.dialogHash,
+			scope: data.scope
 		} satisfies NotificationData,
 		tag: data.url ?? 'bordr', // one notification per agent, not a pile
 		actions: actionsFor(data.options),
@@ -188,13 +191,14 @@ async function answer(
 	paneId: string,
 	index: number,
 	url: string,
-	dialogHash: string
+	dialogHash: string,
+	scope: string
 ): Promise<void> {
 	try {
 		const response = await fetch(`/api/agents/${encodeURIComponent(paneId)}/answer`, {
 			method: 'POST',
 			headers: { 'content-type': 'application/json' },
-			body: JSON.stringify({ index, dialogHash })
+			body: JSON.stringify({ index, dialogHash, scope })
 		});
 		if (response.ok) return;
 	} catch {
@@ -213,9 +217,10 @@ self.addEventListener('notificationclick', (event) => {
 		chosen !== null &&
 		data.paneId &&
 		typeof data.dialogHash === 'string' &&
+		typeof data.scope === 'string' &&
 		/^[a-f0-9]{64}$/.test(data.dialogHash)
 	) {
-		event.waitUntil(answer(data.paneId, chosen, url, data.dialogHash));
+		event.waitUntil(answer(data.paneId, chosen, url, data.dialogHash, data.scope));
 		return;
 	}
 	event.waitUntil(openTarget(url));

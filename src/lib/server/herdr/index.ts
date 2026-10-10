@@ -1,4 +1,5 @@
 import { env } from '$env/dynamic/private';
+import { error } from '@sveltejs/kit';
 import { homedir } from 'node:os';
 import { join } from 'node:path';
 import { tabName } from '$lib/tab-label';
@@ -56,16 +57,24 @@ export function getClient(): HerdrClient {
  * Throws for a machine that is configured but not reachable, so the caller
  * reports "not reachable" rather than silently answering with local panes.
  */
-export async function clientFor(machineId: string): Promise<HerdrClient> {
-	if (!machineId) return getClient();
-	const connection = await ensureConnection(machineId);
-	if (!connection || connection.error) {
-		throw new HerdrRequestError(
-			'machine_unreachable',
-			connection?.error ?? `machine ${machineId} is not reachable`
-		);
+export async function clientFor(machineId: string, expectedScope?: string): Promise<HerdrClient> {
+	let herdr: HerdrClient;
+	if (!machineId) herdr = getClient();
+	else {
+		const connection = await ensureConnection(machineId);
+		if (!connection || connection.error) {
+			throw new HerdrRequestError(
+				'machine_unreachable',
+				connection?.error ?? `machine ${machineId} is not reachable`
+			);
+		}
+		herdr = connection.client;
 	}
-	return connection.client;
+	// The returned client keeps its original forward; an editable id must not
+	// redirect an in-flight answer to a different target or session.
+	if (expectedScope !== undefined && (machineId ? herdr.sourceScope : '') !== expectedScope)
+		throw error(409, 'the pane target changed before input could be sent');
+	return herdr;
 }
 
 /**
@@ -237,9 +246,12 @@ export async function rawAgents(): Promise<Record<string, unknown>[]> {
 	return result.agents;
 }
 
-export async function rawAgent(address: string): Promise<Record<string, unknown> | null> {
+export async function rawAgent(
+	address: string,
+	expectedScope?: string
+): Promise<Record<string, unknown> | null> {
 	const { machineId, paneId } = parsePane(address);
-	const herdr = await clientFor(machineId);
+	const herdr = await clientFor(machineId, expectedScope);
 	const result = await herdr.request<{ agents: Record<string, unknown>[] }>('agent.list');
 	const agent = result.agents.find((a) => a.pane_id === paneId);
 	return agent ? { ...agent, pane_id: address, bordr_read_scope: herdr.sourceScope } : null;
@@ -275,8 +287,8 @@ export async function rawPane(address: string): Promise<Record<string, unknown> 
 	return pane ? { ...pane, pane_id: address, bordr_read_scope: herdr.sourceScope } : null;
 }
 
-export async function readVisible(paneId: string): Promise<string> {
-	return readPane(paneId, { source: 'visible' });
+export async function readVisible(paneId: string, expectedScope?: string): Promise<string> {
+	return readPane(paneId, { source: 'visible' }, expectedScope);
 }
 
 /**
@@ -291,10 +303,11 @@ export async function readVisible(paneId: string): Promise<string> {
  */
 export async function readPane(
 	address: string,
-	opts: { source?: 'visible' | 'recent' | 'recent_unwrapped'; lines?: number; ansi?: boolean } = {}
+	opts: { source?: 'visible' | 'recent' | 'recent_unwrapped'; lines?: number; ansi?: boolean } = {},
+	expectedScope?: string
 ): Promise<string> {
 	const { machineId, paneId } = parsePane(address);
-	const herdr = await clientFor(machineId);
+	const herdr = await clientFor(machineId, expectedScope);
 	const params = {
 		source: opts.source ?? 'visible',
 		format: opts.ansi ? 'ansi' : 'text',
@@ -371,9 +384,13 @@ export async function settleScreen(
  * a harness starts — and the new-agent route already waits that window out
  * before it hands the pane over.
  */
-export async function promptAgent(address: string, text: string): Promise<void> {
+export async function promptAgent(
+	address: string,
+	text: string,
+	expectedScope?: string
+): Promise<void> {
 	const { machineId, paneId } = parsePane(address);
-	const herdr = await clientFor(machineId);
+	const herdr = await clientFor(machineId, expectedScope);
 	/**
 	 * A leading `!` is a MODE SWITCH, not text.
 	 *
@@ -431,15 +448,23 @@ export async function promptAgent(address: string, text: string): Promise<void> 
  * through, so what you type appears where the harness puts what YOU type —
  * its input box — rather than in a separate field bordr owns.
  */
-export async function sendText(address: string, text: string): Promise<void> {
+export async function sendText(
+	address: string,
+	text: string,
+	expectedScope?: string
+): Promise<void> {
 	const { machineId, paneId } = parsePane(address);
-	const herdr = await clientFor(machineId);
+	const herdr = await clientFor(machineId, expectedScope);
 	await herdr.request('pane.send_text', { pane_id: paneId, text });
 }
 
-export async function sendKeys(address: string, keys: string[]): Promise<void> {
+export async function sendKeys(
+	address: string,
+	keys: string[],
+	expectedScope?: string
+): Promise<void> {
 	const { machineId, paneId } = parsePane(address);
-	const herdr = await clientFor(machineId);
+	const herdr = await clientFor(machineId, expectedScope);
 	try {
 		await herdr.request('agent.send_keys', { target: paneId, keys });
 	} catch (e) {

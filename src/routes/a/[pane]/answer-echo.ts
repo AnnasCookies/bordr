@@ -48,10 +48,13 @@ export function holdsAnswer(
 export function cardHeld(
 	state: {
 		paneId: string;
+		scope: string;
 		pickerKey: string;
+		sendingScope: string;
 		sendingPaneId: string;
 		sendingKey: string;
 		answeredPaneId: string;
+		answeredScope: string;
 		answeredKey: string;
 		answeredAt: number;
 		now: number;
@@ -59,12 +62,14 @@ export function cardHeld(
 	holdMs: number
 ): boolean {
 	if (
+		state.sendingScope === state.scope &&
 		state.sendingPaneId === state.paneId &&
 		state.sendingKey !== '' &&
 		state.sendingKey === state.pickerKey
 	)
 		return true;
 	return (
+		state.answeredScope === state.scope &&
 		state.answeredPaneId === state.paneId &&
 		state.answeredKey !== '' &&
 		state.answeredKey === state.pickerKey &&

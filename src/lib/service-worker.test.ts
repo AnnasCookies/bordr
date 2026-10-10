@@ -50,14 +50,18 @@ it.each([undefined, 'f'.repeat(64)])(
 		let work: Promise<void> | undefined;
 		listeners.get('notificationclick')!({
 			action: 'opt:1',
-			notification: { data: { paneId: 'a', url: '/a/a', dialogHash }, close: vi.fn() },
+			notification: { data: { paneId: 'a', url: '/a/a', dialogHash, scope: '' }, close: vi.fn() },
 			waitUntil: (pending: Promise<void>) => {
 				work = pending;
 			}
 		});
 		await work;
 		if (dialogHash) {
-			expect(JSON.parse(String(fetch.mock.calls[0][1].body))).toEqual({ index: 1, dialogHash });
+			expect(JSON.parse(String(fetch.mock.calls[0][1].body))).toEqual({
+				index: 1,
+				dialogHash,
+				scope: ''
+			});
 			expect(open).not.toHaveBeenCalled();
 		} else {
 			expect(fetch).not.toHaveBeenCalled();

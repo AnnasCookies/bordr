@@ -29,6 +29,7 @@ symlinkSync(join(OUTSIDE, 'secret.txt'), join(ROOT, 'sub', 'sneaky.txt'));
 symlinkSync(OUTSIDE, join(ROOT, 'sub', 'sneakydir'));
 // A symlink INSIDE the root whose target is a dotfile in the same root.
 symlinkSync(join(ROOT, '.env'), join(ROOT, 'sub', 'notes.txt'));
+symlinkSync(join(ROOT, 'sub'), join(ROOT, '.hidden-alias'));
 const ROOTS = { t: ROOT };
 
 afterAll(() => {
@@ -79,6 +80,7 @@ describe('resolveSafe: dotfiles', () => {
 	it('refuses any dotfile, however it is reached', () => {
 		expect(resolveSafe('t/.env', ROOTS)).toBeNull();
 		expect(resolveSafe('t/sub/../.env', ROOTS)).toBeNull();
+		expect(resolveSafe('t/.hidden-alias/real.txt', ROOTS)).toBeNull();
 		expect(resolveSafe('t/.ssh/id_ed25519', ROOTS)).toBeNull();
 	});
 

@@ -1,7 +1,6 @@
 import { afterEach, expect, it, vi } from 'vitest';
 const fixture = vi.hoisted(() => ({
 	visible: '',
-	sent: false,
 	resolve: vi.fn(async () => '/local-only/fixture'),
 	parse: vi.fn((text: string) =>
 		text === 'remote-only'
@@ -28,31 +27,37 @@ vi.mock('$lib/server/herdr', () => ({
 	getClient: vi.fn()
 }));
 vi.mock('$lib/server/herdr/connections', () => ({
-	ensureConnection: async () => ({ machine: { id: 'remote' } }),
+	ensureConnection: async () => ({ machine: { id: 'remote' }, client: { sourceScope: 'fixture' } }),
 	remoteTranscriptTail: fixture.remote
 }));
 vi.mock('$lib/server/transcript', () => ({ adapterFor: fixture.adapter }));
 import { POST } from '../../routes/api/agents/[pane]/answer/+server';
 import { GET } from '../../routes/api/agents/[pane]/subagents/[id]/+server';
+
+const request = () =>
+	new Request('http://fixture', {
+		method: 'POST',
+		body: JSON.stringify({ index: 1, scope: 'fixture' })
+	});
 afterEach(() => {
 	vi.useRealTimers();
 	vi.clearAllMocks();
 	fixture.visible = '';
 });
-it('remote children reject local path collisions and remote answer fallback uses the remote adapter/read', async () => {
+
+it('remote children reject local path collisions and scoped answer fallback reads the remote adapter', async () => {
 	fixture.adapter.mockReturnValue({ resolve: fixture.resolve, parse: fixture.parse });
 	await expect(
 		GET({ params: { pane: 'remote~w1:p1', id: 'child' } } as Parameters<typeof GET>[0])
 	).rejects.toMatchObject({ status: 404 });
 	fixture.remote.mockResolvedValueOnce('remote-only').mockResolvedValue('');
 	vi.useFakeTimers();
-	const result = POST({
-		params: { pane: 'remote~w1:p1' },
-		request: new Request('http://fixture', { method: 'POST', body: JSON.stringify({ index: 1 }) })
-	} as Parameters<typeof POST>[0]);
+	const result = POST({ params: { pane: 'remote~w1:p1' }, request: request() } as Parameters<
+		typeof POST
+	>[0]);
 	await vi.runAllTimersAsync();
 	expect(await (await result).json()).toMatchObject({ outcome: 'accepted' });
-	expect(fixture.prompt).toHaveBeenCalledWith('remote~w1:p1', 'REMOTE-ONLY-OPTION');
+	expect(fixture.prompt).toHaveBeenCalledWith('remote~w1:p1', 'REMOTE-ONLY-OPTION', 'fixture');
 	expect(fixture.adapter).toHaveBeenCalledWith('codex', { remote: true });
 	expect(fixture.resolve).not.toHaveBeenCalled();
 	expect(fixture.remote).toHaveBeenCalledWith(
@@ -62,20 +67,20 @@ it('remote children reject local path collisions and remote answer fallback uses
 		1048576
 	);
 });
-it('remote live-screen answers remain supported without transcript fallback', async () => {
+
+it('remote live-screen answers retain their source without transcript fallback', async () => {
 	fixture.visible =
 		'Pick a colour:\n❯ 1. Red\n  2. Green\nEnter to select · ↑/↓ to navigate · Esc to cancel';
 	fixture.keys.mockImplementation(async () => {
 		fixture.visible = '';
 	});
 	vi.useFakeTimers();
-	const result = POST({
-		params: { pane: 'remote~w1:p1' },
-		request: new Request('http://fixture', { method: 'POST', body: JSON.stringify({ index: 1 }) })
-	} as Parameters<typeof POST>[0]);
+	const result = POST({ params: { pane: 'remote~w1:p1' }, request: request() } as Parameters<
+		typeof POST
+	>[0]);
 	await vi.runAllTimersAsync();
 	expect(await (await result).json()).toMatchObject({ outcome: 'accepted' });
-	expect(fixture.keys).toHaveBeenCalled();
+	expect(fixture.keys).toHaveBeenCalledWith('remote~w1:p1', ['enter'], 'fixture');
 	expect(fixture.remote).not.toHaveBeenCalled();
 });
 
@@ -95,10 +100,9 @@ it('does not send a fallback confirmation into a new same-word approval subject'
 		fixture.visible = screen('echo subject-B');
 	});
 	vi.useFakeTimers();
-	const result = POST({
-		params: { pane: 'remote~w1:p1' },
-		request: new Request('http://fixture', { method: 'POST', body: JSON.stringify({ index: 1 }) })
-	} as Parameters<typeof POST>[0]);
+	const result = POST({ params: { pane: 'remote~w1:p1' }, request: request() } as Parameters<
+		typeof POST
+	>[0]);
 	await vi.runAllTimersAsync();
 	expect(await (await result).json()).toMatchObject({ ok: true });
 	expect(fixture.keys).toHaveBeenCalledTimes(1);

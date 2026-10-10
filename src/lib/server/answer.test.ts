@@ -5,8 +5,8 @@ import { parsePicker } from './picker';
 const fixture = vi.hoisted(() => ({
 	visible: '',
 	read: vi.fn<() => Promise<string>>(),
-	keys: vi.fn<(pane: string, keys: string[]) => Promise<void>>(),
-	text: vi.fn<(pane: string, text: string) => Promise<void>>()
+	keys: vi.fn<(pane: string, keys: string[], scope: string) => Promise<void>>(),
+	text: vi.fn<(pane: string, text: string, scope: string) => Promise<void>>()
 }));
 vi.mock('$lib/server/herdr', () => ({
 	rawAgent: async () => null,
@@ -46,7 +46,7 @@ for (const selected of [true, false]) {
 		const result = post({ submit: true });
 		await vi.runAllTimersAsync();
 		expect(await (await result).json()).toMatchObject({ outcome: 'accepted' });
-		expect(fixture.keys.mock.calls).toEqual([['fixture', ['enter']]]);
+		expect(fixture.keys.mock.calls).toEqual([['fixture', ['enter'], '']]);
 		expect(parsePicker(fixture.visible)?.question).toBe('Second question?');
 	});
 }
@@ -55,7 +55,7 @@ it('only observes after one confirmation, even while the original dialog remains
 	const result = post({ submit: true });
 	await vi.runAllTimersAsync();
 	expect(await (await result).json()).toMatchObject({ outcome: 'unknown' });
-	expect(fixture.keys.mock.calls).toEqual([['fixture', ['enter']]]);
+	expect(fixture.keys.mock.calls).toEqual([['fixture', ['enter'], '']]);
 	expect(fixture.read.mock.calls.length).toBeGreaterThan(2);
 });
 it('navigates to the original Submit row, confirms once and observes closure', async () => {
@@ -67,8 +67,8 @@ it('navigates to the original Submit row, confirms once and observes closure', a
 	await vi.runAllTimersAsync();
 	expect(await (await result).json()).toMatchObject({ outcome: 'accepted' });
 	expect(fixture.keys.mock.calls).toEqual([
-		['fixture', ['down', 'down', 'down']],
-		['fixture', ['enter']]
+		['fixture', ['down', 'down', 'down'], ''],
+		['fixture', ['enter'], '']
 	]);
 });
 it('refuses a replacement dialog reached by navigation before confirmation', async () => {
@@ -82,7 +82,7 @@ it('refuses a replacement dialog reached by navigation before confirmation', asy
 	);
 	await vi.runAllTimersAsync();
 	expect(await result).toBe(409);
-	expect(fixture.keys.mock.calls).toEqual([['fixture', ['down', 'down', 'down']]]);
+	expect(fixture.keys.mock.calls).toEqual([['fixture', ['down', 'down', 'down'], '']]);
 });
 it('refuses replacement between the initial screen and the first navigation read', async () => {
 	fixture.visible = multi('First question?', true);
@@ -116,9 +116,9 @@ it('types the captured write-in into the matching original dialog', async () => 
 	const result = post({ index: 3, text: 'captured answer', dialog });
 	await vi.runAllTimersAsync();
 	expect(await (await result).json()).toMatchObject({ outcome: 'accepted' });
-	expect(fixture.text).toHaveBeenCalledWith('fixture', 'captured answer');
+	expect(fixture.text).toHaveBeenCalledWith('fixture', 'captured answer', '');
 	expect(fixture.keys.mock.calls).toEqual([
-		['fixture', ['down', 'down']],
-		['fixture', ['enter']]
+		['fixture', ['down', 'down'], ''],
+		['fixture', ['enter'], '']
 	]);
 });

@@ -337,6 +337,13 @@ describe('answer route: codex questions', () => {
 		}
 	});
 
+	it('refuses a different opened question even when every offered label is unchanged', async () => {
+		const other = CODEX_OPENED.replace('Where will you test Sera?', 'When will you test Sera?');
+		herdr.screens.push(CODEX_COLLAPSED, CODEX_COLLAPSED, other);
+		await expect(answer(2)).rejects.toMatchObject({ status: 409 });
+		expect(herdr.sent).toEqual([['alt+up']]);
+	});
+
 	it('refuses when the opened question does not offer the chosen answer', async () => {
 		const other = CODEX_OPENED.replace('Local preview', 'Production');
 		herdr.screens.push(CODEX_COLLAPSED, CODEX_COLLAPSED, other);

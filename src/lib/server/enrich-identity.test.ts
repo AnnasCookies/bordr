@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import type { Machine } from './herdr/machines';
 import type { AgentSummary } from '$lib/types';
+import { connectionKey } from './herdr/connections';
 
 const fixture = vi.hoisted(() => ({
 	machine: null as Machine | null,
@@ -18,8 +19,8 @@ vi.mock('$lib/server/herdr', () => ({
 		await fixture.delay;
 		return visible;
 	},
-	sendKeys: async (pane: string, keys: string[]) => {
-		fixture.keys(pane, fixture.machine?.target, keys);
+	sendKeys: async (pane: string, keys: string[], scope: string) => {
+		fixture.keys(pane, fixture.machine?.target, keys, scope);
 		fixture.visible = '';
 	},
 	promptAgent: vi.fn(),
@@ -84,12 +85,20 @@ it('reads new-host approvals immediately on warm retarget/session change and onl
 		params: { pane: next.paneId },
 		request: new Request('http://fixture', {
 			method: 'POST',
-			body: JSON.stringify({ index: next.picker!.options[0].index })
+			body: JSON.stringify({
+				index: next.picker!.options[0].index,
+				scope: connectionKey(fixture.machine!)
+			})
 		})
 	} as Parameters<typeof POST>[0]);
 	await vi.runAllTimersAsync();
 	expect((await result).status).toBe(200);
-	expect(fixture.keys).toHaveBeenCalledWith(summary.paneId, 'new-host', ['enter']);
+	expect(fixture.keys).toHaveBeenCalledWith(
+		summary.paneId,
+		'new-host',
+		['enter'],
+		connectionKey(fixture.machine!)
+	);
 });
 for (const revoke of ['disable', 'remove']) {
 	it(`revokes warm actionable readings on ${revoke} and does not revive them on re-add`, async () => {
