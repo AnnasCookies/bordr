@@ -254,7 +254,12 @@ describe('answered pickers on the list', () => {
 			{ index: 2, label: 'Blue', selected: false, checked: false }
 		]
 	};
-	const markFor = (picker: ListPicker) => ({ key: pickerKey(picker), at: 1_000, label: 'Red' });
+	const markFor = (picker: ListPicker) => ({
+		scope: '',
+		key: pickerKey(picker),
+		at: 1_000,
+		label: 'Red'
+	});
 
 	it('holds a single-select answer until the screen catches up, and no longer', () => {
 		expect(holdsAnswer(single)).toBe(true);
@@ -267,6 +272,12 @@ describe('answered pickers on the list', () => {
 	 * so a second option could never be ticked. A toggle leaves the key as it
 	 * was, so nothing but the picker's kind can tell the two cases apart.
 	 */
+	it('does not hold an identical question on a replacement source', () => {
+		const mark = { ...markFor(single), scope: 'source-a' };
+		expect(answerSettled(mark, single, 2_000, HOLD, 'source-a')).toBe(true);
+		expect(answerSettled(mark, single, 2_000, HOLD, 'source-b')).toBe(false);
+	});
+
 	it('never holds a multi-select picker after a checkbox toggle', () => {
 		expect(holdsAnswer(multi)).toBe(false);
 		const toggled: ListPicker = {
@@ -366,7 +377,7 @@ it('does not hold a same-word approval for a different subject or write-in meani
 		multi: false,
 		options: [{ index: 1, label: 'Yes', selected: true }]
 	};
-	const mark = { key: pickerKey(picker), at: 1000, label: 'Yes' };
+	const mark = { scope: '', key: pickerKey(picker), at: 1000, label: 'Yes' };
 	expect(answerSettled(mark, { ...picker, context: ['tool B'] }, 2000, 8000)).toBe(false);
 	expect(
 		answerSettled(

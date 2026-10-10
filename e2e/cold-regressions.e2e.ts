@@ -1,4 +1,5 @@
 import { expect, test, type Page } from '@playwright/test';
+import { pickerIdentity } from '../src/lib/picker-shortcut';
 
 test.beforeEach(({ page }) => {
 	page.on('pageerror', (error) => {
@@ -13,6 +14,7 @@ const agents = ['a', 'b', 'c'].map((paneId) => ({
 	status: 'working',
 	cwd: '/fixture',
 	seq: 1,
+	readScope: '',
 	workspaceId: 'w',
 	workspaceLabel: 'Fixture',
 	tabId: paneId === 'b' ? 't2' : 't1',
@@ -58,10 +60,11 @@ async function fixture(
 	const state = {
 		details: 0,
 		detailSeq: 1,
+		readScope: '',
 		conditionalDetails: false,
 		detail304s: 0,
 		readStatus: 200,
-		reads: [] as Array<{ paneId: string; seq: number }>,
+		reads: [] as Array<{ paneId: string; seq: number; scope: string }>,
 		operations: [] as string[],
 		agentData: fleet,
 		treeData: workspaces,
@@ -102,7 +105,13 @@ async function fixture(
 		picker: true,
 		question: 'Choose a fixture',
 		keys: [] as string[][],
-		answers: [] as { index: number; text?: string; dialog?: string }[],
+		answers: [] as {
+			index?: number;
+			submit?: boolean;
+			text?: string;
+			dialog?: string;
+			scope?: string;
+		}[],
 		keyDelay: null as Promise<void> | null,
 		answerDelay: null as Promise<void> | null,
 		answerStatus: 200,
@@ -228,6 +237,7 @@ async function fixture(
 					...(agents.find((a) => a.paneId === paneId) ?? agents[0]),
 					paneId,
 					seq: state.detailSeq,
+					readScope: state.readScope,
 					paneCwd: '/fixture',
 					branch: '',
 					ahead: 0,
@@ -511,7 +521,9 @@ test('queued arrows precede fresh Enter selection; native summaries and resizers
 	await page.waitForTimeout(150);
 	expect(state.answers).toEqual([]);
 	release();
-	await expect.poll(() => state.answers).toEqual([{ index: 2 }]);
+	await expect
+		.poll(() => state.answers)
+		.toEqual([{ index: 2, dialog: pickerIdentity(state), scope: '' }]);
 	// A new dialog resets the held answer card.
 	state.question = 'Next fixture';
 	await move(page, '/a/b');
@@ -990,7 +1002,7 @@ test('terminal write-in focuses its input and submits the selected row via answe
 	await input.press('Enter');
 	await expect
 		.poll(() => state.answers)
-		.toEqual([{ index: 3, text: 'terminal write-in', dialog: expect.any(String) }]);
+		.toEqual([{ index: 3, text: 'terminal write-in', dialog: pickerIdentity(state), scope: '' }]);
 	expect(state.typeCalls).toEqual([]);
 	expect(state.keys).toEqual([]);
 });
@@ -1067,7 +1079,9 @@ test('multi-select Submit uses the verified submit operation, not the checkbox t
 	state.multi = true;
 	await openPane(page);
 	await page.getByRole('button', { name: 'Submit selection', exact: true }).click();
-	await expect.poll(() => state.answers).toEqual([{ submit: true }]);
+	await expect
+		.poll(() => state.answers)
+		.toEqual([{ submit: true, dialog: pickerIdentity(state), scope: '' }]);
 	expect(state.keys).toEqual([]);
 });
 
@@ -1150,6 +1164,77 @@ test('Home does not hide a same-word approval for a new subject during the recei
 	await expect(page.getByRole('button', { name: '1. Yes', exact: true })).toBeVisible();
 });
 
+test('Home does not hold an identical question after its source changes', async ({ page }) => {
+	const picker = {
+		question: 'Proceed?',
+		multi: false,
+		options: [{ index: 1, label: 'Yes', selected: true }]
+	};
+	const fleet = [{ ...agents[0], status: 'blocked', readScope: 'source-a', picker }];
+	await fixture(page, {}, fleet);
+	await move(page, '/');
+	await page.getByRole('button', { name: '1. Yes', exact: true }).click();
+	await expect(page.getByText('sent “Yes”', { exact: true })).toBeVisible();
+	await page.evaluate(
+		(agents) => window.dispatchEvent(new CustomEvent('fixture-agents', { detail: agents })),
+		[{ ...fleet[0], readScope: 'source-b' }]
+	);
+	await expect(page.getByRole('button', { name: '1. Yes', exact: true })).toBeVisible();
+});
+
+for (const view of ['conversation', 'terminal']) {
+	test(`${view}: a retargeted write-in stays recoverable and cannot become raw typing`, async ({
+		page
+	}) => {
+		const state = await fixture(page, { paneView: view });
+		state.readScope = 'source-a';
+		await openPane(page);
+		await page.getByRole('button', { name: /3 Other/ }).click();
+		const input =
+			view === 'terminal'
+				? page.getByRole('textbox', { name: 'Send to this pane' })
+				: page.locator('textarea').first();
+		await input.fill('draft for source A');
+		state.readScope = 'source-b';
+		await expect.poll(() => state.reads.some((read) => read.scope === 'source-b')).toBe(true);
+		await expect(page.getByRole('button', { name: /3 Other/ })).not.toHaveAttribute(
+			'aria-pressed',
+			'true'
+		);
+		await input.press(view === 'terminal' ? 'Enter' : 'Control+Enter');
+		await expect(input).toHaveValue('draft for source A');
+		expect(state.answers).toEqual([]);
+		expect(state.typeCalls).toEqual([]);
+		await page.getByRole('button', { name: /3 Other/ }).click();
+		await input.press(view === 'terminal' ? 'Enter' : 'Control+Enter');
+		await expect
+			.poll(() => state.answers)
+			.toEqual([
+				{ index: 3, text: 'draft for source A', dialog: pickerIdentity(state), scope: 'source-b' }
+			]);
+	});
+}
+
+test('queued picker confirmation cannot follow an identical question to a replacement source', async ({
+	page
+}) => {
+	const state = await fixture(page);
+	state.readScope = 'source-a';
+	await openPane(page);
+	await focusPage(page);
+	let release!: () => void;
+	state.keyDelay = new Promise((resolve) => (release = resolve));
+	await page.keyboard.press('ArrowDown');
+	await expect.poll(() => state.keys.length).toBe(1);
+	await page.keyboard.press('Enter');
+	state.readScope = 'source-b';
+	await expect.poll(() => state.reads.some((read) => read.scope === 'source-b')).toBe(true);
+	release();
+	await expect.poll(() => state.operations.includes('keys:end')).toBe(true);
+	await page.waitForTimeout(250);
+	expect(state.answers).toEqual([]);
+});
+
 test.describe('filtered mobile navigation', () => {
 	test.use({ viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true });
 	test('swipes include shells but exclude idle agents outside the working list', async ({
@@ -1219,9 +1304,7 @@ test('terminal write-in shares the full type/Tab queue and captures its row, dia
 	keyed();
 	await expect
 		.poll(() => state.answers)
-		.toEqual([
-			{ index: 3, text: 'captured write-in', dialog: expect.stringContaining('Choose a fixture') }
-		]);
+		.toEqual([{ index: 3, text: 'captured write-in', dialog: pickerIdentity(state), scope: '' }]);
 	await expect(input).toHaveValue('newer unsent draft');
 	expect(state.operations).toEqual([
 		'type:start',

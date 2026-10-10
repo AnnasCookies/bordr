@@ -2161,24 +2161,38 @@
 	 * text to the answer route, which types it into that row and confirms.
 	 */
 	let writeIn = $state<(TerminalAnswerTarget & { label: string }) | null>(null);
+	let draftNeedsSourceChoice = $state(false);
 	$effect(() => {
 		const target = writeIn;
 		if (
 			target &&
 			(target.paneId !== detail.paneId ||
+				target.scope !== (detail.readScope ?? '') ||
 				target.dialog !== pickerKey ||
 				!detail.picker?.options.some((o) => o.index === target.index && o.writeIn))
 		) {
+			// Keep the text, but do not turn a cancelled answer into raw typing on the new source.
+			if (target.scope !== (detail.readScope ?? '')) draftNeedsSourceChoice = Boolean(draft.trim());
 			writeIn = null;
 		}
 	});
+	$effect(() => {
+		if (!draft.trim()) draftNeedsSourceChoice = false;
+		else if (draftNeedsSourceChoice)
+			uncertain =
+				'The pane target changed. Choose its write-in option again, or clear the old draft.';
+	});
 
-	function restoreTerminalDraft(paneId: string, text: string) {
+	function restoreTerminalDraft(paneId: string, text: string, scope = detail.readScope ?? '') {
 		const restored = draftStore?.restore(paneId, text) ?? text;
-		if (detail.paneId === paneId) draft = restored;
+		if (detail.paneId === paneId) {
+			draft = restored;
+			if (scope !== (detail.readScope ?? '')) draftNeedsSourceChoice = true;
+		}
 	}
 
 	function startWriteIn(option: { index: number; label: string }) {
+		draftNeedsSourceChoice = false;
 		writeIn = {
 			index: option.index,
 			label: option.label,
@@ -2377,6 +2391,7 @@
 	 */
 	$effect(() => {
 		const originPane = pickerPane;
+		const originScope = detail.readScope ?? '';
 		const originDialog = pickerKey;
 		if (
 			!wideScreen ||
@@ -2391,7 +2406,11 @@
 			return;
 		let active = true;
 		const valid = () =>
-			active && detail.paneId === originPane && pickerKey === originDialog && !askHidden;
+			active &&
+			detail.paneId === originPane &&
+			(detail.readScope ?? '') === originScope &&
+			pickerKey === originDialog &&
+			!askHidden;
 		const onPickerKey = (event: KeyboardEvent) => {
 			if (
 				event.defaultPrevented ||
@@ -2419,13 +2438,24 @@
 					const response = await fetch(`/api/agents/${encodeURIComponent(originPane)}`);
 					if (!response.ok || !valid()) return;
 					const fresh = (await response.json()) as typeof detail;
-					if (!valid() || pickerIdentity(fresh.picker) !== originDialog) return;
+					if (
+						!valid() ||
+						(fresh.readScope ?? '') !== originScope ||
+						pickerIdentity(fresh.picker) !== originDialog
+					)
+						return;
 					const option = fresh.picker?.options.find((o) =>
 						shortcut.kind === 'confirm' ? o.selected : o.index === shortcut.index
 					);
 					if (!option) return;
 					if (option.writeIn) startWriteIn(option);
-					else await answer(option.index);
+					else
+						await answer(option.index, undefined, false, {
+							paneId: originPane,
+							scope: originScope,
+							dialog: originDialog,
+							index: option.index
+						});
 				})
 				.catch((e) => {
 					if (valid()) sendError = (e as Error).message;
@@ -2520,6 +2550,11 @@
 
 	async function send() {
 		if (busy || (!draft.trim() && attachments.length === 0)) return;
+		if (draftNeedsSourceChoice) {
+			uncertain =
+				'The pane target changed. Choose its write-in option again, or clear the old draft.';
+			return;
+		}
 		if (dictating) stopDictation();
 		// The answer for the write-in row the reader tapped: typed into THAT row
 		// and confirmed by the answer route, not typed at whatever the question
@@ -2527,15 +2562,16 @@
 		if (writeIn && detail.picker && attachments.length === 0) {
 			const target = writeIn;
 			const text = draft.trim();
-			const paneId = detail.paneId;
+			const paneId = target.paneId;
 			draftStore?.clear(paneId);
 			draft = '';
 			writeIn = null;
-			if (!(await answer(target.index, text))) {
+			if (!(await answer(target.index, text, false, target))) {
 				const restored = draftStore?.restore(paneId, text) ?? text;
 				if (detail.paneId === paneId) {
 					draft = restored;
-					writeIn = target;
+					if ((detail.readScope ?? '') === target.scope) writeIn = target;
+					else draftNeedsSourceChoice = Boolean(restored.trim());
 				}
 			}
 			return;
@@ -3231,6 +3267,8 @@
 	<div data-viewport-terminal-body class="flex min-h-0 flex-1 flex-col">
 		<PaneTerminal
 			paneId={detail.paneId}
+			scope={detail.readScope ?? ''}
+			needsSourceChoice={draftNeedsSourceChoice}
 			agent={detail.agent}
 			ask={detail.picker && detail.picker.options.length > 0 && !askHidden ? pickerCard : undefined}
 			suggestion={detail.suggestion ?? ''}

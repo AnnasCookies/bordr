@@ -237,6 +237,7 @@ type ListPicker = AgentSummary['picker'];
 
 /** What the list remembers about a question it answered, until the screen catches up. */
 export interface AnsweredMark {
+	scope: string;
 	key: string;
 	at: number;
 	/** What was chosen, so the row can say which button was hit. */
@@ -267,9 +268,10 @@ export function answerSettled(
 	mark: AnsweredMark | undefined,
 	picker: ListPicker,
 	now: number,
-	holdMs: number
+	holdMs: number,
+	scope = ''
 ): boolean {
-	if (!mark || !holdsAnswer(picker)) return false;
+	if (!mark || mark.scope !== scope || !holdsAnswer(picker)) return false;
 	if (now - mark.at >= holdMs) return false;
 	return mark.key === pickerKey(picker);
 }
