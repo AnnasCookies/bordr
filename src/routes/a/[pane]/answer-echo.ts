@@ -34,3 +34,45 @@ export function holdsAnswer(
 ): boolean {
 	return echoesAnswer(picker) && outcome === 'accepted';
 }
+
+/**
+ * Whether the question card stays off screen.
+ *
+ * Two reasons, kept apart because they end differently. `sendingKey` is set the
+ * instant an option is tapped and cleared when the server replies, so on a slow
+ * link the card goes at once instead of sitting untouched for the whole round
+ * trip; a refusal or an unconfirmed send then brings it back. `answeredKey` is
+ * the hold after the server CONFIRMED the menu moved. Both are matched on the
+ * question, so the next question is never swallowed.
+ */
+export function cardHeld(
+	state: {
+		paneId: string;
+		scope: string;
+		pickerKey: string;
+		sendingScope: string;
+		sendingPaneId: string;
+		sendingKey: string;
+		answeredPaneId: string;
+		answeredScope: string;
+		answeredKey: string;
+		answeredAt: number;
+		now: number;
+	},
+	holdMs: number
+): boolean {
+	if (
+		state.sendingScope === state.scope &&
+		state.sendingPaneId === state.paneId &&
+		state.sendingKey !== '' &&
+		state.sendingKey === state.pickerKey
+	)
+		return true;
+	return (
+		state.answeredScope === state.scope &&
+		state.answeredPaneId === state.paneId &&
+		state.answeredKey !== '' &&
+		state.answeredKey === state.pickerKey &&
+		state.now - state.answeredAt < holdMs
+	);
+}

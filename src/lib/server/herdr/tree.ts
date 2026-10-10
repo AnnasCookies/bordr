@@ -5,6 +5,7 @@ import { branchesFor } from './branches';
 import { layoutsFor } from './layout';
 import { listMachines, type Machine } from './machines';
 import { formatPane } from './address';
+import { readState, seenStatus } from '../state-store';
 import type { PaneNode, TabLayout, TabNode, WorkspaceNode } from '$lib/types';
 
 /**
@@ -100,19 +101,27 @@ async function treeFor(
 	]);
 
 	const byTab = new Map<string, PaneNode[]>();
+	const read = readState();
 	for (const raw of panes.panes) {
 		const agent = String(raw.agent ?? '');
+		const paneId = formatPane(machineId, String(raw.pane_id ?? ''));
 		const node: PaneNode = {
 			// Addressed for bordr, not for herdr: a remote pane carries its
 			// machine so every route can find its way back to the right server.
-			paneId: formatPane(machineId, String(raw.pane_id ?? '')),
+			paneId,
 			tabId: formatPane(machineId, String(raw.tab_id ?? '')),
 			workspaceId: formatPane(machineId, String(raw.workspace_id ?? '')),
 			// A pane with no agent is a shell: it has a screen and takes keys,
 			// but there is no transcript, status or picker to be had.
 			agent,
 			hasAgent: agent !== '',
-			status: agent ? String(raw.agent_status ?? 'unknown') : 'shell',
+			status: agent
+				? seenStatus(
+						String(raw.agent_status ?? 'unknown'),
+						Number(raw.state_change_seq ?? 0),
+						read[paneId]
+					)
+				: 'shell',
 			title: String(raw.terminal_title_stripped ?? raw.terminal_title ?? ''),
 			// foreground_cwd, not cwd: `cwd` is where the shell was LAUNCHED, so a
 			// pane opened in ~ and then cd'd into a repo still reported ~ — which
@@ -144,6 +153,9 @@ async function treeFor(
 
 	const nodes = workspaces.workspaces.map((raw) => {
 		const workspaceId = formatPane(machineId, String(raw.workspace_id ?? ''));
+		// herdr 0.9.1+ names the repository each workspace sits in. A pane's cwd
+		// cannot say that: two worktrees of one repo have nothing in common.
+		const wt = raw.worktree as Record<string, unknown> | undefined;
 		return {
 			workspaceId,
 			machine: machineLabel,
@@ -153,6 +165,14 @@ async function treeFor(
 			branch: '',
 			ahead: 0,
 			behind: 0,
+			worktree:
+				wt && typeof wt.repo_key === 'string'
+					? {
+							repoKey: wt.repo_key,
+							repoName: String(wt.repo_name ?? ''),
+							linked: wt.is_linked_worktree === true
+						}
+					: undefined,
 			tabs: (byWorkspace.get(workspaceId) ?? []).sort((a, b) => a.number - b.number)
 		} satisfies WorkspaceNode;
 	});

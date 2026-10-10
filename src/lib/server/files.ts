@@ -47,7 +47,7 @@ function existingRoots(roots: Record<string, string>): Record<string, string> {
 
 export const FILE_ROOTS: Record<string, string> = existingRoots(parseRoots());
 
-export const MIME: Record<string, string> = {
+export const MIME: Record<string, string> = Object.assign(Object.create(null), {
 	html: 'text/html; charset=utf-8',
 	htm: 'text/html; charset=utf-8',
 	svg: 'image/svg+xml',
@@ -69,7 +69,7 @@ export const MIME: Record<string, string> = {
 	yaml: 'text/plain; charset=utf-8',
 	yml: 'text/plain; charset=utf-8',
 	toml: 'text/plain; charset=utf-8'
-};
+});
 
 /** How the viewer should render a file, from its extension alone. */
 export type ViewerKind = 'markdown' | 'image' | 'pdf' | 'sandboxed' | 'text' | 'binary';
@@ -83,6 +83,32 @@ export function viewerKind(name: string): ViewerKind {
 	if (['txt', 'log', 'json', 'csv', 'yaml', 'yml', 'toml', 'css', 'js', 'ts'].includes(extension))
 		return 'text';
 	return 'binary';
+}
+
+/**
+ * The one dot-folder bordr will serve from, and only for pictures.
+ *
+ * Playwright's MCP server writes its screenshots to `.playwright-mcp/`, so
+ * every screenshot an agent mentions lived behind the dotfile rule and showed
+ * as a broken image on the phone. Narrow on purpose: exactly that folder
+ * name, as a directory, and only an image at the end of the path. Its console
+ * logs and page snapshots, `.env`, `.git`, `.ssh` and every other dot-name
+ * stay refused.
+ */
+const SCREENSHOT_DIR = '.playwright-mcp';
+const SCREENSHOT_FILE = /\.(png|jpe?g|gif|webp)$/i;
+
+/** True when any segment is a dot-name, apart from the one allowed case. */
+function hidden(segments: string[]): boolean {
+	const dots = segments.filter((segment) => segment.startsWith('.'));
+	if (dots.length === 0) return false;
+	const last = segments.length - 1;
+	return !(
+		dots.length === 1 &&
+		dots[0] === SCREENSHOT_DIR &&
+		segments.indexOf(SCREENSHOT_DIR) < last &&
+		SCREENSHOT_FILE.test(segments[last])
+	);
 }
 
 /**
@@ -101,11 +127,11 @@ export function resolveSafe(
 	const [rootKey, ...rest] = clean.split('/').filter(Boolean);
 	if (!rootKey) return null;
 	const root = roots[rootKey];
-	if (!root) return null;
+	if (typeof root !== 'string' || !root) return null;
 	// Dotfiles are refused at the RESOLVER, not merely hidden from the listing:
 	// omitting them from the list while still serving a direct URL is theatre,
 	// and `.env` holds the VAPID private key. This also subsumes `..`.
-	if (rest.some((segment) => segment.startsWith('.'))) return null;
+	if (hidden(rest)) return null;
 
 	const absolute = resolve(root, rest.join('/'));
 	if (absolute !== root && !absolute.startsWith(root + sep)) return null;
@@ -122,12 +148,16 @@ export function resolveSafe(
 	if (real !== realRoot && !real.startsWith(realRoot + sep)) return null;
 	// The dotfile rule again, on the RESOLVED path: `ln -s .env notes.txt`
 	// inside a root would otherwise serve the thing the rule exists to hide.
-	if (
-		relative(realRoot, real)
-			.split(sep)
-			.some((segment) => segment.startsWith('.'))
-	) {
-		return null;
+	const resolvedSegments = relative(realRoot, real).split(sep);
+	if (hidden(resolvedSegments)) return null;
+	if (rest.includes(SCREENSHOT_DIR) || resolvedSegments.includes(SCREENSHOT_DIR)) {
+		// A .png-named directory must not expose a hidden listing, nor may a
+		// .png-named link widen the exception to a non-picture target.
+		try {
+			if (!SCREENSHOT_FILE.test(real) || !statSync(real).isFile()) return null;
+		} catch {
+			return null; // vanished since realpath
+		}
 	}
 	return real;
 }

@@ -78,7 +78,7 @@
 	import { showChrome, touchPoints } from '$lib/header-chrome';
 	import { screen as layout, watchWide } from '$lib/wide.svelte';
 	import { afterClose } from '$lib/after-close';
-	import { echoesAnswer, holdsAnswer } from './answer-echo';
+	import { cardHeld, echoesAnswer, holdsAnswer } from './answer-echo';
 	import { glideInterrupted } from './glide-interrupt';
 	import {
 		keepPending,
@@ -365,6 +365,12 @@
 	 */
 	let answeredKey = $state('');
 	let answeredAt = $state(0);
+	let answeredPaneId = $state('');
+	let answeredScope = $state('');
+	/** The question being answered right now: hidden from the tap, not from the reply. */
+	let sendingKey = $state('');
+	let sendingPaneId = $state('');
+	let sendingScope = $state('');
 
 	const pickerKey = $derived(pickerIdentity(detail.picker));
 
@@ -389,7 +395,22 @@
 	});
 
 	const askHidden = $derived(
-		answeredKey !== '' && answeredKey === pickerKey && now - answeredAt < ANSWERED_HOLD_MS
+		cardHeld(
+			{
+				paneId: detail.paneId,
+				scope: detail.readScope ?? '',
+				pickerKey,
+				sendingScope,
+				sendingPaneId,
+				sendingKey,
+				answeredPaneId,
+				answeredScope,
+				answeredKey,
+				answeredAt,
+				now
+			},
+			ANSWERED_HOLD_MS
+		)
 	);
 
 	// The picker went away, which is the answer landing: forget it, so an
@@ -535,7 +556,16 @@
 	const controlTargets = $derived(
 		[
 			{ scope: 'pane' as const, id: detail.paneId, label: detail.title || detail.paneId },
-			detail.tabId ? { scope: 'tab' as const, id: detail.tabId, label: detail.tabLabel } : null
+			detail.tabId ? { scope: 'tab' as const, id: detail.tabId, label: detail.tabLabel } : null,
+			// The name in the sidebar. Left out, a rename from here only ever
+			// reached the pane, which nothing on the phone shows.
+			detail.workspaceId
+				? {
+						scope: 'workspace' as const,
+						id: detail.workspaceId,
+						label: detail.workspaceLabel
+					}
+				: null
 		].filter((target) => target !== null)
 	);
 	const shownControlTargets = $derived(
@@ -571,6 +601,24 @@
 	// the session ever spawned, with no count to expand.
 	const shownSubs = $derived(strip === 'all' || showFinished ? [...running, ...finished] : running);
 	const openSubAgent = $derived(subs.find((a) => a.id === openSub) ?? null);
+	/**
+	 * Workflows with unreturned results, one chip each. A journal proves what
+	 * returned, not process liveness; stopped and unknown runs must not spin.
+	 */
+	const workflows = $derived.by(() => {
+		const runs: Record<
+			string,
+			{ name: string; total: number; done: number; termination?: string }
+		> = {};
+		for (const a of subs) {
+			if (!a.workflow) continue;
+			const run = (runs[a.workflow.runId] ??= { name: a.workflow.name, total: 0, done: 0 });
+			run.total++;
+			if (a.done) run.done++;
+			if (a.workflow.termination) run.termination = a.workflow.termination;
+		}
+		return Object.entries(runs).filter(([, r]) => r.done < r.total);
+	});
 
 	/**
 	 * Restore and save the composer by pane. The store collapses a typing burst
@@ -1914,6 +1962,8 @@
 		// dragged back down by the next poll.
 		const pinned = following;
 		await invalidateAll();
+		// A 304 preserves the detail object's identity, so effects do not retry a lost mark.
+		if (live) markRead();
 		if (pinned && !glideActive) requestAnimationFrame(scrollBottom);
 	}
 
@@ -2030,21 +2080,29 @@
 	 * local record cleared nothing. Fire-and-forget: a lost mark only leaves
 	 * a dot on until the next look.
 	 */
-	let marked: { paneId: string; seq: number } | null = null;
+	let marked: { paneId: string; seq: number; scope: string } | null = null;
 	function markRead() {
 		if (document.visibilityState !== 'visible') return;
 		const { paneId, seq } = detail;
-		if (marked?.paneId === paneId && marked.seq >= seq) return;
-		marked = { paneId, seq };
+		const scope = detail.readScope ?? '';
+		if (marked?.paneId === paneId && marked.seq === seq && marked.scope === scope) return;
+		const attempted = { paneId, seq, scope };
+		marked = attempted;
 		fetch('/api/read-state', {
 			method: 'POST',
 			headers: { 'content-type': 'application/json' },
-			body: JSON.stringify({ paneId, seq })
+			body: JSON.stringify(attempted)
 		})
 			.then((response) => {
-				if (!response.ok) console.warn(`read-state refused: ${response.status}`);
+				if (!response.ok) {
+					if (marked === attempted) marked = null;
+					console.warn(`read-state refused: ${response.status}`);
+				}
 			})
-			.catch((e: unknown) => console.warn('read-state failed', e));
+			.catch((e: unknown) => {
+				if (marked === attempted) marked = null;
+				console.warn('read-state failed', e);
+			});
 	}
 
 	// On arrival, and again each time the pane's seq advances while the page
@@ -2102,31 +2160,44 @@
 	 * empty. Now the tap points the composer at the row, and Send carries the
 	 * text to the answer route, which types it into that row and confirms.
 	 */
-	let writeIn = $state<{ index: number; label: string; paneId: string; dialog: string } | null>(
-		null
-	);
+	let writeIn = $state<(TerminalAnswerTarget & { label: string }) | null>(null);
+	let draftNeedsSourceChoice = $state(false);
 	$effect(() => {
 		const target = writeIn;
 		if (
 			target &&
 			(target.paneId !== detail.paneId ||
+				target.scope !== (detail.readScope ?? '') ||
 				target.dialog !== pickerKey ||
 				!detail.picker?.options.some((o) => o.index === target.index && o.writeIn))
 		) {
+			// Keep the text, but do not turn a cancelled answer into raw typing on the new source.
+			if (target.scope !== (detail.readScope ?? '')) draftNeedsSourceChoice = Boolean(draft.trim());
 			writeIn = null;
 		}
 	});
+	$effect(() => {
+		if (!draft.trim()) draftNeedsSourceChoice = false;
+		else if (draftNeedsSourceChoice)
+			uncertain =
+				'The pane target changed. Choose its write-in option again, or clear the old draft.';
+	});
 
-	function restoreTerminalDraft(paneId: string, text: string) {
+	function restoreTerminalDraft(paneId: string, text: string, scope = detail.readScope ?? '') {
 		const restored = draftStore?.restore(paneId, text) ?? text;
-		if (detail.paneId === paneId) draft = restored;
+		if (detail.paneId === paneId) {
+			draft = restored;
+			if (scope !== (detail.readScope ?? '')) draftNeedsSourceChoice = true;
+		}
 	}
 
 	function startWriteIn(option: { index: number; label: string }) {
+		draftNeedsSourceChoice = false;
 		writeIn = {
 			index: option.index,
 			label: option.label,
 			paneId: detail.paneId,
+			scope: detail.readScope ?? '',
 			dialog: pickerKey
 		};
 		uncertain = null;
@@ -2141,7 +2212,13 @@
 		target?: TerminalAnswerTarget
 	): Promise<boolean> {
 		const paneId = target?.paneId ?? detail.paneId;
-		if (busy || paneId !== detail.paneId || (target && target.dialog !== pickerKey)) return false;
+		const scope = target?.scope ?? detail.readScope ?? '';
+		if (
+			busy ||
+			paneId !== detail.paneId ||
+			(target && (target.dialog !== pickerKey || scope !== (detail.readScope ?? '')))
+		)
+			return false;
 		busy = true;
 		sendingIndex = index;
 		uncertain = null;
@@ -2169,6 +2246,12 @@
 		// the retire and confirm paths below leave the list alone.
 		const echo = echoesAnswer(picker) ? ++pendingSeq : null;
 		if (echo !== null) {
+			// Gone at the tap. On a slow link the reply is seconds away and a card
+			// that sits there untouched reads as a dead button. Every way the send
+			// can fail clears this in `finally`, which puts the card back.
+			sendingKey = dialog;
+			sendingPaneId = paneId;
+			sendingScope = scope;
 			const echoText = text ?? chose?.label ?? String(index);
 			pendingSends = [
 				...pendingSends,
@@ -2191,7 +2274,7 @@
 					method: 'POST',
 					headers: { 'content-type': 'application/json' },
 					body: JSON.stringify(
-						submit ? { submit: true } : { index, text, ...(target && { dialog: target.dialog }) }
+						submit ? { submit: true, dialog, scope } : { index, text, dialog, scope }
 					)
 				})
 			);
@@ -2235,6 +2318,8 @@
 				// stay up with its Submit button while the rest are ticked.
 				if (holdsAnswer(picker, body?.outcome)) {
 					answeredKey = dialog;
+					answeredPaneId = paneId;
+					answeredScope = scope;
 					answeredAt = Date.now();
 					now = answeredAt;
 				}
@@ -2248,6 +2333,9 @@
 		} finally {
 			busy = false;
 			sendingIndex = -1;
+			sendingKey = '';
+			sendingPaneId = '';
+			sendingScope = '';
 		}
 		refreshSoon();
 		return ok;
@@ -2303,6 +2391,7 @@
 	 */
 	$effect(() => {
 		const originPane = pickerPane;
+		const originScope = detail.readScope ?? '';
 		const originDialog = pickerKey;
 		if (
 			!wideScreen ||
@@ -2317,7 +2406,11 @@
 			return;
 		let active = true;
 		const valid = () =>
-			active && detail.paneId === originPane && pickerKey === originDialog && !askHidden;
+			active &&
+			detail.paneId === originPane &&
+			(detail.readScope ?? '') === originScope &&
+			pickerKey === originDialog &&
+			!askHidden;
 		const onPickerKey = (event: KeyboardEvent) => {
 			if (
 				event.defaultPrevented ||
@@ -2345,13 +2438,24 @@
 					const response = await fetch(`/api/agents/${encodeURIComponent(originPane)}`);
 					if (!response.ok || !valid()) return;
 					const fresh = (await response.json()) as typeof detail;
-					if (!valid() || pickerIdentity(fresh.picker) !== originDialog) return;
+					if (
+						!valid() ||
+						(fresh.readScope ?? '') !== originScope ||
+						pickerIdentity(fresh.picker) !== originDialog
+					)
+						return;
 					const option = fresh.picker?.options.find((o) =>
 						shortcut.kind === 'confirm' ? o.selected : o.index === shortcut.index
 					);
 					if (!option) return;
 					if (option.writeIn) startWriteIn(option);
-					else await answer(option.index);
+					else
+						await answer(option.index, undefined, false, {
+							paneId: originPane,
+							scope: originScope,
+							dialog: originDialog,
+							index: option.index
+						});
 				})
 				.catch((e) => {
 					if (valid()) sendError = (e as Error).message;
@@ -2437,6 +2541,7 @@
 			ok &&
 			writeIn?.paneId === target.paneId &&
 			writeIn.dialog === target.dialog &&
+			writeIn.scope === target.scope &&
 			writeIn.index === target.index
 		)
 			writeIn = null;
@@ -2445,6 +2550,11 @@
 
 	async function send() {
 		if (busy || (!draft.trim() && attachments.length === 0)) return;
+		if (draftNeedsSourceChoice) {
+			uncertain =
+				'The pane target changed. Choose its write-in option again, or clear the old draft.';
+			return;
+		}
 		if (dictating) stopDictation();
 		// The answer for the write-in row the reader tapped: typed into THAT row
 		// and confirmed by the answer route, not typed at whatever the question
@@ -2452,15 +2562,16 @@
 		if (writeIn && detail.picker && attachments.length === 0) {
 			const target = writeIn;
 			const text = draft.trim();
-			const paneId = detail.paneId;
+			const paneId = target.paneId;
 			draftStore?.clear(paneId);
 			draft = '';
 			writeIn = null;
-			if (!(await answer(target.index, text))) {
+			if (!(await answer(target.index, text, false, target))) {
 				const restored = draftStore?.restore(paneId, text) ?? text;
 				if (detail.paneId === paneId) {
 					draft = restored;
-					writeIn = target;
+					if ((detail.readScope ?? '') === target.scope) writeIn = target;
+					else draftNeedsSourceChoice = Boolean(restored.trim());
 				}
 			}
 			return;
@@ -3156,6 +3267,8 @@
 	<div data-viewport-terminal-body class="flex min-h-0 flex-1 flex-col">
 		<PaneTerminal
 			paneId={detail.paneId}
+			scope={detail.readScope ?? ''}
+			needsSourceChoice={draftNeedsSourceChoice}
 			agent={detail.agent}
 			ask={detail.picker && detail.picker.options.length > 0 && !askHidden ? pickerCard : undefined}
 			suggestion={detail.suggestion ?? ''}
@@ -3214,6 +3327,20 @@
 					<span class="shrink-0 font-mono text-[10px] tracking-[.06em] text-faint uppercase"
 						>agents</span
 					>
+					{#each workflows as [runId, run] (runId)}
+						<span
+							class="flex shrink-0 items-center gap-1.5 rounded-full border border-edge bg-chip px-2.5 py-1 text-[11.5px]"
+							title="Claude Code workflow {runId}"
+						>
+							<span class="font-mono text-faint"
+								>{run.termination
+									? `run ${run.termination} · results missing`
+									: 'awaiting results'}</span
+							>
+							<span class="max-w-[10rem] truncate font-mono text-working">{run.name}</span>
+							<span class="font-mono text-[10px] text-faint">{run.done}/{run.total}</span>
+						</span>
+					{/each}
 					{#each shownSubs as sub (sub.id)}
 						<button
 							class="flex shrink-0 items-center gap-1.5 rounded-full border px-2.5 py-1 text-[11.5px] transition-colors hover:bg-chip {sub.done
@@ -3227,7 +3354,9 @@
 								between working and long finished was an entry count that stops
 								moving, which you have to watch to notice.
 							-->
-							{#if !sub.done}<Spinner size={11} label="running" />{/if}
+							{#if !sub.done && sub.workflow}
+								<span class="font-mono text-[10px] text-faint">no result recorded</span>
+							{:else if !sub.done}<Spinner size={11} label="running" />{/if}
 							<span class="font-mono {sub.done ? 'text-muted' : 'text-working'}"
 								>{sub.agentType}</span
 							>

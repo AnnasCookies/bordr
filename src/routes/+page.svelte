@@ -149,7 +149,13 @@
 
 	/** Has this exact question already been answered, and not yet cleared? */
 	function settled(agent: AgentSummary): boolean {
-		return answerSettled(answered[agent.paneId], agent.picker, clock, ANSWERED_HOLD_MS);
+		return answerSettled(
+			answered[agent.paneId],
+			agent.picker,
+			clock,
+			ANSWERED_HOLD_MS,
+			agent.readScope ?? ''
+		);
 	}
 
 	onMount(() => {
@@ -212,12 +218,17 @@
 		if (answering === agent.paneId) return;
 		answering = agent.paneId;
 		answeringIndex = index;
+		const scope = agent.readScope ?? '';
 		try {
 			const response = await track(() =>
 				fetch(`/api/agents/${encodeURIComponent(agent.paneId)}/answer`, {
 					method: 'POST',
 					headers: { 'content-type': 'application/json' },
-					body: JSON.stringify({ index })
+					body: JSON.stringify({
+						index,
+						dialog: pickerKey(agent.picker),
+						scope
+					})
 				})
 			);
 			const body = (await response.json().catch(() => null)) as {
@@ -240,6 +251,7 @@
 				answered = {
 					...answered,
 					[agent.paneId]: {
+						scope,
 						key: pickerKey(agent.picker),
 						at: Date.now(),
 						// What was chosen, not merely that something was: "sent" alone

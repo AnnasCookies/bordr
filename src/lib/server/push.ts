@@ -1,4 +1,6 @@
 import { env } from '$env/dynamic/private';
+import { createHash } from 'node:crypto';
+import { pickerIdentity } from '$lib/picker-shortcut';
 import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { homedir } from 'node:os';
@@ -202,8 +204,9 @@ async function notifyBlocked(paneId: string): Promise<void> {
 	const agents = await listAgents().catch(() => []);
 	const agent = agents.find((a) => a.paneId === paneId);
 	let picker: Picker | null = null;
+	const scope = agent?.readScope ?? '';
 	try {
-		picker = parsePicker(await readVisible(paneId));
+		picker = parsePicker(await readVisible(paneId, scope));
 	} catch {
 		// screen unreadable — the generic body still says what matters
 	}
@@ -215,6 +218,12 @@ async function notifyBlocked(paneId: string): Promise<void> {
 		body: `${question ?? 'Blocked — waiting on you.'}${detail ? `\n${detail}` : ''}`,
 		url: `/a/${paneId}`,
 		paneId,
+		scope,
+		// A compact fingerprint binds queued buttons to this question without
+		// storing its full preview/context in notification data.
+		dialogHash: picker
+			? createHash('sha256').update(pickerIdentity(picker)).digest('hex')
+			: undefined,
 		// Buttons on the notification itself, so a one-tap answer never has to
 		// open the app. Single-select only: a checkbox picker needs a submit
 		// rather than one index, and answering it from a two-button strip would
@@ -277,7 +286,7 @@ export async function startPushWatcher(): Promise<void> {
 			const reconcile = setInterval(() => {
 				// Enriched, so a pi question (herdr: working, screen: dialog)
 				// notifies from here even when no phone has the list open.
-				void listAgents()
+				void listAgents({})
 					.then(enrichAgents)
 					.then((agents) => {
 						for (const a of agents) observeStatus(a.paneId, a.status);
@@ -291,7 +300,7 @@ export async function startPushWatcher(): Promise<void> {
 		}
 
 		// Catch anything that blocked while we were away, once listeners exist.
-		const agents = await listAgents()
+		const agents = await listAgents({})
 			.then(enrichAgents)
 			.catch(() => []);
 		for (const a of agents) observeStatus(a.paneId, a.status);

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { echoesAnswer, holdsAnswer } from './answer-echo';
+import { cardHeld, echoesAnswer, holdsAnswer } from './answer-echo';
 
 const SINGLE = { multi: false };
 const MULTI = { multi: true };
@@ -32,5 +32,54 @@ describe('answering a picker', () => {
 	it('treats a missing picker as single-select', () => {
 		expect(echoesAnswer(null)).toBe(true);
 		expect(holdsAnswer(undefined, 'accepted')).toBe(true);
+	});
+});
+
+describe('holding the question card', () => {
+	const base = {
+		paneId: 'a',
+		scope: 'original',
+		sendingScope: 'original',
+		answeredScope: 'original',
+		sendingPaneId: 'a',
+		answeredPaneId: 'a',
+		pickerKey: 'q1',
+		sendingKey: '',
+		answeredKey: '',
+		answeredAt: 0,
+		now: 1000
+	};
+
+	it('hides the card the moment an option is tapped, before the server replies', () => {
+		expect(cardHeld({ ...base, sendingKey: 'q1' }, 8000)).toBe(true);
+	});
+
+	it('shows it again once the reply clears the sending mark without confirming', () => {
+		expect(cardHeld({ ...base, sendingKey: '' }, 8000)).toBe(false);
+	});
+
+	it('holds after a confirmed answer, for the hold and no longer', () => {
+		const held = { ...base, answeredKey: 'q1', answeredAt: 1000 };
+		expect(cardHeld({ ...held, now: 5000 }, 8000)).toBe(true);
+		expect(cardHeld({ ...held, now: 9001 }, 8000)).toBe(false);
+	});
+
+	it('never hides another pane with an identical question while a reply is in flight', () => {
+		expect(cardHeld({ ...base, paneId: 'b', sendingKey: 'q1' }, 8000)).toBe(false);
+		expect(cardHeld({ ...base, paneId: 'b', answeredKey: 'q1', answeredAt: 1000 }, 8000)).toBe(
+			false
+		);
+	});
+
+	it('does not hold an identical question after the same pane address is retargeted', () => {
+		expect(cardHeld({ ...base, scope: 'replacement', sendingKey: 'q1' }, 8000)).toBe(false);
+		expect(
+			cardHeld({ ...base, scope: 'replacement', answeredKey: 'q1', answeredAt: 1000 }, 8000)
+		).toBe(false);
+	});
+
+	it('never swallows a different question', () => {
+		expect(cardHeld({ ...base, sendingKey: 'q1', pickerKey: 'q2' }, 8000)).toBe(false);
+		expect(cardHeld({ ...base, answeredKey: 'q1', pickerKey: 'q2' }, 8000)).toBe(false);
 	});
 });

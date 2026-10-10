@@ -1,4 +1,5 @@
 import { env } from '$env/dynamic/private';
+import { error } from '@sveltejs/kit';
 import { homedir } from 'node:os';
 import { join } from 'node:path';
 import { tabName } from '$lib/tab-label';
@@ -9,6 +10,7 @@ import { SubscriptionManager } from './subscriptions';
 import { ensureConnection } from './connections';
 import { formatPane, parsePane } from './address';
 import { promptWithPaneFallback } from './prompt-retry';
+import { readScopeFor, readState, seenStatus } from '../state-store';
 
 const DEFAULT_SOCKET = join(homedir(), '.config', 'herdr', 'sessions', 'main', 'herdr.sock');
 
@@ -55,16 +57,24 @@ export function getClient(): HerdrClient {
  * Throws for a machine that is configured but not reachable, so the caller
  * reports "not reachable" rather than silently answering with local panes.
  */
-export async function clientFor(machineId: string): Promise<HerdrClient> {
-	if (!machineId) return getClient();
-	const connection = await ensureConnection(machineId);
-	if (!connection || connection.error) {
-		throw new HerdrRequestError(
-			'machine_unreachable',
-			connection?.error ?? `machine ${machineId} is not reachable`
-		);
+export async function clientFor(machineId: string, expectedScope?: string): Promise<HerdrClient> {
+	let herdr: HerdrClient;
+	if (!machineId) herdr = getClient();
+	else {
+		const connection = await ensureConnection(machineId);
+		if (!connection || connection.error) {
+			throw new HerdrRequestError(
+				'machine_unreachable',
+				connection?.error ?? `machine ${machineId} is not reachable`
+			);
+		}
+		herdr = connection.client;
 	}
-	return connection.client;
+	// The returned client keeps its original forward; an editable id must not
+	// redirect an in-flight answer to a different target or session.
+	if (expectedScope !== undefined && (machineId ? herdr.sourceScope : '') !== expectedScope)
+		throw error(409, 'the pane target changed before input could be sent');
+	return herdr;
 }
 
 /**
@@ -115,7 +125,8 @@ export async function getManager(): Promise<SubscriptionManager> {
 export function toSummary(
 	raw: Record<string, unknown>,
 	workspaceLabels: Map<string, string> = new Map(),
-	tabLabels: Map<string, string> = new Map()
+	tabLabels: Map<string, string> = new Map(),
+	read: Record<string, number> = readState()
 ): AgentSummary {
 	const status = raw.agent_status as AgentStatus;
 	const paneId = String(raw.pane_id ?? '');
@@ -129,21 +140,46 @@ export function toSummary(
 	// format is the one the pane tree already uses.
 	const { machineId } = parsePane(paneId);
 	const readdress = (bare: string) => (bare ? formatPane(machineId, bare) : '');
-	// The label maps come from this host's herdr, keyed by herdr's own ids.
+	// Label maps come from the pane's own Herdr instance, keyed by its bare ids.
 	const workspaceLabel = workspaceLabels.get(bareWorkspace);
-	const named =
-		(typeof raw.name === 'string' && raw.name) ||
-		(workspaceLabel && !/^\d+$/.test(workspaceLabel) ? workspaceLabel : '');
+	// bordr has to name an agent to start it, and with nothing typed that name
+	// is the harness (`claude`, or `claude-w38-p1` when taken). That says
+	// nothing, and ranking it first hid the workspace's real name.
+	const kind = typeof raw.agent === 'string' ? raw.agent : '';
+	const given =
+		typeof raw.name === 'string' &&
+		raw.name &&
+		!(
+			kind &&
+			(raw.name === kind ||
+				(raw.name.startsWith(kind) && /^-w[0-9a-z]+-p\d+$/.test(raw.name.slice(kind.length))))
+		)
+			? raw.name
+			: '';
+	const named = given || (workspaceLabel && !/^\d+$/.test(workspaceLabel) ? workspaceLabel : '');
 	// A default tab is labelled with its own number, which says nothing the
 	// pane address does not already say.
 	const tabLabel = tabName(tabLabels.get(bareTab) ?? '');
+	const seq = Number(raw.state_change_seq ?? 0);
+	const scope = machineId
+		? typeof raw.bordr_read_scope === 'string'
+			? raw.bordr_read_scope
+			: undefined
+		: '';
 	return {
 		paneId,
 		agent: String(raw.agent ?? 'unknown'),
 		title: named || String(raw.terminal_title_stripped ?? ''),
-		status: STATUSES.includes(status) ? status : 'unknown',
+		status: seenStatus(
+			STATUSES.includes(status) ? status : 'unknown',
+			seq,
+			!machineId || (scope !== undefined && scope === readScopeFor(paneId))
+				? read[paneId]
+				: undefined
+		),
 		cwd: String(raw.cwd ?? ''),
-		seq: Number(raw.state_change_seq ?? 0),
+		seq,
+		...(machineId && scope ? { readScope: scope } : {}),
 		workspaceId: readdress(bareWorkspace),
 		workspaceLabel: workspaceLabel && !/^\d+$/.test(workspaceLabel) ? workspaceLabel : '',
 		tabId: readdress(bareTab),
@@ -151,8 +187,7 @@ export function toSummary(
 	};
 }
 
-export async function workspaceLabels(): Promise<Map<string, string>> {
-	const herdr = getClient();
+export async function workspaceLabels(herdr = getClient()): Promise<Map<string, string>> {
 	try {
 		const result = await herdr.request<{ workspaces?: Array<Record<string, unknown>> }>(
 			'workspace.list'
@@ -172,8 +207,7 @@ export async function workspaceLabels(): Promise<Map<string, string>> {
  * so the name it is filed under — which is the name YOU gave it in herdr, and
  * usually the most recognisable thing about a pane — needs the second call.
  */
-export async function tabLabels(): Promise<Map<string, string>> {
-	const herdr = getClient();
+export async function tabLabels(herdr = getClient()): Promise<Map<string, string>> {
 	try {
 		const result = await herdr.request<{ tabs?: Array<Record<string, unknown>> }>('tab.list');
 		return new Map((result.tabs ?? []).map((t) => [String(t.tab_id ?? ''), String(t.label ?? '')]));
@@ -186,7 +220,7 @@ export function sortAgents(agents: AgentSummary[]): AgentSummary[] {
 	return [...agents].sort((a, b) => RANK[a.status] - RANK[b.status]);
 }
 
-export async function listAgents(): Promise<AgentSummary[]> {
+export async function listAgents(read = readState()): Promise<AgentSummary[]> {
 	const herdr = getClient();
 	// In parallel: three round trips cost what one does, and the list is on a
 	// two-second beat, so doing them in turn would show.
@@ -195,7 +229,7 @@ export async function listAgents(): Promise<AgentSummary[]> {
 		workspaceLabels(),
 		tabLabels()
 	]);
-	return sortAgents(result.agents.map((a) => toSummary(a, labels, tabs)));
+	return sortAgents(result.agents.map((a) => toSummary(a, labels, tabs, read)));
 }
 
 /**
@@ -212,12 +246,15 @@ export async function rawAgents(): Promise<Record<string, unknown>[]> {
 	return result.agents;
 }
 
-export async function rawAgent(address: string): Promise<Record<string, unknown> | null> {
+export async function rawAgent(
+	address: string,
+	expectedScope?: string
+): Promise<Record<string, unknown> | null> {
 	const { machineId, paneId } = parsePane(address);
-	const herdr = await clientFor(machineId);
+	const herdr = await clientFor(machineId, expectedScope);
 	const result = await herdr.request<{ agents: Record<string, unknown>[] }>('agent.list');
 	const agent = result.agents.find((a) => a.pane_id === paneId);
-	return agent ? { ...agent, pane_id: address } : null;
+	return agent ? { ...agent, pane_id: address, bordr_read_scope: herdr.sourceScope } : null;
 }
 
 /** Wait until herdr lists a newly started pane as an active agent. */
@@ -247,11 +284,11 @@ export async function rawPane(address: string): Promise<Record<string, unknown> 
 	const result = await herdr.request<{ panes: Record<string, unknown>[] }>('pane.list');
 	const pane = result.panes.find((p) => p.pane_id === paneId);
 	// Re-addressed on the way out so callers keep working in bordr's ids.
-	return pane ? { ...pane, pane_id: address } : null;
+	return pane ? { ...pane, pane_id: address, bordr_read_scope: herdr.sourceScope } : null;
 }
 
-export async function readVisible(paneId: string): Promise<string> {
-	return readPane(paneId, { source: 'visible' });
+export async function readVisible(paneId: string, expectedScope?: string): Promise<string> {
+	return readPane(paneId, { source: 'visible' }, expectedScope);
 }
 
 /**
@@ -266,10 +303,11 @@ export async function readVisible(paneId: string): Promise<string> {
  */
 export async function readPane(
 	address: string,
-	opts: { source?: 'visible' | 'recent' | 'recent_unwrapped'; lines?: number; ansi?: boolean } = {}
+	opts: { source?: 'visible' | 'recent' | 'recent_unwrapped'; lines?: number; ansi?: boolean } = {},
+	expectedScope?: string
 ): Promise<string> {
 	const { machineId, paneId } = parsePane(address);
-	const herdr = await clientFor(machineId);
+	const herdr = await clientFor(machineId, expectedScope);
 	const params = {
 		source: opts.source ?? 'visible',
 		format: opts.ansi ? 'ansi' : 'text',
@@ -346,9 +384,13 @@ export async function settleScreen(
  * a harness starts — and the new-agent route already waits that window out
  * before it hands the pane over.
  */
-export async function promptAgent(address: string, text: string): Promise<void> {
+export async function promptAgent(
+	address: string,
+	text: string,
+	expectedScope?: string
+): Promise<void> {
 	const { machineId, paneId } = parsePane(address);
-	const herdr = await clientFor(machineId);
+	const herdr = await clientFor(machineId, expectedScope);
 	/**
 	 * A leading `!` is a MODE SWITCH, not text.
 	 *
@@ -406,15 +448,23 @@ export async function promptAgent(address: string, text: string): Promise<void> 
  * through, so what you type appears where the harness puts what YOU type —
  * its input box — rather than in a separate field bordr owns.
  */
-export async function sendText(address: string, text: string): Promise<void> {
+export async function sendText(
+	address: string,
+	text: string,
+	expectedScope?: string
+): Promise<void> {
 	const { machineId, paneId } = parsePane(address);
-	const herdr = await clientFor(machineId);
+	const herdr = await clientFor(machineId, expectedScope);
 	await herdr.request('pane.send_text', { pane_id: paneId, text });
 }
 
-export async function sendKeys(address: string, keys: string[]): Promise<void> {
+export async function sendKeys(
+	address: string,
+	keys: string[],
+	expectedScope?: string
+): Promise<void> {
 	const { machineId, paneId } = parsePane(address);
-	const herdr = await clientFor(machineId);
+	const herdr = await clientFor(machineId, expectedScope);
 	try {
 		await herdr.request('agent.send_keys', { target: paneId, keys });
 	} catch (e) {

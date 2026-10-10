@@ -1,5 +1,5 @@
 /// <reference lib="webworker" />
-import { version } from '$service-worker';
+import { build, files, version } from '$service-worker';
 import { actionFor, chosenIndex, MAX_ACTIONS } from '$lib/notify';
 
 declare const self: ServiceWorkerGlobalScope;
@@ -28,11 +28,16 @@ interface PushPayload {
 	paneId?: string;
 	/** The first couple of single-select options, as notification buttons. */
 	options?: PickerAction[];
+	/** The server's fingerprint of the exact question that generated these buttons. */
+	dialogHash?: string;
+	scope?: string;
 }
 
 interface NotificationData {
 	url?: string;
 	paneId?: string;
+	dialogHash?: string;
+	scope?: string;
 	/** Only on the summary, so a third arrival can count past a collapse. */
 	count?: number;
 }
@@ -79,7 +84,12 @@ function actionsFor(options: PickerAction[] | undefined): NotificationAction[] {
 async function show(data: PushPayload): Promise<void> {
 	await self.registration.showNotification(data.title ?? 'bordr', {
 		body: data.body ?? 'An agent needs you.',
-		data: { url: data.url ?? '/', paneId: data.paneId } satisfies NotificationData,
+		data: {
+			url: data.url ?? '/',
+			paneId: data.paneId,
+			dialogHash: data.dialogHash,
+			scope: data.scope
+		} satisfies NotificationData,
 		tag: data.url ?? 'bordr', // one notification per agent, not a pile
 		actions: actionsFor(data.options),
 		// An agent waiting on you is not a thing to miss because you happened
@@ -177,12 +187,18 @@ async function openTarget(url: string): Promise<void> {
  * has moved on is refused rather than misapplied — which is why a failure
  * here opens the agent instead of being swallowed.
  */
-async function answer(paneId: string, index: number, url: string): Promise<void> {
+async function answer(
+	paneId: string,
+	index: number,
+	url: string,
+	dialogHash: string,
+	scope: string
+): Promise<void> {
 	try {
 		const response = await fetch(`/api/agents/${encodeURIComponent(paneId)}/answer`, {
 			method: 'POST',
 			headers: { 'content-type': 'application/json' },
-			body: JSON.stringify({ index })
+			body: JSON.stringify({ index, dialogHash, scope })
 		});
 		if (response.ok) return;
 	} catch {
@@ -197,15 +213,56 @@ self.addEventListener('notificationclick', (event) => {
 	event.notification.close();
 
 	const chosen = chosenIndex(event.action);
-	if (chosen !== null && data.paneId) {
-		event.waitUntil(answer(data.paneId, chosen, url));
+	if (
+		chosen !== null &&
+		data.paneId &&
+		typeof data.dialogHash === 'string' &&
+		typeof data.scope === 'string' &&
+		/^[a-f0-9]{64}$/.test(data.dialogHash)
+	) {
+		event.waitUntil(answer(data.paneId, chosen, url, data.dialogHash, data.scope));
 		return;
 	}
 	event.waitUntil(openTarget(url));
 });
 
-// No fetch caching — bordr is a live tool; stale UI is worse than no cache.
 self.addEventListener('install', () => void self.skipWaiting());
+
+/**
+ * The build's own files, served from the phone once it has them.
+ *
+ * Only what cannot be stale: the hashed bundle SvelteKit emits, and the icon
+ * fonts, which sit under a cache named for THIS build, so a new build starts
+ * from empty rather than serving the old font. The page, the API and the event
+ * stream are never touched — bordr is a live tool, and stale data is worse than
+ * none. Cached on first use rather than all at install, because a multi-megabyte
+ * install over a bad link would hold the update up for exactly the people this
+ * is for.
+ */
+const ASSET_CACHE = `bordr-assets-${BUILD}`;
+const ASSETS = new Set([...build, ...files.filter((f) => f.startsWith('/fonts/'))]);
+
+self.addEventListener('fetch', (event) => {
+	const { request } = event;
+	if (request.method !== 'GET' || request.headers.has('range')) return;
+	const url = new URL(request.url);
+	if (url.origin !== self.location.origin || !ASSETS.has(url.pathname)) return;
+	event.respondWith(
+		(async () => {
+			try {
+				const cache = await caches.open(ASSET_CACHE);
+				const hit = await cache.match(request);
+				if (hit) return hit;
+				const response = await fetch(request);
+				if (response.ok) void cache.put(request, response.clone()).catch(() => undefined);
+				return response;
+			} catch {
+				// Cache API unavailable: behave as if there were no worker here.
+				return fetch(request);
+			}
+		})()
+	);
+});
 
 /**
  * A new build must reach the pages already open on the old one.
@@ -222,6 +279,14 @@ self.addEventListener('activate', (event) => {
 	event.waitUntil(
 		(async () => {
 			await self.clients.claim();
+			// Each build owns one asset cache; the previous ones are dead weight.
+			try {
+				for (const key of await caches.keys())
+					if (key.startsWith('bordr-assets-') && key !== ASSET_CACHE) await caches.delete(key);
+			} catch {
+				// Storage may be blocked or full; optional cleanup must not hide a deploy.
+				console.info('bordr: old asset caches could not be cleared');
+			}
 			console.info(`bordr service worker active for build ${BUILD}`);
 
 			// Hidden clients may still own attachments or an in-flight POST.

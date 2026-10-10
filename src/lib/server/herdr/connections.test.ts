@@ -229,7 +229,7 @@ describe('cached permission identity (pre-existing defect)', () => {
 });
 
 it('revokes an already-live cached connection before reuse or command dispatch', async () => {
-	const { ensureConnection, connectionFor, runOn } = await import('./connections');
+	const { ensureConnection, connectionFor, connectionKey, runOn } = await import('./connections');
 	const pending = ensureConnection('a');
 	await vi.waitFor(() => expect(ssh.spawned).toHaveLength(1));
 	ssh.spawned[0].child.stdout.emit('data', '/fixture/home');
@@ -241,6 +241,8 @@ it('revokes an already-live cached connection before reuse or command dispatch',
 	forward.child.emit('exit', 0);
 	expect(await pending).not.toBeNull();
 	expect(connectionFor('a')).toBeDefined();
+	const captured = connectionFor('a')!;
+	expect(captured.client.sourceScope).toBe(connectionKey(MACHINE));
 	const previous = policy.machines;
 	try {
 		policy.machines = [{ ...MACHINE, enabled: false }];
@@ -248,6 +250,7 @@ it('revokes an already-live cached connection before reuse or command dispatch',
 		expect(await runOn(MACHINE, 'true')).toBeNull();
 		policy.machines = [{ ...MACHINE, target: 'replacement' }];
 		expect(connectionFor('a')).toBeUndefined();
+		expect(captured.client.sourceScope).toBe(connectionKey(MACHINE));
 		policy.machines = [{ ...MACHINE, session: 'replacement' }];
 		expect(connectionFor('a')).toBeUndefined();
 		expect(ssh.spawned).toHaveLength(2);

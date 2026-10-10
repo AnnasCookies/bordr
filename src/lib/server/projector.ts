@@ -3,7 +3,7 @@ import { checkCompatibility, getManager, listAgents, unreachableCompatibility } 
 import { enrichAgents } from './enrich';
 import { observeStatus } from './push';
 import type { Compatibility } from './herdr/compat';
-import { readState } from './state-store';
+import { readState, seenStatus } from './state-store';
 
 export interface Projection {
 	agents: AgentSummary[];
@@ -178,14 +178,24 @@ class Projector {
 
 	private async refreshOnce(): Promise<void> {
 		try {
-			const [listed, compat] = await Promise.all([listAgents(), checkCompatibility()]);
+			const [listed, compat] = await Promise.all([listAgents({}), checkCompatibility()]);
 			// Preview and blocked-pane pickers, so the list can show what each
 			// agent is doing and answer without opening it.
 			const agents = await enrichAgents(listed);
 			// The enriched status, not herdr's: a dialog on screen counts as
 			// blocked for notifications exactly as it does for the list.
 			for (const agent of agents) observeStatus(agent.paneId, agent.status);
-			this.publish({ agents, read: readState(), compat, revision: this.revision });
+			const read = readState();
+			// Notification reconciliation sees lifecycle truth; acknowledgement is display-only.
+			const displayed = agents.map((agent) => {
+				const status = seenStatus(agent.status, agent.seq, read[agent.paneId]);
+				return {
+					...agent,
+					status,
+					preview: status !== agent.status ? agent.preview?.replace(/^✓ /, '') : agent.preview
+				};
+			});
+			this.publish({ agents: displayed, read, compat, revision: this.revision });
 		} catch (e) {
 			// herdr unreachable after boot. The last agent list is kept, but with
 			// compat flipped so a phone shows the banner instead of stale agents

@@ -1,5 +1,5 @@
 import { pickerIdentity } from './picker-shortcut';
-import type { AgentStatus, AgentSummary } from '$lib/types';
+import type { AgentStatus, AgentSummary, WorkspaceNode } from '$lib/types';
 import type { GroupBy, SortBy } from '$lib/prefs.svelte';
 
 /** Order statuses appear in the rollup and in status grouping. */
@@ -237,6 +237,7 @@ type ListPicker = AgentSummary['picker'];
 
 /** What the list remembers about a question it answered, until the screen catches up. */
 export interface AnsweredMark {
+	scope: string;
 	key: string;
 	at: number;
 	/** What was chosen, so the row can say which button was hit. */
@@ -267,9 +268,10 @@ export function answerSettled(
 	mark: AnsweredMark | undefined,
 	picker: ListPicker,
 	now: number,
-	holdMs: number
+	holdMs: number,
+	scope = ''
 ): boolean {
-	if (!mark || !holdsAnswer(picker)) return false;
+	if (!mark || mark.scope !== scope || !holdsAnswer(picker)) return false;
 	if (now - mark.at >= holdMs) return false;
 	return mark.key === pickerKey(picker);
 }
@@ -286,4 +288,47 @@ export function flatOrder(
 ): string[] {
 	const { blocked, groups } = partitionAgents(agents, groupBy, sort, filter);
 	return [...blocked, ...groups.flatMap((g) => g.agents)].map((a) => a.paneId);
+}
+
+export type WorkspaceRow =
+	| { kind: 'workspace'; workspace: WorkspaceNode; nested: boolean }
+	| { kind: 'repo'; key: string; name: string };
+
+/**
+ * The machine's workspaces with each linked worktree tucked under its repo,
+ * the way herdr's sidebar files them.
+ *
+ * A worktree goes under the first workspace on the repo's main checkout. When
+ * no workspace is open on the main checkout, the worktrees still sit together,
+ * under a heading for the repo, at the place the first of them was. Otherwise
+ * herdr's order stands.
+ */
+export function nestWorktrees(workspaces: WorkspaceNode[]): WorkspaceRow[] {
+	const linked = (key: string) =>
+		workspaces.filter((w) => w.worktree?.linked && w.worktree.repoKey === key);
+	const placed = new Set<string>();
+	const rows: WorkspaceRow[] = [];
+
+	for (const workspace of workspaces) {
+		if (placed.has(workspace.workspaceId)) continue;
+		const wt = workspace.worktree;
+		if (!wt || placed.has(`repo:${wt.repoKey}`)) {
+			rows.push({ kind: 'workspace', workspace, nested: false });
+			continue;
+		}
+		// Defer a linked checkout until its main workspace, even when listed later.
+		if (
+			wt.linked &&
+			workspaces.some((w) => w.worktree?.repoKey === wt.repoKey && !w.worktree.linked)
+		)
+			continue;
+		placed.add(`repo:${wt.repoKey}`);
+		if (wt.linked) rows.push({ kind: 'repo', key: wt.repoKey, name: wt.repoName });
+		else rows.push({ kind: 'workspace', workspace, nested: false });
+		for (const child of linked(wt.repoKey)) {
+			placed.add(child.workspaceId);
+			rows.push({ kind: 'workspace', workspace: child, nested: true });
+		}
+	}
+	return rows;
 }

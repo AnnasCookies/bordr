@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { AgentSummary } from '$lib/types';
 import type { Compatibility } from './herdr/compat';
+import { observeStatus } from './push';
 
 /**
  * The projector is a module singleton over herdr's client functions; these
@@ -19,7 +20,11 @@ const herdr = vi.hoisted(() => ({
 }));
 vi.mock('./herdr', () => herdr);
 vi.mock('./enrich', () => ({ enrichAgents: async (agents: AgentSummary[]) => agents }));
-vi.mock('./state-store', () => ({ readState: () => ({}) }));
+const reads = vi.hoisted(() => ({ value: {} as Record<string, number> }));
+vi.mock('./state-store', async (importOriginal) => ({
+	...(await importOriginal<typeof import('./state-store')>()),
+	readState: () => reads.value
+}));
 // The projector reports every enriched status to the push watcher; doubled
 // here so these tests need no VAPID keys or subscription store.
 vi.mock('./push', () => ({ observeStatus: vi.fn() }));
@@ -42,6 +47,8 @@ const flush = () => new Promise((r) => setTimeout(r, 0));
 
 beforeEach(() => {
 	vi.resetModules();
+	reads.value = {};
+	vi.mocked(observeStatus).mockClear();
 	herdr.listAgents.mockReset();
 	herdr.checkCompatibility.mockReset().mockResolvedValue(OK);
 	herdr.getManager.mockReset().mockResolvedValue({ onEvent: () => () => {} });
@@ -57,6 +64,17 @@ async function load() {
 }
 
 describe('projector refresh', () => {
+	it('notifies from lifecycle truth before displaying a read completion as idle', async () => {
+		reads.value = { a: 1 };
+		herdr.listAgents.mockResolvedValue([{ ...agent('a'), status: 'done', preview: '✓ Finished' }]);
+		const projector = await load();
+		const subscriber = () => {};
+		const projection = await projector.subscribe(subscriber);
+		expect(herdr.listAgents).toHaveBeenCalledWith({});
+		expect(observeStatus).toHaveBeenCalledWith('a', 'done');
+		expect(projection.agents[0]).toMatchObject({ status: 'idle', preview: 'Finished' });
+		projector.unsubscribe(subscriber);
+	});
 	it('runs once more when an event lands mid-refresh, instead of dropping it', async () => {
 		let release: (() => void) | undefined;
 		herdr.listAgents

@@ -2,7 +2,7 @@ import { afterAll, describe, expect, it } from 'vitest';
 import { mkdtempSync, mkdirSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { listDirectory, resolveSafe, viewerKind } from './files';
+import { listDirectory, MIME, resolveSafe, viewerKind } from './files';
 
 // A throwaway root with a real file, plus a symlink escaping it.
 const OUTSIDE = mkdtempSync(join(tmpdir(), 'bordr-outside-'));
@@ -13,11 +13,23 @@ mkdirSync(join(ROOT, 'node_modules'));
 writeFileSync(join(ROOT, '.env'), 'VAPID_PRIVATE_KEY=secret');
 writeFileSync(join(ROOT, 'report.html'), '<p>hi</p>');
 writeFileSync(join(ROOT, 'notes.md'), '# hi');
+// Playwright's screenshot folder: pictures are served, its logs are not.
+mkdirSync(join(ROOT, '.playwright-mcp', 'deep'), { recursive: true });
+writeFileSync(join(ROOT, '.playwright-mcp', 'shot.png'), 'png');
+writeFileSync(join(ROOT, '.playwright-mcp', 'deep', 'shot.JPG'), 'jpg');
+writeFileSync(join(ROOT, '.playwright-mcp', 'console.log'), 'log');
+writeFileSync(join(ROOT, '.playwright-mcp', 'page.yml'), 'yml');
+symlinkSync(join(ROOT, '.env'), join(ROOT, '.playwright-mcp', 'sneaky.png'));
+symlinkSync(join(ROOT, 'notes.md'), join(ROOT, '.playwright-mcp', 'text.png'));
+mkdirSync(join(ROOT, '.playwright-mcp', 'folder.png'));
+mkdirSync(join(ROOT, '.git'));
+writeFileSync(join(ROOT, '.git', 'x.png'), 'png');
 writeFileSync(join(ROOT, 'sub', 'real.txt'), 'yes');
 symlinkSync(join(OUTSIDE, 'secret.txt'), join(ROOT, 'sub', 'sneaky.txt'));
 symlinkSync(OUTSIDE, join(ROOT, 'sub', 'sneakydir'));
 // A symlink INSIDE the root whose target is a dotfile in the same root.
 symlinkSync(join(ROOT, '.env'), join(ROOT, 'sub', 'notes.txt'));
+symlinkSync(join(ROOT, 'sub'), join(ROOT, '.hidden-alias'));
 const ROOTS = { t: ROOT };
 
 afterAll(() => {
@@ -51,6 +63,8 @@ describe('resolveSafe', () => {
 
 	it('refuses unknown roots and empty paths', () => {
 		expect(resolveSafe('etc/passwd', ROOTS)).toBeNull();
+		for (const name of ['constructor', '__proto__', 'toString'])
+			expect(resolveSafe(`${name}/file.txt`, ROOTS)).toBeNull();
 		expect(resolveSafe('', ROOTS)).toBeNull();
 		expect(resolveSafe('/', ROOTS)).toBeNull();
 	});
@@ -66,6 +80,7 @@ describe('resolveSafe: dotfiles', () => {
 	it('refuses any dotfile, however it is reached', () => {
 		expect(resolveSafe('t/.env', ROOTS)).toBeNull();
 		expect(resolveSafe('t/sub/../.env', ROOTS)).toBeNull();
+		expect(resolveSafe('t/.hidden-alias/real.txt', ROOTS)).toBeNull();
 		expect(resolveSafe('t/.ssh/id_ed25519', ROOTS)).toBeNull();
 	});
 
@@ -75,6 +90,33 @@ describe('resolveSafe: dotfiles', () => {
 
 	it('still serves ordinary files beside them', () => {
 		expect(resolveSafe('t/sub/real.txt', ROOTS)).toBeTruthy();
+	});
+});
+
+describe('resolveSafe: the screenshot folder', () => {
+	it('serves a picture from .playwright-mcp, at any depth, in any case', () => {
+		expect(resolveSafe('t/.playwright-mcp/shot.png', ROOTS)).toBeTruthy();
+		expect(resolveSafe('t/.playwright-mcp/deep/shot.JPG', ROOTS)).toBeTruthy();
+	});
+
+	it('refuses everything else in it, and every other dot-folder', () => {
+		expect(resolveSafe('t/.playwright-mcp/console.log', ROOTS)).toBeNull();
+		expect(resolveSafe('t/.playwright-mcp/page.yml', ROOTS)).toBeNull();
+		expect(resolveSafe('t/.playwright-mcp', ROOTS)).toBeNull();
+		expect(resolveSafe('t/.git/x.png', ROOTS)).toBeNull();
+		expect(resolveSafe('t/.env', ROOTS)).toBeNull();
+	});
+
+	it('does not let the folder carry a second dot-name or a lookalike', () => {
+		expect(resolveSafe('t/.playwright-mcp/.hidden.png', ROOTS)).toBeNull();
+		expect(resolveSafe('t/.playwright-mcp/.git/x.png', ROOTS)).toBeNull();
+		expect(resolveSafe('t/.playwright-mcp-old/shot.png', ROOTS)).toBeNull();
+	});
+
+	it('requires a regular picture file, including after resolving aliases', () => {
+		expect(resolveSafe('t/.playwright-mcp/sneaky.png', ROOTS)).toBeNull();
+		expect(resolveSafe('t/.playwright-mcp/text.png', ROOTS)).toBeNull();
+		expect(resolveSafe('t/.playwright-mcp/folder.png', ROOTS)).toBeNull();
 	});
 });
 
@@ -93,6 +135,11 @@ describe('listDirectory', () => {
 	it('puts directories first', () => {
 		expect(names[0]).toBe('sub');
 	});
+});
+
+it('does not inherit object methods as MIME types for unknown extensions', () => {
+	for (const extension of ['constructor', '__proto__', 'toString'])
+		expect(MIME[extension]).toBeUndefined();
 });
 
 describe('viewerKind', () => {

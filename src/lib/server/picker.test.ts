@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { asyncQuestionKey, keysForOption, menuFooter, parsePicker, suggestionFrom } from './picker';
+import { pickerIdentity } from '../picker-shortcut';
 
 const ASK_USER_QUESTION = `
 ❯ Use the AskUserQuestion tool to ask me to pick a colour.
@@ -688,5 +689,72 @@ describe('codex async questions', () => {
 		]);
 		expect(picker.numbered).toBe(true);
 		expect(picker.answer).toBeUndefined();
+	});
+});
+
+describe('Claude Code question with previews', () => {
+	// Captured live (Claude Code, AskUserQuestion with `preview` on each option).
+	const screen = [
+		' ☐ Layout',
+		'',
+		'Pick a layout?',
+		'',
+		'❯ 1. Nested                       ┌──────────────────────────────────────────┐',
+		'  2. Flat                         │ a                                        │',
+		'                                  │   b                                      │',
+		'                                  │   c                                      │',
+		'                                  └──────────────────────────────────────────┘',
+		'',
+		'                                  Notes: press n to add notes',
+		'',
+		'────────────────────────────────────────────────────────────────────────────────',
+		'  Chat about this',
+		'',
+		'Enter to select · ↑/↓ to navigate · n to add notes · Esc to cancel'
+	].join('\n');
+
+	it('reads the options without the preview box beside them', () => {
+		const picker = parsePicker(screen);
+		expect(picker?.question).toBe('Pick a layout?');
+		expect(picker?.numbered).toBe(false);
+		expect(picker?.preview?.join('\n')).toContain('a');
+		expect(picker?.options.map((o) => o.label)).toEqual(['Nested', 'Flat']);
+	});
+
+	it('does not mistake a box glyph inside an option label for panel furniture', () => {
+		for (const glyph of ['│', '┌']) {
+			const label = `Nes${glyph}ed`;
+			expect(parsePicker(screen.replace('Nested', label))?.options.map((o) => o.label)).toEqual([
+				label,
+				'Flat'
+			]);
+		}
+	});
+
+	it('recognises the outer panel when the preview itself draws a box', () => {
+		const nested = screen.replace('│ a', '│ ┌').replace('│   b', '│ └ b');
+		expect(parsePicker(nested)?.options.map((o) => o.label)).toEqual(['Nested', 'Flat']);
+	});
+
+	it('retains a changed preview subject in the dialog identity', () => {
+		expect(pickerIdentity(parsePicker(screen))).not.toBe(
+			pickerIdentity(parsePicker(screen.replace('│ a', '│ z')))
+		);
+	});
+
+	it('does not collapse a prose box and promote an earlier numbered paragraph', () => {
+		const visible = [
+			'Old numbered prose',
+			'  1. Old choice A',
+			'  2. Old choice B',
+			'    ┌────────────┐',
+			...Array(12).fill('    │ prose      │'),
+			'    └────────────┘',
+			'Actual choice?',
+			'❯ Yes',
+			'  No',
+			'Enter to select · Esc to cancel'
+		].join('\n');
+		expect(parsePicker(visible)?.options.map((o) => o.label)).toEqual(['Yes', 'No']);
 	});
 });

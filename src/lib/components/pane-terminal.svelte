@@ -1,6 +1,7 @@
 <script module lang="ts">
 	export interface TerminalAnswerTarget {
 		paneId: string;
+		scope: string;
 		dialog: string;
 		index: number;
 	}
@@ -27,6 +28,8 @@
 	 */
 	let {
 		paneId,
+		scope = '',
+		needsSourceChoice = false,
 		dialog = '',
 		writeIn = null,
 		agent = '',
@@ -44,6 +47,8 @@
 		busy = false
 	}: {
 		paneId: string;
+		scope?: string;
+		needsSourceChoice?: boolean;
 		dialog?: string;
 		writeIn?: TerminalAnswerTarget | null;
 		/** Which harness, so the status block remembers the row per harness. */
@@ -59,7 +64,7 @@
 		dictating?: boolean;
 		onkeys: (keys: string[], paneId: string) => Promise<boolean>;
 		onsubmit?: (target: TerminalAnswerTarget, text: string) => Promise<boolean>;
-		onrestore: (paneId: string, text: string) => void;
+		onrestore: (paneId: string, text: string, scope: string) => void;
 		input?: HTMLInputElement;
 		onmic?: () => void;
 		busy?: boolean;
@@ -154,7 +159,7 @@
 
 	// Pane/dialog changes invalidate every queued continuation, including an A → B → A trip.
 	let generation = 0;
-	const owner = $derived(`${paneId}\0${dialog}`);
+	const owner = $derived(`${paneId}\0${scope}\0${dialog}`);
 	$effect(() => {
 		void owner;
 		generation++;
@@ -163,7 +168,7 @@
 		};
 	});
 
-	const unsent = new SvelteSet<{ paneId: string; epoch: number; text: string }>();
+	const unsent = new SvelteSet<{ paneId: string; scope: string; epoch: number; text: string }>();
 	function recover(paneId: string, epoch: number) {
 		const items = [...unsent].filter((item) => item.paneId === paneId && item.epoch === epoch);
 		for (const item of items) unsent.delete(item);
@@ -171,21 +176,23 @@
 			.map((item) => item.text)
 			.filter(Boolean)
 			.join('\n');
-		if (text) onrestore(paneId, text);
+		if (text) onrestore(paneId, text, items[0].scope);
 	}
 
 	function dispatch(keys: string[], flush = false, answer?: TerminalAnswerTarget) {
-		if (composing || busy) return;
+		if (composing || busy || needsSourceChoice) return;
 		const origin = paneId;
+		const originScope = scope;
 		const epoch = generation;
 		const originDialog = dialog;
 		const submitAnswer = onsubmit;
 		const chunk = flush ? draft : '';
 		if (answer && !chunk.trim()) return;
-		const item = { paneId: origin, epoch, text: chunk };
+		const item = { paneId: origin, scope: originScope, epoch, text: chunk };
 		unsent.add(item);
 		if (flush) draft = '';
-		const valid = () => generation === epoch && paneId === origin && dialog === originDialog;
+		const valid = () =>
+			generation === epoch && paneId === origin && scope === originScope && dialog === originDialog;
 		queue = queue.then(async () => {
 			if (!valid()) {
 				recover(origin, epoch);

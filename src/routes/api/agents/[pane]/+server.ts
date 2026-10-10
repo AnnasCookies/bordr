@@ -1,6 +1,16 @@
 import { createHash } from 'node:crypto';
+import { readScopeFor } from '$lib/server/state-store';
 import { error } from '@sveltejs/kit';
-import { rawAgent, rawPane, readPane, readVisible, toSummary } from '$lib/server/herdr';
+import {
+	clientFor,
+	rawAgent,
+	rawPane,
+	readPane,
+	readVisible,
+	toSummary,
+	tabLabels,
+	workspaceLabels
+} from '$lib/server/herdr';
 import { adapterFor } from '$lib/server/transcript';
 import { agentCwd } from '$lib/server/transcript/cwd';
 import { parsePane } from '$lib/server/herdr/address';
@@ -111,7 +121,9 @@ export const GET: RequestHandler = async ({ params, url, request }) => {
 			if (!pane) throw error(404, `no pane ${params.pane}`);
 			raw = pane;
 		}
-		summary = toSummary(raw);
+		const herdr = await clientFor(parsePane(params.pane).machineId);
+		const [workspaces, tabs] = await Promise.all([workspaceLabels(herdr), tabLabels(herdr)]);
+		summary = toSummary(raw, workspaces, tabs);
 		visible = await readVisible(summary.paneId);
 	} catch (e) {
 		// A socket error is a plain Error, which SvelteKit renders as a bare
@@ -386,6 +398,8 @@ export const GET: RequestHandler = async ({ params, url, request }) => {
 	// This route can carry megabytes of transcript and is polled while open.
 	// Most polls are byte-identical. Validate them without sending or parsing
 	// the same JSON again; the server still computes current truth first.
+	if (summary.readScope !== undefined && summary.readScope !== readScopeFor(params.pane))
+		throw error(409, 'the pane target changed while its detail was being read');
 	const body = JSON.stringify(payload);
 	const etag = `"${createHash('sha256').update(body).digest('base64url').slice(0, 24)}"`;
 	const headers = {

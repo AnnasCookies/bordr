@@ -7,12 +7,13 @@ import {
 	flatOrder,
 	holdsAnswer,
 	isDirty,
+	nestWorktrees,
 	partitionAgents,
 	pickerKey,
 	rollupCounts,
 	sortAgents
 } from './grouping';
-import type { AgentStatus, AgentSummary } from './types';
+import type { AgentStatus, AgentSummary, WorkspaceNode } from './types';
 
 function agent(over: Partial<AgentSummary> & { paneId: string }): AgentSummary {
 	return {
@@ -253,7 +254,12 @@ describe('answered pickers on the list', () => {
 			{ index: 2, label: 'Blue', selected: false, checked: false }
 		]
 	};
-	const markFor = (picker: ListPicker) => ({ key: pickerKey(picker), at: 1_000, label: 'Red' });
+	const markFor = (picker: ListPicker) => ({
+		scope: '',
+		key: pickerKey(picker),
+		at: 1_000,
+		label: 'Red'
+	});
 
 	it('holds a single-select answer until the screen catches up, and no longer', () => {
 		expect(holdsAnswer(single)).toBe(true);
@@ -266,6 +272,12 @@ describe('answered pickers on the list', () => {
 	 * so a second option could never be ticked. A toggle leaves the key as it
 	 * was, so nothing but the picker's kind can tell the two cases apart.
 	 */
+	it('does not hold an identical question on a replacement source', () => {
+		const mark = { ...markFor(single), scope: 'source-a' };
+		expect(answerSettled(mark, single, 2_000, HOLD, 'source-a')).toBe(true);
+		expect(answerSettled(mark, single, 2_000, HOLD, 'source-b')).toBe(false);
+	});
+
 	it('never holds a multi-select picker after a checkbox toggle', () => {
 		expect(holdsAnswer(multi)).toBe(false);
 		const toggled: ListPicker = {
@@ -365,7 +377,7 @@ it('does not hold a same-word approval for a different subject or write-in meani
 		multi: false,
 		options: [{ index: 1, label: 'Yes', selected: true }]
 	};
-	const mark = { key: pickerKey(picker), at: 1000, label: 'Yes' };
+	const mark = { scope: '', key: pickerKey(picker), at: 1000, label: 'Yes' };
 	expect(answerSettled(mark, { ...picker, context: ['tool B'] }, 2000, 8000)).toBe(false);
 	expect(
 		answerSettled(
@@ -375,4 +387,50 @@ it('does not hold a same-word approval for a different subject or write-in meani
 			8000
 		)
 	).toBe(false);
+});
+
+describe('nestWorktrees', () => {
+	const ws = (id: string, repo?: string, linked = false): WorkspaceNode => ({
+		workspaceId: id,
+		machine: '',
+		label: id,
+		number: 0,
+		focused: false,
+		branch: '',
+		ahead: 0,
+		behind: 0,
+		worktree: repo ? { repoKey: repo, repoName: repo, linked } : undefined,
+		tabs: []
+	});
+	const shape = (rows: ReturnType<typeof nestWorktrees>) =>
+		rows.map((r) =>
+			r.kind === 'repo' ? `#${r.name}` : `${r.nested ? '  ' : ''}${r.workspace.workspaceId}`
+		);
+
+	it('puts worktrees under the main checkout, wherever herdr listed them', () => {
+		const rows = nestWorktrees([
+			ws('wt1', 'ccd', true),
+			ws('plain'),
+			ws('ccd', 'ccd'),
+			ws('wt2', 'ccd', true)
+		]);
+		// Encountering a worktree first must not hide its actual main checkout.
+		expect(shape(rows)).toEqual(['plain', 'ccd', '  wt1', '  wt2']);
+	});
+
+	it('nests under the main checkout when it comes first', () => {
+		const rows = nestWorktrees([ws('ccd', 'ccd'), ws('x'), ws('wt', 'ccd', true)]);
+		expect(shape(rows)).toEqual(['ccd', '  wt', 'x']);
+	});
+
+	it('uses a repository heading only when no main checkout workspace exists', () => {
+		expect(shape(nestWorktrees([ws('wt1', 'r', true), ws('plain'), ws('wt2', 'r', true)]))).toEqual(
+			['#r', '  wt1', '  wt2', 'plain']
+		);
+	});
+
+	it('leaves a second workspace on the same checkout flat', () => {
+		const rows = nestWorktrees([ws('a', 'r'), ws('b', 'r')]);
+		expect(shape(rows)).toEqual(['a', 'b']);
+	});
 });

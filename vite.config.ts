@@ -79,7 +79,12 @@ export default defineConfig({
 					name: 'server',
 					environment: 'node',
 					// Never let a test touch the running service's state.
-					env: { BORDR_DATA_DIR: join(tmpdir(), `bordr-test-${process.pid}`) },
+					env: {
+						BORDR_DATA_DIR: join(tmpdir(), `bordr-test-${process.pid}`),
+						// Scope lookups must not inspect the host's real inherited machine state.
+						HERDR_ENDPOINTS: join(tmpdir(), `bordr-test-${process.pid}`, 'absent-endpoints.json'),
+						XDG_STATE_HOME: join(tmpdir(), `bordr-test-${process.pid}`, 'state')
+					},
 					include: ['src/**/*.{test,spec}.{js,ts}'],
 					exclude: ['src/**/*.svelte.{test,spec}.{js,ts}']
 				}

@@ -34,6 +34,16 @@ describe('toSummary', () => {
 		expect(summary.tabLabel).toBe('Bordr exploration');
 	});
 
+	it('ranks the workspace name above a name that is only the harness', () => {
+		const labels = new Map([['w38', 'ccd-review']]);
+		for (const name of ['claude', 'claude-w38-p1']) {
+			expect(toSummary({ ...RAW, name, workspace_id: 'w38' }, labels).title).toBe('ccd-review');
+		}
+		expect(toSummary({ ...RAW, name: 'kb-plan', workspace_id: 'w38' }, labels).title).toBe(
+			'kb-plan'
+		);
+	});
+
 	/** A tab still on its number says nothing the pane address has not said. */
 	it('ignores a default numeric tab label', () => {
 		const tabs = new Map([['w2:t1', '3']]);

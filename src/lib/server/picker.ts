@@ -26,8 +26,10 @@ export interface Picker {
 	options: PickerOption[];
 	/** True for checkbox pickers: digits toggle, Enter submits. */
 	multi: boolean;
-	/** False for caret-only lists (Claude Code's trust prompt): no digit shortcuts, arrows and Enter. */
+	/** Whether digit shortcuts are safe. Caret lists and preview questions use one-shot arrows/Enter. */
 	numbered: boolean;
+	/** The selected preview's subject, retained so same-worded replacement questions differ. */
+	preview?: string[];
 	/**
 	 * 'text': the question came from the transcript, not the screen, so the
 	 * option is typed back as a prompt — unless codex has it collapsed on
@@ -175,8 +177,68 @@ const MAX_FOOTER_GAP = 8;
  * (`after_last_horizontal_rule`) truncates mid-picker and is not usable here —
  * see spec §7a.
  */
+/**
+ * Claude Code's AskUserQuestion with previews draws the preview in a box to
+ * the RIGHT of the options, with a notes hint under it:
+ *
+ *     ❯ 1. Nested                       ┌──────────┐
+ *       2. Flat                         │ a        │
+ *                                       │   b      │
+ *                                       └──────────┘
+ *
+ *                                       Notes: press n to add notes
+ *
+ * Read as it stands, the box leaked into the labels ("2. Flat │ a"), and its
+ * height pushed the footer past MAX_FOOTER_GAP, so the options were thrown
+ * away as prose. The box follows the highlight, too, so a label that held a
+ * piece of it changed under the phone and the answer was refused as a
+ * different question. Everything from the box's column rightwards goes, and
+ * the rows left empty with it.
+ */
+function dropPreviewPanel(lines: string[]): { lines: string[]; preview?: string[] } {
+	// A prose table is not a preview: the box must sit beside actual option rows.
+	const top = lines.findLastIndex((line) => {
+		const column = line.lastIndexOf('┌');
+		// The outer panel starts beside option 1; an inner drawing starts lower.
+		return column > 0 && OPTION.exec(line.slice(0, column))?.[2] === '1';
+	});
+	if (top < 0) return { lines };
+	const column = lines[top].lastIndexOf('┌');
+	const bottom = lines.findIndex((line, i) => i > top && line[column] === '└');
+	if (bottom < 0) return { lines };
+	const footer = lines.findIndex((line, i) => i > bottom && FOOTER.test(line));
+	if (footer < 0 || lines.slice(bottom + 1, footer).some((line) => OPTION.exec(line)?.[2] === '1'))
+		return { lines };
+	if (
+		!lines.slice(top, footer).some((line) => {
+			const option = OPTION.exec(line.slice(0, column));
+			return option && (option[1] || option[3] === '●' || option[3] === '◉');
+		})
+	)
+		return { lines };
+	const preview = lines.slice(top + 1, bottom).map((line) =>
+		line
+			.slice(column + 1)
+			.replace(/│\s*$/, '')
+			.trimEnd()
+	);
+	const out: string[] = [];
+	lines.forEach((line, i) => {
+		const inPanel = i >= top && i <= bottom;
+		const notes =
+			i > bottom &&
+			i <= bottom + 3 &&
+			line.slice(0, column).trim() === '' &&
+			/^Notes: press n to add notes\s*$/i.test(line.slice(column));
+		if (!inPanel && !notes) return out.push(line);
+		const left = line.slice(0, column).trimEnd();
+		if (left) out.push(left);
+	});
+	return { lines: out, preview };
+}
+
 export function parsePicker(visible: string): Picker | null {
-	const lines = visible.split('\n');
+	const { lines, preview } = dropPreviewPanel(visible.split('\n'));
 	const options: PickerOption[] = [];
 	let firstOptionLine = -1;
 	let lastOptionLine = -1;
@@ -251,11 +313,20 @@ export function parsePicker(visible: string): Picker | null {
 		return parseSlider(lines) ?? parseUnnumbered(lines);
 	}
 
+	const asked = askedAt(lines, firstOptionLine);
 	return {
-		...askedAt(lines, firstOptionLine),
+		...asked,
+		context: preview
+			? [
+					...asked.context,
+					'Preview (highlighted option):',
+					...preview.slice(0, 6).map((line) => line.slice(0, 160))
+				]
+			: asked.context,
 		options,
 		multi: options.some((o) => o.checked !== undefined),
-		numbered: true
+		numbered: preview === undefined,
+		...(preview ? { preview } : {})
 	};
 }
 

@@ -1,4 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { parsePicker } from '$lib/server/picker';
+import { pickerIdentity } from '$lib/picker-shortcut';
+import { createHash } from 'node:crypto';
 
 /**
  * The answer route against three real dialects, with herdr doubled: the
@@ -95,27 +98,41 @@ beforeEach(() => {
 });
 
 describe('answer route: dialects', () => {
-	it('Claude style: the digit selects and confirms, one keystroke', async () => {
+	it('Claude style: selects and confirms in one key sequence', async () => {
 		herdr.screens.push(DIALOG, PROMPT);
 		const result = await answer(2);
-		expect(herdr.sent).toEqual([['2']]);
+		expect(herdr.sent).toEqual([['down', 'enter']]);
 		expect(result).toMatchObject({ chose: 'Green', outcome: 'accepted' });
 	});
 
-	/** pi ignores digits: the same dialog is still up, highlight unmoved. */
-	it('pi style: navigates with arrows and Enter when the digit was inert', async () => {
-		herdr.screens.push(DIALOG, DIALOG, PROMPT);
+	/** pi ignores digits: use its arrows and Enter without a trial keystroke. */
+	it('pi style: navigates and confirms once', async () => {
+		herdr.screens.push(DIALOG, PROMPT);
 		const result = await answer(2);
-		expect(herdr.sent).toEqual([['2'], ['down', 'enter']]);
+		expect(herdr.sent).toEqual([['down', 'enter']]);
 		expect(result).toMatchObject({ chose: 'Green', outcome: 'accepted' });
 	});
 
-	/** A radio dialog: the digit moved the highlight but did not submit. */
-	it('radio style: sends Enter when the digit only moved the highlight', async () => {
+	it('a delayed radio redraw stays unknown, without another Enter', async () => {
 		herdr.screens.push(DIALOG, DIALOG_ON_2, PROMPT);
 		const result = await answer(2);
-		expect(herdr.sent).toEqual([['2'], ['enter']]);
-		expect(result.outcome).toBe('accepted');
+		expect(herdr.sent).toEqual([['down', 'enter']]);
+		expect(result.outcome).toBe('unknown');
+		expect(herdr.screens).toHaveLength(1);
+	});
+
+	it('does not answer a second plain question with identical wording', async () => {
+		herdr.screens.push(DIALOG, DIALOG, PROMPT);
+		const result = await answer(2);
+		expect(herdr.sent).toEqual([['down', 'enter']]);
+		expect(result.outcome).toBe('unknown');
+		expect(herdr.screens).toHaveLength(1);
+	});
+
+	it('uses a digit once when no highlight can be observed', async () => {
+		herdr.screens.push(DIALOG.replace('❯', ' '), PROMPT);
+		expect((await answer(2)).outcome).toBe('accepted');
+		expect(herdr.sent).toEqual([['2']]);
 	});
 
 	it('OMP nerd-symbol ask: navigates with arrows and Enter', async () => {
@@ -136,10 +153,76 @@ describe('answer route: dialects', () => {
 		const other = DIALOG.replace('Which colour?', 'Which size?').replace('Green', 'Large');
 		herdr.screens.push(DIALOG, other);
 		const result = await answer(2);
-		expect(herdr.sent).toEqual([['2']]);
+		expect(herdr.sent).toEqual([['down', 'enter']]);
 		expect(result.outcome).toBe('unknown');
 	});
 });
+
+it('refuses malformed answer input before reading or driving a pane', async () => {
+	herdr.readVisible.mockClear();
+	for (const body of [null, [], { index: -1 }, { index: 1.5 }, { index: 1, submit: 'yes' }])
+		await expect(post(body as never)).rejects.toMatchObject({ status: 400 });
+	const { POST } = await import('./+server');
+	await expect(
+		POST({
+			params: { pane: 'w1:p1' },
+			request: new Request('http://fixture', { method: 'POST', body: 'not JSON' })
+		} as never)
+	).rejects.toMatchObject({ status: 400 });
+	expect(herdr.readVisible).not.toHaveBeenCalled();
+	expect(herdr.sent).toEqual([]);
+});
+
+it('refuses queued notification answers for a different question before sending keys', async () => {
+	const old = DIALOG.replace('Which colour?', 'Old question?');
+	herdr.screens.push(DIALOG);
+	const dialogHash = createHash('sha256')
+		.update(pickerIdentity(parsePicker(old)))
+		.digest('hex');
+	await expect(post({ index: 1, dialogHash })).rejects.toMatchObject({ status: 409 });
+	expect(herdr.sent).toEqual([]);
+});
+
+it('accepts a bound notification and refuses malformed fingerprints before reading the pane', async () => {
+	herdr.screens.push(DIALOG, PROMPT);
+	const dialogHash = createHash('sha256')
+		.update(pickerIdentity(parsePicker(DIALOG)))
+		.digest('hex');
+	expect(await post({ index: 2, dialogHash })).toMatchObject({
+		chose: 'Green',
+		outcome: 'accepted'
+	});
+	herdr.readVisible.mockClear();
+	await expect(post({ index: 1, dialogHash: 'invalid' })).rejects.toMatchObject({ status: 400 });
+	expect(herdr.readVisible).not.toHaveBeenCalled();
+});
+
+const preview = (subject: string) =>
+	[
+		'Apply this change?',
+		'❯ 1. Yes'.padEnd(34) + '┌──────────────────────┐',
+		'  2. No'.padEnd(34) + `│ ${subject.padEnd(20)} │`,
+		' '.repeat(34) + '└──────────────────────┘',
+		'Enter to select · ↑/↓ to navigate · Esc to cancel'
+	].join('\n');
+
+it('refuses a stale preview even when the replacement question has identical labels', async () => {
+	herdr.screens.push(preview('subject B'));
+	await expect(
+		post({ index: 1, dialog: pickerIdentity(parsePicker(preview('subject A'))) })
+	).rejects.toMatchObject({ status: 409 });
+	expect(herdr.sent).toEqual([]);
+});
+
+it.each(['subject A', 'subject B'])(
+	'confirms a preview once without pressing Enter into successor %s',
+	async (subject) => {
+		herdr.screens.push(preview('subject A'), preview(subject));
+		const result = await answer(1);
+		expect(herdr.sent).toEqual([['enter']]);
+		expect(result.outcome).toBe('unknown');
+	}
+);
 
 describe('answer route: write-in rows', () => {
 	/** pi's ask extension (rpiv-ask-user-question): its last row takes text. */
@@ -211,7 +294,7 @@ describe('answer route: codex questions', () => {
 		// so the answer must go through the question itself.
 		herdr.screens.push(CODEX_COLLAPSED, CODEX_COLLAPSED, CODEX_OPENED, CODEX_IDLE);
 		const result = await answer(2);
-		expect(herdr.sent).toEqual([['alt+up'], ['2']]);
+		expect(herdr.sent).toEqual([['alt+up'], ['down', 'enter']]);
 		expect(result).toMatchObject({ chose: 'Local preview', outcome: 'accepted' });
 	});
 
@@ -247,11 +330,18 @@ describe('answer route: codex questions', () => {
 		try {
 			herdr.screens.push(CODEX_COLLAPSED, CODEX_COLLAPSED, wrapped, CODEX_IDLE);
 			const result = await answer(2);
-			expect(herdr.sent).toEqual([['alt+up'], ['2']]);
+			expect(herdr.sent).toEqual([['alt+up'], ['down', 'enter']]);
 			expect(result.outcome).toBe('accepted');
 		} finally {
 			CODEX_ASK.options[1] = 'Local preview';
 		}
+	});
+
+	it('refuses a different opened question even when every offered label is unchanged', async () => {
+		const other = CODEX_OPENED.replace('Where will you test Sera?', 'When will you test Sera?');
+		herdr.screens.push(CODEX_COLLAPSED, CODEX_COLLAPSED, other);
+		await expect(answer(2)).rejects.toMatchObject({ status: 409 });
+		expect(herdr.sent).toEqual([['alt+up']]);
 	});
 
 	it('refuses when the opened question does not offer the chosen answer', async () => {

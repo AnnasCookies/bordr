@@ -171,6 +171,49 @@ describe('listSubagents', () => {
 		expect((await listSubagents(t, launch))[0].done).toBe(false);
 	});
 
+	it('finishes a child whose result scrolled out of the transcript tail', async () => {
+		const t = session([
+			{
+				id: 'agent-old',
+				meta: { agentType: 'Explore', toolUseId: 'toolu_gone' },
+				// Last wrote at 06:26; the tail below starts at 09:00, and holds no result.
+				lines: [
+					JSON.stringify({
+						type: 'user',
+						timestamp: '2026-10-06T06:26:22.180Z',
+						message: { role: 'user' }
+					})
+				]
+			}
+		]);
+		const tail = entry('2026-10-06T09:00:00.000Z');
+		// Silence is not completion: a long-running tool may not have written yet.
+		expect((await listSubagents(t, tail))[0].done).toBe(false);
+		expect((await listSubagents(t, entry('2026-10-06T06:00:00.000Z')))[0].done).toBe(false);
+		expect((await listSubagents(t))[0].done).toBe(false);
+		appendFileSync(
+			t,
+			JSON.stringify({
+				type: 'queue-operation',
+				timestamp: '2026-10-06T06:30:00.000Z',
+				content:
+					'<task-notification><tool-use-id>toolu_gone</tool-use-id><status>completed</status></task-notification>'
+			}) + '\n'
+		);
+		expect((await listSubagents(t, tail))[0].done).toBe(true);
+		// A later resume can also be older than the tail. The old result cannot finish it.
+		appendFileSync(
+			join(subagentsDir(t), 'agent-old.jsonl'),
+			'\n' +
+				JSON.stringify({
+					type: 'user',
+					timestamp: '2026-10-06T08:00:00.000Z',
+					message: { role: 'user' }
+				})
+		);
+		expect((await listSubagents(t, tail))[0].done).toBe(false);
+	});
+
 	it('uses an async completion notification but honours a later resume', async () => {
 		const t = session([
 			{
@@ -317,5 +360,118 @@ describe('readSubagent', () => {
 		]) {
 			expect(await readSubagent(t, bad), bad).toBeNull();
 		}
+	});
+});
+
+describe('workflow agents', () => {
+	it('lists each run agent, done only once the journal has its result', async () => {
+		const transcript = session([]);
+		const sess = transcript.replace(/\.jsonl$/, '');
+		const run = join(sess, 'subagents', 'workflows', 'wf_abc-123');
+		mkdirSync(run, { recursive: true });
+		mkdirSync(join(sess, 'workflows', 'scripts'), { recursive: true });
+		writeFileSync(join(sess, 'workflows', 'scripts', 'kb-import-wf_abc-123.js'), '');
+		for (const [id, label] of [
+			['a1', 'write:email'],
+			['a2', 'write:apps']
+		]) {
+			writeFileSync(
+				join(run, `agent-${id}.meta.json`),
+				JSON.stringify({
+					agentType: 'workflow-subagent',
+					description: label,
+					workflowPhase: 'Write'
+				})
+			);
+			writeFileSync(join(run, `agent-${id}.jsonl`), entry('2026-09-23T18:00:00Z'));
+		}
+		writeFileSync(
+			join(run, 'journal.jsonl'),
+			[
+				{ type: 'launched' },
+				{ type: 'started', agentId: 'a1' },
+				{ type: 'started', agentId: 'a2' },
+				{ type: 'result', agentId: 'a1' }
+			]
+				.map((r) => JSON.stringify(r))
+				.join('\n')
+		);
+
+		writeFileSync(join(run, 'invalid name.meta.json'), '{}');
+		writeFileSync(join(run, 'invalid name.jsonl'), entry('2026-09-23T18:00:00Z'));
+		const agents = await listSubagents(transcript);
+		expect(agents).toHaveLength(2);
+		const byLabel = Object.fromEntries(agents.map((a) => [a.description, a]));
+		expect(byLabel['write:email']).toMatchObject({
+			id: 'wf_abc-123.agent-a1',
+			agentType: 'Write',
+			done: true,
+			workflow: { runId: 'wf_abc-123', name: 'kb-import' }
+		});
+		expect(byLabel['write:apps'].done).toBe(false);
+		const notice = JSON.stringify({
+			type: 'queue-operation',
+			timestamp: '2026-09-23T19:00:00Z',
+			content:
+				'<task-notification><task-id>wf_abc-123</task-id><status>killed</status></task-notification>'
+		});
+		const interrupted = (await listSubagents(transcript, notice)).find(
+			(a) => a.id === 'wf_abc-123.agent-a2'
+		);
+		expect(interrupted?.workflow?.termination).toBe('killed');
+		expect(interrupted?.done).toBe(false); // parent termination is not a successful child result
+		expect(await readSubagent(transcript, 'wf_abc-123.agent-a2')).toBe(
+			entry('2026-09-23T18:00:00Z')
+		);
+		expect(await readSubagent(transcript, 'wf_abc-123.agent-a2/../../x')).toBeNull();
+		appendFileSync(
+			join(run, 'journal.jsonl'),
+			'\n' + JSON.stringify({ type: 'started', agentId: 'a1' })
+		);
+		expect(
+			(await listSubagents(transcript)).find((a) => a.id === 'wf_abc-123.agent-a1')?.done
+		).toBe(false);
+		expect(
+			(await listSubagents(transcript, notice)).find((a) => a.id === 'wf_abc-123.agent-a1')
+				?.workflow?.termination
+		).toBeUndefined();
+	});
+
+	it('does not invent running children when their lifecycle journal is unreadable', async () => {
+		const transcript = session([]);
+		const run = join(transcript.replace(/\.jsonl$/, ''), 'subagents', 'workflows', 'wf_denied');
+		mkdirSync(run, { recursive: true });
+		writeFileSync(join(run, 'agent-a.meta.json'), '{}');
+		writeFileSync(join(run, 'agent-a.jsonl'), entry('2026-10-06T06:00:00Z'));
+		vi.mocked(readFile).mockRejectedValueOnce(
+			Object.assign(new Error('fixture denied'), { code: 'EACCES' })
+		);
+		const warning = vi.spyOn(console, 'warn').mockImplementation(() => {});
+		try {
+			expect(await listSubagents(transcript)).toEqual([]);
+			expect(warning).toHaveBeenCalled();
+		} finally {
+			warning.mockRestore();
+		}
+	});
+
+	it('keeps cache hits when a workflow has more files than the cache can hold', async () => {
+		const transcript = session([]);
+		const run = join(transcript.replace(/\.jsonl$/, ''), 'subagents', 'workflows', 'wf_large');
+		mkdirSync(run, { recursive: true });
+		writeFileSync(join(run, 'journal.jsonl'), '{}\n');
+		for (let n = 0; n < 300; n++) {
+			writeFileSync(join(run, `agent-${n}.meta.json`), '{}');
+			writeFileSync(join(run, `agent-${n}.jsonl`), entry('2026-10-06T06:00:00Z'));
+		}
+		expect(await listSubagents(transcript)).toHaveLength(300);
+		vi.mocked(readFile).mockClear();
+		await listSubagents(transcript);
+		const reads = vi
+			.mocked(readFile)
+			.mock.calls.filter(
+				([path]) => String(path).endsWith('.jsonl') && !String(path).endsWith('journal.jsonl')
+			);
+		expect(reads).toHaveLength(44);
 	});
 });

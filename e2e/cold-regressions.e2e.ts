@@ -1,4 +1,5 @@
 import { expect, test, type Page } from '@playwright/test';
+import { pickerIdentity } from '../src/lib/picker-shortcut';
 
 test.beforeEach(({ page }) => {
 	page.on('pageerror', (error) => {
@@ -13,6 +14,7 @@ const agents = ['a', 'b', 'c'].map((paneId) => ({
 	status: 'working',
 	cwd: '/fixture',
 	seq: 1,
+	readScope: '',
 	workspaceId: 'w',
 	workspaceLabel: 'Fixture',
 	tabId: paneId === 'b' ? 't2' : 't1',
@@ -52,10 +54,17 @@ const workspaces = [
 async function fixture(
 	page: Page,
 	prefs: Record<string, unknown> = {},
-	fleet: typeof agents = agents
+	fleet: typeof agents = agents,
+	initialDelay = 50
 ) {
 	const state = {
 		details: 0,
+		detailSeq: 1,
+		readScope: '',
+		conditionalDetails: false,
+		detail304s: 0,
+		readStatus: 200,
+		reads: [] as Array<{ paneId: string; seq: number; scope: string }>,
 		operations: [] as string[],
 		agentData: fleet,
 		treeData: workspaces,
@@ -96,7 +105,13 @@ async function fixture(
 		picker: true,
 		question: 'Choose a fixture',
 		keys: [] as string[][],
-		answers: [] as { index: number; text?: string; dialog?: string }[],
+		answers: [] as {
+			index?: number;
+			submit?: boolean;
+			text?: string;
+			dialog?: string;
+			scope?: string;
+		}[],
 		keyDelay: null as Promise<void> | null,
 		answerDelay: null as Promise<void> | null,
 		answerStatus: 200,
@@ -116,7 +131,7 @@ async function fixture(
 		]
 	};
 	await page.addInitScript(
-		({ agents, prefs }) => {
+		({ agents, prefs, initialDelay }) => {
 			localStorage.setItem(
 				'bordr-prefs',
 				JSON.stringify({
@@ -142,25 +157,34 @@ async function fixture(
 					);
 					setTimeout(
 						() => this.dispatchEvent(new MessageEvent('agents', { data: JSON.stringify(agents) })),
-						50
+						initialDelay
 					);
 				}
 				close() {}
 			}
 			Object.defineProperty(window, 'EventSource', { value: FixtureSource });
 		},
-		{ agents: fleet, prefs }
+		{ agents: fleet, prefs, initialDelay }
 	);
 	await page.route('**/api/**', async (route) => {
 		const url = new URL(route.request().url());
 		const path = decodeURIComponent(url.pathname);
-		const respond = (body: unknown, status = 200) =>
-			route.fulfill({ status, contentType: 'application/json', body: JSON.stringify(body) });
+		const respond = (body: unknown, status = 200, headers: Record<string, string> = {}) =>
+			route.fulfill({
+				status,
+				contentType: 'application/json',
+				headers,
+				body: JSON.stringify(body)
+			});
 		if (path === '/api/panes') {
 			state.trees++;
 			return respond({ workspaces: state.treeData });
 		}
 		if (path === '/api/agents') return respond({ agents: state.agentData });
+		if (path === '/api/read-state' && route.request().method() === 'POST') {
+			state.reads.push(route.request().postDataJSON());
+			return respond({ ok: true }, state.readStatus);
+		}
 		if (path === '/api/control') {
 			state.controlCalls++;
 			state.controlBodies.push(route.request().postDataJSON());
@@ -201,64 +225,77 @@ async function fixture(
 			state.details++;
 			const paneId = path.split('/').at(-1)!;
 			if (state.missingPanes.has(paneId)) return respond({ message: 'no pane' }, 404);
-			return respond({
-				...(agents.find((a) => a.paneId === paneId) ?? agents[0]),
-				paneId,
-				paneCwd: '/fixture',
-				branch: '',
-				ahead: 0,
-				behind: 0,
-				branchUrl: '',
-				pull: null,
-				model: 'fixture-model',
-				messages: [
-					...state.userMessages.map((text) => ({
-						role: 'user',
-						text,
-						tools: [],
-						blocks: [{ kind: 'text', text }]
-					})),
-					{
-						role: 'assistant',
-						at: stamp,
-						text: 'Fixture transcript',
-						tools: [],
-						blocks: [
-							{ kind: 'text', text: 'Fixture transcript' },
-							...state.extraBlocks,
-							{
-								kind: 'tool',
-								name: 'bash',
-								summary: 'inspect fixture',
-								input: { command: 'echo fixture' },
-								result: { text: 'fixture output', isError: false, truncatedLines: 0 },
-								diffs: []
-							}
-						]
-					}
-				],
-				subagents: state.children,
-				queue: [],
-				screenTail: 'fixture terminal',
-				statusLines: [],
-				statusAnsi: [],
-				statusRows: [],
-				degraded: 'none',
-				degradedReason: null,
-				hasMore: false,
-				activity: null,
-				menu: null,
-				suggestion: '',
-				picker: state.picker
-					? {
-							question: state.question,
-							context: [],
-							numbered: true,
-							options: state.options.map((o) => ({ ...o, selected: o.index === state.selected })),
-							multi: state.multi
+			if (
+				state.conditionalDetails &&
+				route.request().headers()['if-none-match'] === '"fixture-detail"'
+			) {
+				state.detail304s++;
+				return route.fulfill({ status: 304, headers: { etag: '"fixture-detail"' }, body: '' });
+			}
+			return respond(
+				{
+					...(agents.find((a) => a.paneId === paneId) ?? agents[0]),
+					paneId,
+					seq: state.detailSeq,
+					readScope: state.readScope,
+					paneCwd: '/fixture',
+					branch: '',
+					ahead: 0,
+					behind: 0,
+					branchUrl: '',
+					pull: null,
+					model: 'fixture-model',
+					messages: [
+						...state.userMessages.map((text) => ({
+							role: 'user',
+							text,
+							tools: [],
+							blocks: [{ kind: 'text', text }]
+						})),
+						{
+							role: 'assistant',
+							at: stamp,
+							text: 'Fixture transcript',
+							tools: [],
+							blocks: [
+								{ kind: 'text', text: 'Fixture transcript' },
+								...state.extraBlocks,
+								{
+									kind: 'tool',
+									name: 'bash',
+									summary: 'inspect fixture',
+									input: { command: 'echo fixture' },
+									result: { text: 'fixture output', isError: false, truncatedLines: 0 },
+									diffs: []
+								}
+							]
 						}
-					: null
-			});
+					],
+					subagents: state.children,
+					queue: [],
+					screenTail: 'fixture terminal',
+					statusLines: [],
+					statusAnsi: [],
+					statusRows: [],
+					degraded: 'none',
+					degradedReason: null,
+					hasMore: false,
+					activity: null,
+					menu: null,
+					suggestion: '',
+					picker: state.picker
+						? {
+								question: state.question,
+								context: [],
+								numbered: true,
+								options: state.options.map((o) => ({ ...o, selected: o.index === state.selected })),
+								multi: state.multi
+							}
+						: null
+				},
+				200,
+				state.conditionalDetails ? { etag: '"fixture-detail"' } : {}
+			);
 		}
 		return respond({});
 	});
@@ -484,7 +521,9 @@ test('queued arrows precede fresh Enter selection; native summaries and resizers
 	await page.waitForTimeout(150);
 	expect(state.answers).toEqual([]);
 	release();
-	await expect.poll(() => state.answers).toEqual([{ index: 2 }]);
+	await expect
+		.poll(() => state.answers)
+		.toEqual([{ index: 2, dialog: pickerIdentity(state), scope: '' }]);
 	// A new dialog resets the held answer card.
 	state.question = 'Next fixture';
 	await move(page, '/a/b');
@@ -608,6 +647,22 @@ for (const [screen, viewport] of Object.entries({
 	}
 }
 
+test('unreturned workflow children never imply liveness or successful completion', async ({
+	page
+}) => {
+	const state = await fixture(page);
+	state.children = [
+		{
+			...state.children[0],
+			done: false,
+			workflow: { runId: 'wf_fixture', name: 'Fixture workflow', termination: 'killed' }
+		} as (typeof state.children)[number]
+	];
+	await openPane(page);
+	await expect(page.getByText('run killed · results missing', { exact: true })).toBeVisible();
+	await expect(page.getByText('no result recorded', { exact: true })).toBeVisible();
+});
+
 test('All includes finished-only children and desktop Files/Search menus have visible drawers', async ({
 	page
 }) => {
@@ -624,6 +679,88 @@ test('All includes finished-only children and desktop Files/Search menus have vi
 		await expect(page.getByRole('button', { name: 'Close the session list' })).toBeVisible();
 		await page.getByRole('button', { name: 'Close the session list' }).click();
 	}
+});
+
+for (const width of [390, 1400]) {
+	test.describe(`recalled state at ${width}px`, () => {
+		test.use({ viewport: { width, height: 844 } });
+		test('cached questions are inert until a live snapshot and answers carry its identity', async ({
+			page
+		}) => {
+			const state = await fixture(page, {}, agents, 60_000);
+			const live = {
+				...agents[0],
+				status: 'blocked',
+				picker: {
+					question: 'New fixture question',
+					context: [],
+					multi: false,
+					options: [
+						{ index: 1, label: 'Live answer', selected: true },
+						{ index: 2, label: 'Decline', selected: false }
+					]
+				}
+			};
+			await page.addInitScript(
+				(cached) =>
+					localStorage.setItem(
+						'bordr:last:agents',
+						JSON.stringify({ at: Date.now(), value: [cached] })
+					),
+				{
+					...live,
+					picker: {
+						...live.picker,
+						question: 'Old question',
+						options: [{ index: 1, label: 'Stale answer', selected: true }]
+					}
+				}
+			);
+			await page.goto('/');
+			await expect(page.locator('a[href="/a/a"]').first()).toBeVisible();
+			await expect(page.getByRole('button', { name: /Stale answer/ })).toHaveCount(0);
+			await page.evaluate(
+				(value) => window.dispatchEvent(new CustomEvent('fixture-agents', { detail: [value] })),
+				live
+			);
+			await page.getByRole('button', { name: /Live answer/ }).click();
+			await expect.poll(() => state.answers.length).toBe(1);
+			expect(state.answers[0].dialog).toContain('New fixture question');
+		});
+
+		test('malformed nested caches cannot break a later live list', async ({ page }) => {
+			await fixture(page);
+			await page.addInitScript(() => {
+				for (const [key, value] of Object.entries({ agents: [null], panes: { workspaces: [{}] } }))
+					localStorage.setItem(`bordr:last:${key}`, JSON.stringify({ at: Date.now(), value }));
+			});
+			await page.goto('/');
+			await expect(page.locator('a[href="/a/a"]').first()).toBeVisible();
+			expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(
+				true
+			);
+		});
+	});
+}
+
+test('a retargeted pane with a lower sequence is acknowledged again', async ({ page }) => {
+	const state = await fixture(page);
+	state.detailSeq = 9;
+	await openPane(page);
+	await expect.poll(() => state.reads.some((r) => r.seq === 9)).toBe(true);
+	state.detailSeq = 2;
+	await expect.poll(() => state.reads.some((r) => r.seq === 2), { timeout: 10_000 }).toBe(true);
+});
+
+test('a refused read marker is retried on the next detail refresh', async ({ page }) => {
+	const state = await fixture(page);
+	state.readStatus = 503;
+	state.conditionalDetails = true;
+	await openPane(page);
+	await expect.poll(() => state.reads.length).toBeGreaterThan(0);
+	state.readStatus = 200;
+	await expect.poll(() => state.detail304s, { timeout: 10_000 }).toBeGreaterThan(0);
+	await expect.poll(() => state.reads.length, { timeout: 10_000 }).toBeGreaterThan(1);
 });
 
 test.describe('mobile', () => {
@@ -865,7 +1002,7 @@ test('terminal write-in focuses its input and submits the selected row via answe
 	await input.press('Enter');
 	await expect
 		.poll(() => state.answers)
-		.toEqual([{ index: 3, text: 'terminal write-in', dialog: expect.any(String) }]);
+		.toEqual([{ index: 3, text: 'terminal write-in', dialog: pickerIdentity(state), scope: '' }]);
 	expect(state.typeCalls).toEqual([]);
 	expect(state.keys).toEqual([]);
 });
@@ -942,7 +1079,9 @@ test('multi-select Submit uses the verified submit operation, not the checkbox t
 	state.multi = true;
 	await openPane(page);
 	await page.getByRole('button', { name: 'Submit selection', exact: true }).click();
-	await expect.poll(() => state.answers).toEqual([{ submit: true }]);
+	await expect
+		.poll(() => state.answers)
+		.toEqual([{ submit: true, dialog: pickerIdentity(state), scope: '' }]);
 	expect(state.keys).toEqual([]);
 });
 
@@ -1025,6 +1164,77 @@ test('Home does not hide a same-word approval for a new subject during the recei
 	await expect(page.getByRole('button', { name: '1. Yes', exact: true })).toBeVisible();
 });
 
+test('Home does not hold an identical question after its source changes', async ({ page }) => {
+	const picker = {
+		question: 'Proceed?',
+		multi: false,
+		options: [{ index: 1, label: 'Yes', selected: true }]
+	};
+	const fleet = [{ ...agents[0], status: 'blocked', readScope: 'source-a', picker }];
+	await fixture(page, {}, fleet);
+	await move(page, '/');
+	await page.getByRole('button', { name: '1. Yes', exact: true }).click();
+	await expect(page.getByText('sent “Yes”', { exact: true })).toBeVisible();
+	await page.evaluate(
+		(agents) => window.dispatchEvent(new CustomEvent('fixture-agents', { detail: agents })),
+		[{ ...fleet[0], readScope: 'source-b' }]
+	);
+	await expect(page.getByRole('button', { name: '1. Yes', exact: true })).toBeVisible();
+});
+
+for (const view of ['conversation', 'terminal']) {
+	test(`${view}: a retargeted write-in stays recoverable and cannot become raw typing`, async ({
+		page
+	}) => {
+		const state = await fixture(page, { paneView: view });
+		state.readScope = 'source-a';
+		await openPane(page);
+		await page.getByRole('button', { name: /3 Other/ }).click();
+		const input =
+			view === 'terminal'
+				? page.getByRole('textbox', { name: 'Send to this pane' })
+				: page.locator('textarea').first();
+		await input.fill('draft for source A');
+		state.readScope = 'source-b';
+		await expect.poll(() => state.reads.some((read) => read.scope === 'source-b')).toBe(true);
+		await expect(page.getByRole('button', { name: /3 Other/ })).not.toHaveAttribute(
+			'aria-pressed',
+			'true'
+		);
+		await input.press(view === 'terminal' ? 'Enter' : 'Control+Enter');
+		await expect(input).toHaveValue('draft for source A');
+		expect(state.answers).toEqual([]);
+		expect(state.typeCalls).toEqual([]);
+		await page.getByRole('button', { name: /3 Other/ }).click();
+		await input.press(view === 'terminal' ? 'Enter' : 'Control+Enter');
+		await expect
+			.poll(() => state.answers)
+			.toEqual([
+				{ index: 3, text: 'draft for source A', dialog: pickerIdentity(state), scope: 'source-b' }
+			]);
+	});
+}
+
+test('queued picker confirmation cannot follow an identical question to a replacement source', async ({
+	page
+}) => {
+	const state = await fixture(page);
+	state.readScope = 'source-a';
+	await openPane(page);
+	await focusPage(page);
+	let release!: () => void;
+	state.keyDelay = new Promise((resolve) => (release = resolve));
+	await page.keyboard.press('ArrowDown');
+	await expect.poll(() => state.keys.length).toBe(1);
+	await page.keyboard.press('Enter');
+	state.readScope = 'source-b';
+	await expect.poll(() => state.reads.some((read) => read.scope === 'source-b')).toBe(true);
+	release();
+	await expect.poll(() => state.operations.includes('keys:end')).toBe(true);
+	await page.waitForTimeout(250);
+	expect(state.answers).toEqual([]);
+});
+
 test.describe('filtered mobile navigation', () => {
 	test.use({ viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true });
 	test('swipes include shells but exclude idle agents outside the working list', async ({
@@ -1094,9 +1304,7 @@ test('terminal write-in shares the full type/Tab queue and captures its row, dia
 	keyed();
 	await expect
 		.poll(() => state.answers)
-		.toEqual([
-			{ index: 3, text: 'captured write-in', dialog: expect.stringContaining('Choose a fixture') }
-		]);
+		.toEqual([{ index: 3, text: 'captured write-in', dialog: pickerIdentity(state), scope: '' }]);
 	await expect(input).toHaveValue('newer unsent draft');
 	expect(state.operations).toEqual([
 		'type:start',

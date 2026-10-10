@@ -85,6 +85,37 @@ export function resolvedToolUseTimes(jsonl: string): Map<string, number> {
 	return done;
 }
 
+/** Positive run-level lifecycle evidence, never prose written by an assistant. */
+export function workflowTerminations(jsonl: string): Map<string, { status: string; at: number }> {
+	const ended = new Map<string, { status: string; at: number }>();
+	for (const line of jsonl.split('\n')) {
+		if (!line.includes('<task-notification>')) continue;
+		try {
+			const row = JSON.parse(line) as {
+				type?: string;
+				timestamp?: string;
+				content?: unknown;
+				attachment?: { prompt?: unknown };
+			};
+			if (row.type !== 'queue-operation' && row.type !== 'attachment') continue;
+			const at = Date.parse(row.timestamp ?? '');
+			if (!Number.isFinite(at)) continue;
+			for (const value of [row.content, row.attachment?.prompt]) {
+				if (typeof value !== 'string') continue;
+				for (const match of value.matchAll(/<task-notification>[\s\S]*?<\/task-notification>/g)) {
+					const id = /<task-id>(wf_[A-Za-z0-9-]+)<\/task-id>/.exec(match[0])?.[1];
+					const status = /<status>([^<]+)<\/status>/.exec(match[0])?.[1]?.trim();
+					if (id && status && TERMINAL_TASK_STATUSES.has(status) && at >= (ended.get(id)?.at ?? 0))
+						ended.set(id, { status, at });
+				}
+			}
+		} catch {
+			// A clipped or half-written record proves no terminal state.
+		}
+	}
+	return ended;
+}
+
 /** Kept as the small ids-only helper used by existing callers and tests. */
 export function resolvedToolUses(jsonl: string): Set<string> {
 	return new Set(resolvedToolUseTimes(jsonl).keys());
