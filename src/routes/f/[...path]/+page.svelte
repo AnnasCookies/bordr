@@ -6,7 +6,7 @@
 	import { resolve } from '$app/paths';
 	import type { ResolvedPathname } from '$app/types';
 	import { marked } from 'marked';
-	import DOMPurify from 'dompurify';
+	import { sanitiseMarkdown } from '$lib/sanitise-markdown';
 	import { prefs } from '$lib/prefs.svelte';
 	import Icon from '$lib/components/icon.svelte';
 	import TabBar from '$lib/components/tab-bar.svelte';
@@ -20,7 +20,8 @@
 	 * stays enforced everywhere else rather than being switched off here.
 	 */
 	function rawHref(path: string, download = false): ResolvedPathname {
-		const base = resolve('/raw/[...path]', { path });
+		// Relative artefact assets inherit this capability prefix, including in Open raw.
+		const base = resolve('/raw/[...path]', { path: `~${data.rawToken}/${path}` });
 		return download ? (`${base}?dl=1` as ResolvedPathname) : base;
 	}
 
@@ -191,7 +192,7 @@
 	const rendered = $derived.by(() => {
 		if (kind !== 'markdown' || body === null) return '';
 		const html = marked.parse(body, { async: false, gfm: true, breaks: false });
-		return DOMPurify.sanitize(html, { FORBID_TAGS: ['style', 'form', 'iframe'] });
+		return sanitiseMarkdown(html, true);
 	});
 
 	const lines = $derived(body === null ? [] : body.split('\n'));
@@ -372,9 +373,8 @@
 					<p class="text-[13px] text-muted">Reading…</p>
 				{:else}
 					<!--
-						Safe: rendered by marked and then sanitised by DOMPurify with
-						style/form/iframe forbidden. The source is a file an agent wrote,
-						which is exactly why it is sanitised rather than trusted.
+						Safe: marked output uses the transcript's allow-list, including
+						its refusal of inline styles and app layout classes.
 					-->
 					<!-- eslint-disable svelte/no-at-html-tags -->
 					<div class="bordr-md text-[15px] leading-[1.55] text-body">{@html rendered}</div>

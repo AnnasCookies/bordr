@@ -8,9 +8,12 @@ After=network-online.target herdr-session@main.service herdr-session@default.ser
 [Service]
 Type=simple
 WorkingDirectory=%h/bordr
-# Loopback unless .env says otherwise: EnvironmentFile wins over Environment,
-# so .env can only ever tighten or deliberately override this, and a .env
-# with no HOST line cannot fall through to the adapter's 0.0.0.0.
+# Private socket rather than TCP loopback: container host gateways must not
+# become an unauthenticated route to the host's agents.
+RuntimeDirectory=bordr
+RuntimeDirectoryMode=0700
+UMask=0077
+Environment=SOCKET_PATH=%t/bordr/bordr.sock
 Environment=HOST=127.0.0.1
 EnvironmentFile=%h/bordr/.env
 # svelte-adapter-bun defaults to a 512KB request cap — camera photos need

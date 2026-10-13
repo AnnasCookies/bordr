@@ -21,9 +21,12 @@ Type=simple
 User=__USER__
 Group=__GROUP__
 WorkingDirectory=__CHECKOUT__
-# Loopback unless .env says otherwise: EnvironmentFile wins over Environment,
-# so .env can only ever tighten or deliberately override this, and a .env
-# with no HOST line cannot fall through to the adapter's 0.0.0.0.
+# Container host gateways can reach TCP loopback. Serve through a private
+# socket instead; tailscaled (root) can traverse it, an untrusted container cannot.
+RuntimeDirectory=bordr
+RuntimeDirectoryMode=0700
+UMask=0077
+Environment=SOCKET_PATH=/run/bordr/bordr.sock
 Environment=HOST=127.0.0.1
 EnvironmentFile=__CHECKOUT__/.env
 # svelte-adapter-bun defaults to a 512KB request cap — camera photos need

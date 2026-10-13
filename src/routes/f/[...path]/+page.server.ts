@@ -1,7 +1,8 @@
 import { statSync } from 'node:fs';
-import { basename } from 'node:path';
+import { basename, dirname } from 'node:path';
 import { error } from '@sveltejs/kit';
 import { FILE_ROOTS, listDirectory, MIME, resolveSafe, viewerKind } from '$lib/server/files';
+import { artefactToken } from '$lib/server/artefact-token';
 import type { ViewerKind } from '$lib/server/files';
 import type { PageServerLoad } from './$types';
 
@@ -40,6 +41,7 @@ export const load: PageServerLoad = async ({ params }) => {
 	if (!requested) {
 		return {
 			mode: 'roots' as const,
+			rawToken: '',
 			path: '',
 			roots: Object.keys(FILE_ROOTS)
 		};
@@ -67,6 +69,7 @@ export const load: PageServerLoad = async ({ params }) => {
 		});
 		return {
 			mode: 'directory' as const,
+			rawToken: artefactToken(absolute),
 			path: requested,
 			roots: Object.keys(FILE_ROOTS),
 			entries
@@ -77,6 +80,7 @@ export const load: PageServerLoad = async ({ params }) => {
 	const kind = kindFor(basename(absolute), stat.size);
 	return {
 		mode: 'file' as const,
+		rawToken: artefactToken(dirname(absolute)),
 		path: requested,
 		roots: Object.keys(FILE_ROOTS),
 		name: basename(absolute),

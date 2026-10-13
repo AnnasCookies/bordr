@@ -70,7 +70,9 @@ echo
 echo "next:"
 echo "  bun run build && bun scripts/publish-build.ts   # the copy the unit runs"
 echo "  sudo systemctl enable --now herdr-session bordr"
+echo "  sudo tailscale serve --bg --https=8444 unix:/run/bordr/bordr.sock"
+echo "  Set BORDR_URL in .env to the printed HTTPS URL before bun run deploy."
 echo
 echo "Already running them as user units? Disable those first, or two servers"
-echo "will fight over the same herdr socket and port:"
+echo "will fight over the same herdr session:"
 echo "  systemctl --user disable --now herdr-session@$SESSION bordr"

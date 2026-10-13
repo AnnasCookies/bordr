@@ -227,6 +227,11 @@ bun ./build/index.js
 
 Open `http://127.0.0.1:7682` on the same machine. You should see your agents.
 
+**If untrusted containers can reach host loopback, do not use this TCP trial.**
+Follow [the private Unix-socket setup](SECURITY.md#containers-and-loopback)
+instead. Docker Desktop's host gateway can bypass the proxy and forge identity
+headers; `BORDR_ALLOWED_USERS` does not repair that network boundary.
+
 **5. Reach it from a phone.** A phone needs HTTPS, both for notifications and
 to install the app to the home screen. On a tailnet:
 
@@ -263,6 +268,7 @@ System shows which one it is driving.
 deploy/install-system-units.sh --session main   # renders deploy/system/* into /etc/systemd/system
 bun run build && bun scripts/publish-build.ts   # the copy the unit runs
 sudo systemctl enable --now herdr-session bordr
+sudo tailscale serve --bg --https=8444 unix:/run/bordr/bordr.sock
 ```
 
 **User units** (a single-user desktop, no root needed):
@@ -275,11 +281,20 @@ bun run build && bun scripts/publish-build.ts
 systemctl --user daemon-reload
 systemctl --user enable --now herdr-session@main bordr
 loginctl enable-linger "$USER"   # so it runs without a login and starts at boot
+sudo tailscale serve --bg --https=8444 unix:"$XDG_RUNTIME_DIR/bordr/bordr.sock"
 ```
 
 `--session` / `herdr-session@<name>` is the herdr session bordr follows —
 `default` for the one plain `herdr` attaches to. Run only one of the two:
 two servers for one session fight over the same socket.
+
+Both shipped bordr units use a private Unix socket, not the TCP port from the
+manual trial. Set `BORDR_URL` in `.env` to the HTTPS URL printed by Tailscale so
+`bun run deploy` smoke-tests the same route the phone uses. When upgrading an
+existing unit, replace its TCP Tailscale target with the socket target above;
+restarting bordr alone does not migrate that proxy. Check `tailscale serve status`
+and verify the former TCP port no longer accepts connections. Do not enable a
+TCP fallback on a host with untrusted containers.
 
 **Why system units are recommended.** A user unit dies with the systemd user
 manager, and that is not hypothetical: on 2026-09-20 a stray SIGTERM to

@@ -1,4 +1,7 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
+import { chmodSync, mkdtempSync, rmSync, symlinkSync } from 'node:fs';
+import { join } from 'node:path';
+import { tmpdir } from 'node:os';
 import { ALLOW_FLAG, judgeBind, judgeHost, judgeUser, machinesInherit } from './bind';
 
 describe('judgeBind', () => {
@@ -48,6 +51,41 @@ describe('judgeBind', () => {
 		expect(judgeBind('0.0.0.0', undefined).reason).toContain(ALLOW_FLAG);
 		expect(judgeBind(undefined, '1').ok).toBe(true);
 	});
+});
+
+describe('private socket bind', () => {
+	it.skipIf(process.platform === 'win32')(
+		'requires a private owned directory, not TCP or an alias',
+		() => {
+			const directory = mkdtempSync(join(tmpdir(), 'bordr-bind-'));
+			const alias = `${directory}-alias`;
+			try {
+				chmodSync(directory, 0o700);
+				const socket = join(directory, 'bordr.sock');
+				expect(judgeBind(undefined, undefined, socket).ok).toBe(true);
+				expect(machinesInherit(undefined, undefined, undefined, socket)).toBe(true);
+				expect(machinesInherit(undefined, undefined, 'proxy.example', socket)).toBe(false);
+				chmodSync(directory, 0o755);
+				expect(judgeBind('127.0.0.1', undefined, socket).ok).toBe(false);
+				chmodSync(directory, 0o700);
+				const uid = vi.spyOn(process, 'getuid').mockReturnValue(process.getuid!() + 1);
+				try {
+					expect(judgeBind('127.0.0.1', undefined, socket).ok).toBe(false);
+				} finally {
+					uid.mockRestore();
+				}
+				symlinkSync(directory, alias);
+				expect(judgeBind('127.0.0.1', undefined, join(alias, 'bordr.sock')).ok).toBe(false);
+				expect(judgeBind('127.0.0.1', undefined, 'relative.sock').ok).toBe(false);
+				expect(judgeBind('127.0.0.1', undefined, join(directory, 'missing', 'bordr.sock')).ok).toBe(
+					false
+				);
+			} finally {
+				rmSync(alias, { force: true });
+				rmSync(directory, { recursive: true, force: true });
+			}
+		}
+	);
 });
 
 describe('judgeHost', () => {

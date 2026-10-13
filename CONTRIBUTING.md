@@ -70,6 +70,12 @@ They drive a **real herdr with real agent panes**, so they cannot run in CI
 and they will skip themselves if nothing is running. Use `--workers=1`: the
 suite shares one live herdr and goes red at random under parallel load.
 
+The security browser suite is separate and uses invented file roots, not live
+panes. Run `bun run test:security` in a Playwright-supported environment with
+Chromium and WebKit plus their host libraries installed. The script builds into
+`.security-build` and its dedicated configuration serves that copy; the normal
+E2E invocation excludes it.
+
 ## House style
 
 - **British English** in prose, comments and anything you name. Never respell

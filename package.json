@@ -25,6 +25,7 @@
 		"test:unit": "vitest",
 		"test": "bun run test:unit --run && bun run test:e2e",
 		"test:e2e": "playwright install chromium && playwright test",
+		"test:security": "BORDR_BUILD_OUT=.security-build bun run build && playwright test --config playwright.security.config.ts",
 		"smoke": "bun run scripts/smoke.ts",
 		"deploy": "bun run build && bun scripts/publish-build.ts && bash scripts/restart-service.sh && sleep 3 && bun run smoke \"${BORDR_URL:-http://127.0.0.1:7682/}\""
 	},

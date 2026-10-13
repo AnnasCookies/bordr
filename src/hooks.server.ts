@@ -13,7 +13,9 @@ import { ALLOW_FLAG, judgeBind, judgeHost, judgeUser, USERS_FLAG } from '$lib/se
  * Skipped under `vite dev`, which binds localhost itself and ignores HOST;
  * the guard is about the production adapter's default of 0.0.0.0.
  */
-const bind = dev ? { ok: true, reason: null } : judgeBind(env.HOST, env[ALLOW_FLAG]);
+const bind = dev
+	? { ok: true, reason: null }
+	: judgeBind(env.HOST, env[ALLOW_FLAG], env.SOCKET_PATH);
 
 const hostPolicy = {
 	bindHost: env.HOST,

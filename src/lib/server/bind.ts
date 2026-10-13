@@ -8,6 +8,9 @@
  * `HOST=0.0.0.0` and a stranger's machine is an open agent controller.
  */
 
+import { lstatSync } from 'node:fs';
+import { dirname, isAbsolute } from 'node:path';
+
 /** Tailscale hands out addresses from the 100.64.0.0/10 CGNAT range. */
 function isTailscale(host: string): boolean {
 	const parts = host.split('.').map(Number);
@@ -35,7 +38,32 @@ export const ALLOW_FLAG = 'BORDR_I_UNDERSTAND_THIS_HAS_NO_AUTH';
  * tidy `ALLOW_PUBLIC=1`: anyone typing it has been told exactly what they are
  * turning off, which is the point of the guard.
  */
-export function judgeBind(host: string | undefined, allowPublic: string | undefined): BindVerdict {
+export function judgeBind(
+	host: string | undefined,
+	allowPublic: string | undefined,
+	socketPath?: string
+): BindVerdict {
+	// The adapter ignores HOST and PORT when SOCKET_PATH is set. A private
+	// filesystem directory, unlike TCP loopback, is not reachable via Docker's
+	// host gateway. Do not accept an abstract socket or a shared directory.
+	if (socketPath) {
+		try {
+			const directory = lstatSync(dirname(socketPath));
+			if (
+				isAbsolute(socketPath) &&
+				directory.isDirectory() &&
+				(directory.mode & 0o077) === 0 &&
+				directory.uid === process.getuid?.()
+			)
+				return { ok: true, reason: null };
+		} catch {
+			// A missing or unreadable directory is not an isolation boundary.
+		}
+		return {
+			ok: false,
+			reason: 'SOCKET_PATH needs an absolute path in a private (0700), owned directory.'
+		};
+	}
 	if (allowPublic === '1') return { ok: true, reason: null };
 	const value = (host ?? '').trim();
 
@@ -102,7 +130,8 @@ export function judgeBind(host: string | undefined, allowPublic: string | undefi
 export function machinesInherit(
 	host: string | undefined,
 	allowPublic: string | undefined,
-	allowedHosts: string | undefined
+	allowedHosts: string | undefined,
+	socketPath?: string
 ): boolean {
 	if (allowPublic === '1') return false;
 	// Parsed the way `judgeHost` parses it, so a stray comma or blank value does
@@ -112,9 +141,7 @@ export function machinesInherit(
 		.map((entry) => entry.trim())
 		.some(Boolean);
 	if (proxied) return false;
-	const value = (host ?? '').trim();
-	if (!value) return false; // unset binds every interface; judgeBind refuses to serve at all
-	return isLoopback(value) || isTailscale(value);
+	return judgeBind(host, undefined, socketPath).ok;
 }
 
 export interface HostPolicy {
@@ -162,7 +189,8 @@ export const USERS_FLAG = 'BORDR_ALLOWED_USERS';
  * `tailscale serve` sets `Tailscale-User-Login` on everything it proxies and
  * strips any copy the client sent first, so the value cannot be forged from
  * off the host. Anyone who can reach loopback directly to forge one is
- * already on the machine and already owns every agent on it.
+ * already on the machine. This is not true of container host gateways;
+ * those deployments need a private Unix socket (see SECURITY.md).
  *
  * Funnel sets no identity header at all. An allow-list therefore refuses
  * funnel traffic as a side effect, which turns "serve, never funnel" from a

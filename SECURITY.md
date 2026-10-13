@@ -25,17 +25,52 @@ One machine, one user, on a private network you control. In practice a
 [Tailscale](https://tailscale.com) tailnet:
 
 ```
-your phone ──tailnet──> tailscale serve ──127.0.0.1──> bordr ──unix socket──> herdr (this host)
+your phone ──tailnet──> tailscale serve ──private unix socket──> bordr ──unix socket──> herdr (this host)
                                                           └──ssh -L────────> herdr (each named machine)
 ```
 
-- bordr binds **loopback only**.
+- The shipped units bind a **Unix socket in a 0700 directory**, accessible to
+  the service user and the privileged Tailscale daemon. A manual TCP loopback
+  trial is safe only when no untrusted runtime can reach the host's loopback.
 - `tailscale serve` terminates TLS and is reachable only by devices on your
   tailnet.
 - Nothing is published to the internet, and no port is forwarded.
 
 The tailnet is the authentication. If a device is on your tailnet it is trusted
 completely; if it is not, it cannot reach bordr at all.
+
+### Containers and loopback
+
+**TCP loopback is not an authentication boundary for containers.** Docker
+Desktop can forward `host.docker.internal` to host loopback. A container can
+then forge Host, Origin and Tailscale identity headers; none of the HTTP
+checks authenticate that request. A process with host-network access has the
+same problem. Do not use TCP bordr on a host with untrusted containers.
+
+Use a private Unix socket on Linux/macOS instead:
+
+```sh
+install -d -m 0700 "$HOME/.local/run/bordr"
+SOCKET_PATH="$HOME/.local/run/bordr/bordr.sock" bun ./build/index.js
+sudo tailscale serve --bg --https=8444 unix:"$HOME/.local/run/bordr/bordr.sock"
+```
+
+`SOCKET_PATH` overrides HOST and PORT. The socket's parent must be owned by the
+service user and have no group/other permissions; the bind guard refuses an
+unsafe parent. Keep its ancestors trusted too. Never mount this directory or
+host credentials into an untrusted container, and do not grant it privileged
+host access. Those grants defeat filesystem isolation as well.
+
+The system unit creates `/run/bordr` with mode 0700; the user unit creates
+`$XDG_RUNTIME_DIR/bordr` with the same mode. Reinstall the units and change the
+existing Tailscale proxy target to their socket when upgrading. Set `BORDR_URL`
+to the printed HTTPS URL for the browser smoke test. Do not re-enable TCP to
+make the smoke test pass. Unix-socket targets require a Tailscale build whose
+`tailscale serve --help` lists `unix:` (verified with 1.102.4); on macOS use the
+open-source daemon variant if the app sandbox cannot access the socket.
+Native Windows Unix-socket deployment is not covered: use a Linux host/WSL
+with its own Tailscale daemon and no TCP forward to bordr, or keep untrusted
+containers off the host running TCP bordr.
 
 ### The bind guard
 
@@ -65,8 +100,8 @@ unset, it inherits.** Naming a machine in herdr is a deliberate act at a
 terminal on this host. Making it reachable from bordr grants it to whoever can
 reach bordr — and under this bind that is the same set of people, because the
 tailnet is the boundary and a device on it "is trusted completely" (above), while
-anyone who can reach loopback directly is already on the machine and already owns
-every agent on it. A second list there is bookkeeping that duplicates the first,
+trusted local processes can already drive its agents. This assumption does
+not hold for container gateways; use the private socket described above. A second list there is bookkeeping that duplicates the first,
 and the usual result of asking for it is a sidebar that silently stops listing
 the machines you use daily.
 
@@ -116,9 +151,9 @@ BORDR_ALLOWED_USERS=you@example.com
 ```
 
 `tailscale serve` sets a `Tailscale-User-Login` header on everything it proxies
-and strips any copy the client sent first, so the value cannot be forged from
-off the host. Someone who can reach loopback directly to forge one is already
-on the machine, and already owns every agent on it.
+and strips any copy the client sent first. That is trustworthy only if requests
+cannot bypass the proxy. A container host gateway can bypass a TCP loopback
+proxy and forge the header; the private socket prevents that network path.
 
 Funnel sets no identity header at all, so a configured list refuses funnel
 traffic as a side effect. That makes "serve, never funnel" something the code
@@ -147,12 +182,33 @@ network, mostly because an _agent_ can be induced to write a hostile file.
 | **Upload limits**            | Any file can be attached from the phone, each size-capped at 15MB and at most six per message, written 0600 under the data directory with a generated name that keeps only a cleaned copy of the original. The declared type is not trusted: only PNG, JPEG, WebP and GIF uploads are ever served back, so an uploaded SVG or HTML file cannot run in bordr's origin                                                                                          |
 | **Frame protection**         | Every page and API response sends `x-frame-options: DENY`, and pages add `frame-ancestors 'none'`; the raw artifact route is exempt, because the viewer frames it. The plain-text refusals (bind, hostname, identity and CSRF) return before these headers are set; they carry no controls to frame                                                                                                                                                           |
 
+### Executable artefact assets
+
+The file viewer issues a capability URL scoped to the artefact's resolved
+directory. Relative scripts and stylesheets inherit its prefix, including
+nested assets, but a parent or neighbouring directory is not covered. Without
+a valid capability, `/raw` serves JavaScript and CSS as plain text with
+`nosniff`, even to a cross-site request. Same-origin requests remain inert
+with or without a token. An unrelated website cannot execute a guessed file
+URL merely by sending a cross-site request.
+
+Raw HTML and SVG remain sandboxed. Capability-bearing responses send
+`Referrer-Policy: no-referrer`. A server restart revokes tokens; reload the
+viewer to issue a fresh URL. Hand-typed untokenised HTML URLs still render,
+but their external scripts and stylesheets are inert. Do not share capability
+URLs with untrusted parties: they grant executable access to that directory's
+otherwise browsable assets, not authentication to bordr's API.
+
 ## What it does not defend against
 
 Stated plainly, because a security document that only lists wins is not useful.
 
 - **Anyone on your tailnet.** There are no per-device permissions and no audit
   log. Every tailnet device is fully trusted.
+- **Container access granted by the operator.** Privileged containers or
+  containers given the private socket, host home or credentials defeat the
+  isolation. A TCP loopback bind alone does not exclude ordinary Docker
+  Desktop containers either; see the required socket setup above.
 - **A compromised host.** bordr is a window onto local agents. If the host is
   compromised, bordr is the least of it.
 - **A hostile agent.** bordr renders what your agents produce and drives them on

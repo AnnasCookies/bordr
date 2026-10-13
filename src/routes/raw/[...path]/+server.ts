@@ -2,6 +2,7 @@ import { readFileSync, statSync } from 'node:fs';
 import { basename, extname } from 'node:path';
 import { error } from '@sveltejs/kit';
 import { MIME, resolveSafe } from '$lib/server/files';
+import { allowsArtefact } from '$lib/server/artefact-token';
 import type { RequestHandler } from './$types';
 
 const MAX_BYTES = 50 * 1024 * 1024;
@@ -15,9 +16,9 @@ const MAX_BYTES = 50 * 1024 * 1024;
  * an escape both lexically and after symlink resolution.
  */
 export const GET: RequestHandler = async ({ params, url, request }) => {
-	const requested = params.path;
-	if (!requested) throw error(404, 'not found');
-
+	if (!params.path) throw error(404, 'not found');
+	const capability = /^~([A-Za-z0-9_-]{43})\/(.+)$/.exec(params.path);
+	const requested = capability?.[2] ?? params.path;
 	const absolute = resolveSafe(requested);
 	if (!absolute) throw error(404, 'not found');
 
@@ -43,14 +44,14 @@ export const GET: RequestHandler = async ({ params, url, request }) => {
 	const extension = extname(absolute).slice(1).toLowerCase();
 	let type = MIME[extension] ?? 'application/octet-stream';
 
-	// Scripts and stylesheets get their real type only when a sandboxed
-	// artifact (an opaque origin, so cross-site from the browser's point of
-	// view) loads them as siblings. From bordr's own origin they are text:
-	// the app-shell CSP allows script-src 'self', and a real script type here
-	// would turn any future HTML injection into full XSS via an agent-written
-	// file. nosniff makes the plain type binding.
+	// Cross-site alone proves nothing: an unrelated website can load a script
+	// too. Only a viewer-issued directory capability permits executable sibling
+	// assets in an opaque sandbox; same-origin requests remain inert even with it.
 	const site = request.headers.get('sec-fetch-site');
-	if ((extension === 'js' || extension === 'css') && site !== 'cross-site') {
+	if (
+		(extension === 'js' || extension === 'css') &&
+		(site !== 'cross-site' || !allowsArtefact(capability?.[1], absolute))
+	) {
 		type = 'text/plain; charset=utf-8';
 	}
 
@@ -64,6 +65,7 @@ export const GET: RequestHandler = async ({ params, url, request }) => {
 			'content-type': type,
 			'cache-control': 'no-cache',
 			'x-content-type-options': 'nosniff',
+			'referrer-policy': 'no-referrer',
 			...(download
 				? {
 						'content-disposition': `attachment; filename="${basename(absolute).replace(/[^\x20-\x7e]|"/g, '_')}"`

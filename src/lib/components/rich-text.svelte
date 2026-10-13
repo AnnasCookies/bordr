@@ -3,81 +3,12 @@
 	import { prefs } from '$lib/prefs.svelte';
 	import { highlight } from '$lib/highlight';
 	import { marked } from 'marked';
-	import DOMPurify from 'dompurify';
+	import { sanitiseMarkdown } from '$lib/sanitise-markdown';
 
 	let { text, mono = 11 }: { text: string; mono?: number } = $props();
 
-	/**
-	 * Agent output is untrusted text that can contain anything, and unlike the
-	 * artifacts served by /raw this renders in bordr's OWN origin, where a
-	 * script could reach the agent-driving APIs. So: no raw HTML passthrough,
-	 * and an allowlist rather than a blocklist.
-	 *
-	 * The tag list is what markdown actually produces plus the wrappers added
-	 * below — anything else an agent writes is stripped to its text.
-	 */
-	const ALLOWED_TAGS = [
-		'p',
-		'br',
-		'hr',
-		'strong',
-		'em',
-		'del',
-		'code',
-		'pre',
-		'span',
-		'div',
-		'blockquote',
-		'ul',
-		'ol',
-		'li',
-		'a',
-		'img',
-		'h1',
-		'h2',
-		'h3',
-		'h4',
-		'h5',
-		'h6',
-		'table',
-		'thead',
-		'tbody',
-		'tr',
-		'th',
-		'td'
-	];
-
 	function render(source: string): string {
-		const html = marked.parse(source, { async: false, gfm: true, breaks: true });
-		// `class` has to survive for the highlighter, which reads the language
-		// off `<code class="language-ts">`. Left open it is an overlay: `div`
-		// is allowed, Tailwind's stylesheet is global, and `fixed inset-0 z-40
-		// bg-black/40` are all compiled into it because bordr uses them — so
-		// an agent could paint over bordr's own chrome and put same-origin
-		// links under it. The hook narrows `class` to the one shape the
-		// highlighter needs, and is removed straight after so the file
-		// viewer's own sanitiser is unaffected.
-		DOMPurify.addHook('uponSanitizeAttribute', (node, data) => {
-			if (data.attrName !== 'class') return;
-			data.keepAttr = node.nodeName === 'CODE' && /^language-[\w-]+$/.test(data.attrValue);
-		});
-		try {
-			return sanitise(html);
-		} finally {
-			DOMPurify.removeHook('uponSanitizeAttribute');
-		}
-	}
-
-	function sanitise(html: string): string {
-		return DOMPurify.sanitize(html, {
-			ALLOWED_TAGS,
-			ALLOWED_ATTR: ['href', 'src', 'alt', 'title', 'class', 'colspan', 'rowspan'],
-			// A markdown link is fine; javascript:, data: and every other
-			// scheme an agent could write is not.
-			ALLOWED_URI_REGEXP: /^(?:https?:|\/(?!\/)|#|mailto:)/i,
-			FORBID_TAGS: ['style', 'form', 'iframe', 'script', 'object', 'embed'],
-			FORBID_ATTR: ['style', 'onerror', 'onload', 'srcset']
-		});
+		return sanitiseMarkdown(marked.parse(source, { async: false, gfm: true, breaks: true }));
 	}
 
 	/**
