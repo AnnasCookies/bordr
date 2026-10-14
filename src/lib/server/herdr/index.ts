@@ -101,10 +101,17 @@ export async function getManager(): Promise<SubscriptionManager> {
 		// which a status change was neither in the snapshot nor on the stream.
 		// The push watcher's reconcile poll would have found it eventually;
 		// this stops it going missing in the first place.
-		await created.start([]);
-		await created.sync((await listAgents()).map((a) => a.paneId));
-		manager = created;
-		return created;
+		try {
+			await created.start([]);
+			await created.sync((await listAgents()).map((a) => a.paneId));
+			manager = created;
+			return created;
+		} catch (error) {
+			// A failed snapshot/scoped handshake must not orphan the globals
+			// stream and heartbeat before getManager's next retry creates another.
+			created.stop();
+			throw error;
+		}
 	})();
 
 	try {
