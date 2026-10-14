@@ -23,12 +23,13 @@ Group=__GROUP__
 WorkingDirectory=__CHECKOUT__
 # Container host gateways can reach TCP loopback. Serve through a private
 # socket instead; tailscaled (root) can traverse it, an untrusted container cannot.
-RuntimeDirectory=bordr
+RuntimeDirectory=__NAME__
 RuntimeDirectoryMode=0700
 UMask=0077
-Environment=SOCKET_PATH=/run/bordr/bordr.sock
+Environment=SOCKET_PATH=/run/__NAME__/bordr.sock
 Environment=HOST=127.0.0.1
-EnvironmentFile=__CHECKOUT__/.env
+Environment=HERDR_SOCKET=__HERDR_SOCKET__
+EnvironmentFile=__ENV_FILE__
 # svelte-adapter-bun defaults to a 512KB request cap — camera photos need
 # more; the image endpoint allows six 15MB images per message above this.
 Environment=BODY_SIZE_LIMIT=100M
@@ -38,12 +39,12 @@ Environment=BODY_SIZE_LIMIT=100M
 Environment=IDLE_TIMEOUT=120
 # Live state outside the checkout: a git clean, worktree op or test run in
 # the working tree would otherwise delete push subscriptions and watches.
-Environment=BORDR_DATA_DIR=__HOME__/.local/state/bordr
+Environment=BORDR_DATA_DIR=__HOME__/.local/state/__NAME__
 # The copy `bun run deploy` publishes, not ./build: every gate build rewrites
 # build/, and serving it directly swapped assets under the running app. The
 # working directory stays the checkout, which .env and the omp startup
 # extension are resolved against.
-ExecStart=__BUN__ __HOME__/.local/lib/bordr/index.js
+ExecStart=__BUN__ __HOME__/.local/lib/__NAME__/index.js
 # always, not on-failure: a clean SIGTERM (stray stop, session churn,
 # OOM reaper) otherwise leaves bordr down silently until someone notices
 # the phone 500ing. The app holds no state that a restart harms.

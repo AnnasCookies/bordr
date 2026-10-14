@@ -271,6 +271,19 @@ sudo systemctl enable --now herdr-session bordr
 sudo tailscale serve --bg --https=8444 unix:/run/bordr/bordr.sock
 ```
 
+For a second instance, give it a name and keep its environment in `.env.<name>`:
+
+```bash
+deploy/install-system-units.sh --instance dulce --session dulce --bordr-only
+BORDR_LIVE_DIR="$HOME/.local/lib/bordr-dulce" bun scripts/publish-build.ts
+sudo systemctl restart bordr-dulce
+sudo tailscale serve --bg --https=7802 unix:/run/bordr-dulce/bordr.sock
+```
+
+Named instances have separate sockets, state and published releases. `--bordr-only`
+leaves the herdr unit untouched; it does not restart or stop any agents. Keep each
+instance's `BORDR_URL` pointed at its own HTTPS address.
+
 **User units** (a single-user desktop, no root needed):
 
 ```bash
