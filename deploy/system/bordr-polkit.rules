@@ -8,7 +8,7 @@ polkit.addRule(function (action, subject) {
 	var unit = action.lookup('unit');
 	var verb = action.lookup('verb');
 	if (
-		(unit === 'herdr-session.service' || unit === 'bordr.service') &&
+		(__HERDR_PERMISSION__unit === '__NAME__.service') &&
 		(verb === 'start' || verb === 'stop' || verb === 'restart')
 	) {
 		return polkit.Result.YES;
