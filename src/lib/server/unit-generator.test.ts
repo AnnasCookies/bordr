@@ -115,7 +115,7 @@ it.skipIf(process.platform === 'win32')(
 		const root = mkdtempSync(join(tmpdir(), 'bordr-env-isolation-'));
 		temporary.push(root);
 		writeFileSync(join(root, '.env'), 'BORDR_UNIT_TEST_PROD_ONLY=fixture-production\n');
-		const env = { ...process.env, BORDR_UNIT_TEST_INSTANCE: 'fixture-dev' };
+		const env: NodeJS.ProcessEnv = { ...process.env, BORDR_UNIT_TEST_INSTANCE: 'fixture-dev' };
 		delete env.BORDR_UNIT_TEST_PROD_ONLY;
 		const script =
 			'console.log(JSON.stringify({prod:process.env.BORDR_UNIT_TEST_PROD_ONLY??null,instance:process.env.BORDR_UNIT_TEST_INSTANCE}))';
