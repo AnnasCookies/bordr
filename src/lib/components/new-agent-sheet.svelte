@@ -31,8 +31,6 @@
 	let spawning = $state(false);
 	/** Inline, not alert(): a system modal over a home-screen PWA is jarring. */
 	let error = $state('');
-	/** Held in script because the hint itself contains quote characters. */
-	const LABEL_HINT = 'Defaults to the kind, e.g. "claude"';
 	let dirs = $state<string[]>([]);
 	let parent = $state<string | null>(null);
 	let loadingDirs = $state(false);
@@ -280,7 +278,7 @@
 				<h3 class="mb-1.5 font-mono text-[10.5px] text-muted">label · optional</h3>
 				<input
 					bind:value={label}
-					placeholder={LABEL_HINT}
+					placeholder="Defaults to the folder name"
 					class="w-full rounded-xl border border-edge bg-card px-3 py-2.5 text-[16px] placeholder:text-faint"
 				/>
 			</section>

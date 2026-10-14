@@ -82,7 +82,8 @@ export const POST: RequestHandler = async ({ request }) => {
 			'workspace.create',
 			{
 				cwd: directory,
-				label: label?.trim() || kind,
+				// No custom label lets herdr name the workspace after its folder.
+				label: label?.trim() || null,
 				focus: false
 			}
 		);

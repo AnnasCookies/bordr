@@ -175,7 +175,7 @@
 	interface MachineGroup {
 		key: string;
 		label: string;
-		state: MachineStatus['state'] | 'local';
+		state: MachineStatus['state'] | 'local' | 'remembered';
 		error: string;
 		workspaces: WorkspaceNode[];
 	}
@@ -188,13 +188,22 @@
 			error: '',
 			workspaces: workspaces.filter((w) => !w.machine)
 		};
-		const remote = machines.map((m) => ({
-			key: m.machine.label,
-			label: m.machine.label,
-			state: m.state,
-			error: m.error ?? '',
-			workspaces: workspaces.filter((w) => w.machine === m.machine.label)
-		}));
+		// Cached workspace names restore navigation, never machine addresses or
+		// stale reachability. Only a live response can supply connection state.
+		const labels = new Set([
+			...machines.map((m) => m.machine.label),
+			...workspaces.map((w) => w.machine).filter(Boolean)
+		]);
+		const remote = [...labels].map((label): MachineGroup => {
+			const machine = machines.find((m) => m.machine.label === label);
+			return {
+				key: label,
+				label,
+				state: machine?.state ?? 'remembered',
+				error: machine?.error ?? '',
+				workspaces: workspaces.filter((w) => w.machine === label)
+			};
+		});
 		return [local, ...remote.sort((a, b) => a.label.localeCompare(b.label))];
 	});
 
@@ -405,6 +414,8 @@
 						>
 					{:else if group.state === 'connecting'}
 						<span class="shrink-0 font-mono text-[10px] text-faint">connecting…</span>
+					{:else if group.state === 'remembered'}
+						<span class="shrink-0 font-mono text-[10px] text-faint">last seen</span>
 					{:else}
 						<span class="shrink-0 font-mono text-[10px] text-faint">{group.workspaces.length}</span>
 					{/if}

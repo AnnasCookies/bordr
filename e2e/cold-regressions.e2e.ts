@@ -728,6 +728,96 @@ for (const width of [390, 1400]) {
 			expect(state.answers[0].dialog).toContain('New fixture question');
 		});
 
+		test('cached remote workspaces restore navigation without claiming live reachability', async ({
+			page
+		}, testInfo) => {
+			await fixture(page);
+			await page.route('**/api/dirs', (route) =>
+				route.fulfill({ json: { path: '/fixture', display: '/fixture', parent: null, dirs: [] } })
+			);
+			await page.addInitScript(() => {
+				localStorage.setItem(
+					'bordr:last:panes',
+					JSON.stringify({
+						at: Date.now(),
+						value: {
+							workspaces: [
+								{
+									workspaceId: 'laptop~w1',
+									machine: 'laptop',
+									label: 'Cached remote project',
+									branch: '',
+									number: 1,
+									ahead: 0,
+									behind: 0,
+									focused: false,
+									tabs: [
+										{
+											tabId: 'laptop~w1:t1',
+											workspaceId: 'laptop~w1',
+											label: '1',
+											number: 1,
+											focused: false,
+											panes: [
+												{
+													paneId: 'laptop~w1:p1',
+													tabId: 'laptop~w1:t1',
+													workspaceId: 'laptop~w1',
+													agent: '',
+													status: 'idle',
+													title: 'Shell',
+													cwd: '/fixture',
+													hasAgent: false,
+													focused: false
+												}
+											]
+										}
+									]
+								}
+							]
+						}
+					})
+				);
+			});
+			let release!: () => void;
+			const pending = new Promise<void>((resolve) => {
+				release = resolve;
+			});
+			await page.route('**/api/panes', async (route) => {
+				await pending;
+				await route.fulfill({ json: { workspaces: [], machines: [] } });
+			});
+			try {
+				await page.goto('/');
+				if (width === 390)
+					await page.getByRole('button', { name: 'Workspaces', exact: true }).click();
+				const sidebar = page.getByRole('navigation', { name: 'Session' });
+				const cached = sidebar.getByRole('link', { name: /Cached remote project/ });
+				await expect(cached).toBeVisible();
+				await expect(sidebar.getByRole('button', { name: /laptop.*last seen/ })).toBeVisible();
+				await expect(cached).toHaveAttribute('href', /laptop.*w1.*p1/);
+				expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(
+					true
+				);
+				await page.screenshot({
+					path: testInfo.outputPath('cached-remote.png'),
+					animations: 'disabled'
+				});
+				release();
+				await expect(cached).toHaveCount(0);
+				await sidebar.getByRole('button', { name: 'new', exact: true }).click();
+				const hint = page.getByPlaceholder('Defaults to the folder name');
+				await expect(hint).toBeVisible();
+				await hint.scrollIntoViewIfNeeded();
+				await page.screenshot({
+					path: testInfo.outputPath('new-agent.png'),
+					animations: 'disabled'
+				});
+			} finally {
+				release();
+			}
+		});
+
 		test('malformed nested caches cannot break a later live list', async ({ page }) => {
 			await fixture(page);
 			await page.addInitScript(() => {

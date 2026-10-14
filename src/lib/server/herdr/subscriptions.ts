@@ -28,6 +28,10 @@ export class SubscriptionManager {
 	private listeners = new Set<(e: HerdrEvent) => void>();
 	private heartbeat: ReturnType<typeof setInterval> | undefined;
 	private reviving = false;
+	private generation = 0;
+	private stopped = false;
+	private pendingSync:
+		{ generation: number; panes: Set<string>; promise: Promise<void> } | undefined;
 
 	constructor(
 		private client: HerdrClient,
@@ -55,8 +59,9 @@ export class SubscriptionManager {
 	}
 
 	async start(paneIds: string[]): Promise<void> {
+		this.stopped = false;
 		await this.reopen(paneIds);
-		this.startHeartbeat();
+		if (!this.stopped) this.startHeartbeat();
 	}
 
 	/**
@@ -87,12 +92,36 @@ export class SubscriptionManager {
 
 	/** Re-establish the stream only when the pane set actually changed or the stream died. */
 	async sync(paneIds: string[]): Promise<void> {
+		if (this.stopped) return;
 		const unchanged =
 			this.live && paneIds.length === this.panes.size && paneIds.every((id) => this.panes.has(id));
-		if (!unchanged) await this.reopen(paneIds);
+		// Even an unchanged snapshot supersedes an older in-flight replacement.
+		if (unchanged) {
+			++this.generation;
+			this.pendingSync = undefined;
+			return;
+		}
+		const pending = this.pendingSync;
+		// Repeated snapshots must not keep superseding the same slow handshake.
+		if (
+			pending?.generation === this.generation &&
+			paneIds.length === pending.panes.size &&
+			paneIds.every((id) => pending.panes.has(id))
+		)
+			return pending.promise;
+		const promise = this.reopen(paneIds);
+		this.pendingSync = { generation: this.generation, panes: new Set(paneIds), promise };
+		try {
+			await promise;
+		} finally {
+			if (this.pendingSync?.promise === promise) this.pendingSync = undefined;
+		}
 	}
 
 	stop(): void {
+		this.stopped = true;
+		++this.generation;
+		this.pendingSync = undefined;
 		this.closeStream?.();
 		this.closeStream = undefined;
 		if (this.heartbeat) clearInterval(this.heartbeat);
@@ -105,17 +134,24 @@ export class SubscriptionManager {
 	 * pane-scoped events (the next tick restores them) than to stay dead.
 	 */
 	private async reconcile(): Promise<void> {
+		const generation = this.generation;
 		let panes: string[] | undefined;
 		try {
 			panes = this.livePanes ? await this.livePanes() : [...this.panes];
 		} catch {
 			panes = undefined; // herdr unreachable
 		}
+		if (this.stopped || generation !== this.generation) return;
 		if (panes) {
+			const pending = this.sync(panes);
+			const attempt = this.generation;
 			try {
-				await this.sync(panes);
+				await pending;
 				return;
 			} catch {
+				// Rejection crosses more awaits after reopen's guard. Recheck at
+				// the fallback boundary so an old failure cannot cancel newer work.
+				if (attempt !== this.generation) return;
 				// a pane vanished mid-flight — fall through to globals-only
 			}
 		}
@@ -123,22 +159,40 @@ export class SubscriptionManager {
 	}
 
 	private async reopen(paneIds: string[]): Promise<void> {
+		if (this.stopped) return;
+		const generation = ++this.generation;
 		const subscriptions = [
 			...GLOBAL_SUBSCRIPTIONS.map((type) => ({ type })),
 			...paneIds.map((pane_id) => ({ type: 'pane.agent_status_changed', pane_id }))
 		];
-		const previous = this.closeStream;
-		const close = await this.client.subscribe(
-			subscriptions,
-			(e) => {
-				for (const fn of this.listeners) fn(e);
-			},
-			() => {
-				// Stream died underneath us — mark dead so the next sync reopens.
-				this.closeStream = undefined;
-			}
-		);
-		previous?.();
+		let died = false;
+		// onClose may run before the awaited handshake's continuation.
+		let close: (() => void) | undefined = undefined;
+		try {
+			close = await this.client.subscribe(
+				subscriptions,
+				(e) => {
+					for (const fn of this.listeners) fn(e);
+				},
+				() => {
+					died = true;
+					// A late callback from an old stream cannot mark its replacement dead.
+					if (close && this.closeStream === close) this.closeStream = undefined;
+				}
+			);
+		} catch (error) {
+			// Only the current attempt may trigger heartbeat fallback; an obsolete
+			// failure must not cancel the newer stream (or a pending restart).
+			if (generation !== this.generation) return;
+			throw error;
+		}
+		// Overlapping sync/heartbeat calls may finish in either order. Only the
+		// latest request owns a stream; stop also invalidates pending handshakes.
+		if (generation !== this.generation || died) {
+			close();
+			return;
+		}
+		this.closeStream?.();
 		this.closeStream = close;
 		this.panes = new Set(paneIds);
 	}
