@@ -32,6 +32,13 @@ case "$SESSION" in *[!A-Za-z0-9._-]*|"") echo "bad session name: $SESSION" >&2; 
 case "$INSTANCE" in *[!A-Za-z0-9_-]*) echo "bad instance name" >&2; exit 2 ;; esac
 NAME="bordr${INSTANCE:+-$INSTANCE}"
 ENV_FILE="$CHECKOUT/.env${INSTANCE:+.$INSTANCE}"
+BUN_ARGS=""
+HERDR_PERMISSION="unit === 'herdr-session.service' || "
+if [ -n "$INSTANCE" ]; then
+  # systemd loads only this instance's file; Bun must not add production .env.
+  BUN_ARGS="--no-env-file"
+  HERDR_PERMISSION=""
+fi
 TARGET_HOME="$(getent passwd "$TARGET_USER" | cut -d: -f6)"
 TARGET_GROUP="$(id -gn "$TARGET_USER")"
 UNIT_DIR="${SYSTEMD_SYSTEM_DIR:-/etc/systemd/system}"
@@ -61,7 +68,8 @@ for unit in "${units[@]}"; do
     -e "s|__HERDR__|$HERDR_BIN|g" -e "s|__HOME__|$TARGET_HOME|g" \
     -e "s|__GROUP__|$TARGET_GROUP|g" -e "s|__USER__|$TARGET_USER|g" \
     -e "s|__SESSION__|$SESSION|g" -e "s|__NAME__|$NAME|g" \
-    -e "s|__ENV_FILE__|$ENV_FILE|g" -e "s|__HERDR_SOCKET__|$HERDR_SOCKET|g" "$HERE/system/$unit" \
+    -e "s|__ENV_FILE__|$ENV_FILE|g" -e "s|__HERDR_SOCKET__|$HERDR_SOCKET|g" \
+    -e "s|__BUN_ARGS__|$BUN_ARGS|g" "$HERE/system/$unit" \
     | $SUDO install -m 0644 /dev/stdin "$UNIT_DIR/$destination"
   echo "installed $UNIT_DIR/$destination"
 done
@@ -73,7 +81,8 @@ POLKIT_DIR="${POLKIT_RULES_DIR:-/etc/polkit-1/rules.d}"
 ROOT=""
 [ "$(id -u)" = "0" ] || ROOT="sudo"
 if [ -d "$(dirname "$POLKIT_DIR")" ]; then
-  sed -e "s|__USER__|$TARGET_USER|g" -e "s|__NAME__|$NAME|g" "$HERE/system/bordr-polkit.rules" \
+  sed -e "s|__USER__|$TARGET_USER|g" -e "s|__NAME__|$NAME|g" \
+    -e "s~__HERDR_PERMISSION__~$HERDR_PERMISSION~g" "$HERE/system/bordr-polkit.rules" \
     | $ROOT install -D -m 0644 /dev/stdin "$POLKIT_DIR/50-$NAME.rules"
   echo "installed $POLKIT_DIR/50-$NAME.rules"
 else
@@ -89,6 +98,6 @@ echo "  sudo systemctl enable --now $NAME"
 echo "  sudo tailscale serve --bg --https=<your-port> unix:/run/$NAME/bordr.sock"
 echo "  Set BORDR_URL in the instance environment file to the printed HTTPS URL."
 echo
-echo "Already running them as user units? Disable those first, or two servers"
-echo "will fight over the same herdr session:"
-echo "  systemctl --user disable --now herdr-session@$SESSION bordr"
+echo "Already running this instance as a user unit? Disable that copy first:"
+echo "  systemctl --user disable --now $NAME"
+[ "$BORDR_ONLY" = 1 ] || echo "  systemctl --user disable --now herdr-session@$SESSION"

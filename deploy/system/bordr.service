@@ -44,7 +44,7 @@ Environment=BORDR_DATA_DIR=__HOME__/.local/state/__NAME__
 # build/, and serving it directly swapped assets under the running app. The
 # working directory stays the checkout, which .env and the omp startup
 # extension are resolved against.
-ExecStart=__BUN__ __HOME__/.local/lib/__NAME__/index.js
+ExecStart=__BUN__ __BUN_ARGS__ __HOME__/.local/lib/__NAME__/index.js
 # always, not on-failure: a clean SIGTERM (stray stop, session churn,
 # OOM reaper) otherwise leaves bordr down silently until someone notices
 # the phone 500ing. The app holds no state that a restart harms.

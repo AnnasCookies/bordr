@@ -94,10 +94,44 @@ it.skipIf(process.platform === 'win32').each([
 				: `/fixture/.config/herdr/sessions/${session}/herdr.sock`;
 		expect(unit).toContain(`Environment=HERDR_SOCKET=${socket}`);
 		expect(existsSync(join(units, 'herdr-session.service'))).toBe(herdr);
-		expect(readFileSync(join(polkit, `50-${name}.rules`), 'utf8')).toContain(
-			`unit === '${name}.service'`
-		);
+		const rule = readFileSync(join(polkit, `50-${name}.rules`), 'utf8');
+		expect(rule).toContain(`unit === '${name}.service'`);
+		if (name === 'bordr') {
+			expect(rule).toContain("unit === 'herdr-session.service'");
+			expect(unit).not.toContain('--no-env-file');
+		} else {
+			expect(rule).not.toContain('herdr-session.service');
+			expect(unit).toContain('--no-env-file');
+		}
+		expect(result.stdout).toContain(`systemctl --user disable --now ${name}`);
+		if (!herdr) expect(result.stdout).not.toContain('disable --now herdr-session');
 		expect(readFileSync(calls, 'utf8')).toBe('daemon-reload\n');
+	}
+);
+
+it.skipIf(process.platform === 'win32')(
+	'Bun named-service mode cannot inherit production dotenv values',
+	() => {
+		const root = mkdtempSync(join(tmpdir(), 'bordr-env-isolation-'));
+		temporary.push(root);
+		writeFileSync(join(root, '.env'), 'BORDR_UNIT_TEST_PROD_ONLY=fixture-production\n');
+		const env = { ...process.env, BORDR_UNIT_TEST_INSTANCE: 'fixture-dev' };
+		delete env.BORDR_UNIT_TEST_PROD_ONLY;
+		const script =
+			'console.log(JSON.stringify({prod:process.env.BORDR_UNIT_TEST_PROD_ONLY??null,instance:process.env.BORDR_UNIT_TEST_INSTANCE}))';
+		const control = spawnSync('bun', ['-e', script], { cwd: root, env, encoding: 'utf8' });
+		const isolated = spawnSync('bun', ['--no-env-file', '-e', script], {
+			cwd: root,
+			env,
+			encoding: 'utf8'
+		});
+		expect(control.status).toBe(0);
+		expect(JSON.parse(control.stdout)).toEqual({
+			prod: 'fixture-production',
+			instance: 'fixture-dev'
+		});
+		expect(isolated.status).toBe(0);
+		expect(JSON.parse(isolated.stdout)).toEqual({ prod: null, instance: 'fixture-dev' });
 	}
 );
 

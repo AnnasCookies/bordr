@@ -280,8 +280,10 @@ sudo systemctl restart bordr-dulce
 sudo tailscale serve --bg --https=7802 unix:/run/bordr-dulce/bordr.sock
 ```
 
-Named instances have separate sockets, state and published releases. `--bordr-only`
-leaves the herdr unit untouched; it does not restart or stop any agents. Keep each
+Named instances have separate sockets, state and published releases. They do not
+authorise control of the shared herdr unit or implicitly load production `.env`
+values. Named installs and `--bordr-only` leave the herdr unit untouched; neither
+restarts or stops any agents. Keep each
 instance's `BORDR_URL` pointed at its own HTTPS address.
 
 **User units** (a single-user desktop, no root needed):
