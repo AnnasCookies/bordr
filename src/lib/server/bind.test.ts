@@ -2,7 +2,7 @@ import { describe, expect, it, vi } from 'vitest';
 import { chmodSync, mkdtempSync, rmSync, symlinkSync } from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
-import { ALLOW_FLAG, judgeBind, judgeHost, judgeUser, machinesInherit } from './bind';
+import { ALLOW_FLAG, judgeBind, judgeHost, judgeUser, machinesInherit, requestHost } from './bind';
 
 describe('judgeBind', () => {
 	it('allows loopback in every spelling', () => {
@@ -125,6 +125,59 @@ describe('judgeHost', () => {
 
 	it('stands down entirely under the explicit opt-in', () => {
 		expect(judgeHost('evil.example', { ...policy, allowPublic: '1' })).toBe(true);
+		expect(judgeHost('', { ...policy, allowPublic: '1' })).toBe(false);
+	});
+});
+
+describe('requestHost', () => {
+	const local = new URL('https://localhost/api/agents/new');
+
+	it('uses X-Forwarded-Host on a private Unix socket so tailscale serve writes match Origin', () => {
+		expect(requestHost(local, 'atlas.tailae2b8c.ts.net:8444', '/run/bordr/bordr.sock')).toEqual({
+			hostname: 'atlas.tailae2b8c.ts.net',
+			host: 'atlas.tailae2b8c.ts.net:8444'
+		});
+		expect(requestHost(local, 'atlas.tailae2b8c.ts.net', '/run/bordr/bordr.sock')).toEqual({
+			hostname: 'atlas.tailae2b8c.ts.net',
+			host: 'atlas.tailae2b8c.ts.net'
+		});
+	});
+
+	it('falls back to the URL host when a Unix socket client sends no X-Forwarded-Host', () => {
+		for (const header of [null, undefined, '', '   ']) {
+			expect(requestHost(local, header, '/run/bordr/bordr.sock')).toEqual({
+				hostname: 'localhost',
+				host: 'localhost'
+			});
+		}
+	});
+
+	it('ignores X-Forwarded-Host on TCP so a DNS-rebound script cannot spoof localhost', () => {
+		const rebound = new URL('http://evil.example:7682/api/agents');
+		expect(requestHost(rebound, 'localhost:7682', undefined)).toEqual({
+			hostname: 'evil.example',
+			host: 'evil.example:7682'
+		});
+		expect(requestHost(rebound, 'localhost:7682', '')).toEqual({
+			hostname: 'evil.example',
+			host: 'evil.example:7682'
+		});
+	});
+
+	it('refuses a malformed or multi-valued X-Forwarded-Host on a Unix socket', () => {
+		for (const bad of [
+			'atlas.tailae2b8c.ts.net:8444, evil.example',
+			'localhost/path',
+			'user@localhost',
+			'localhost?x=1',
+			'localhost#frag',
+			'http://localhost'
+		]) {
+			expect(requestHost(local, bad, '/run/bordr/bordr.sock'), bad).toEqual({
+				hostname: '',
+				host: ''
+			});
+		}
 	});
 });
 
