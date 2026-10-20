@@ -7,6 +7,11 @@
  * reproducible by anyone and leak nothing.
  */
 import type { Page } from '@playwright/test';
+import { spawn } from 'node:child_process';
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { createServer } from 'node:net';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 
 export const AGENTS = [
 	{
@@ -21,6 +26,8 @@ export const AGENTS = [
 		preview: 'Rename the coupon table or keep the old column?',
 		picker: {
 			question: 'Rename the coupon table, or keep the old column name?',
+			context: [],
+			numbered: true,
 			multi: false,
 			options: [
 				{ index: 1, label: 'Rename it and write a migration', selected: true },
@@ -79,12 +86,44 @@ export const AGENTS = [
 	}
 ];
 
-const COMPAT = { level: 'ok', message: null, version: '0.9.0', protocol: 20, session: 'main' };
+const COMPAT = { level: 'ok', message: null, version: '0.9.1', protocol: 22, session: 'main' };
 
 const DETAIL = {
 	...AGENTS[0],
-	degraded: 'none',
+	paneCwd: '/home/dev/code/storefront',
+	branch: 'feature/coupon-codes',
+	ahead: 1,
+	behind: 0,
+	branchUrl: 'https://github.com/example/storefront/tree/feature/coupon-codes',
+	pull: {
+		number: 48,
+		state: 'OPEN',
+		url: 'https://github.com/example/storefront/pull/48',
+		checks: 'passing' as const,
+		draft: false
+	},
+	model: 'claude-sonnet-4-6',
+	degraded: 'none' as const,
+	degradedReason: null,
 	hasMore: false,
+	activity: null,
+	menu: null,
+	suggestion: '',
+	queue: [],
+	subagents: [
+		{
+			id: 'agent-schema-audit',
+			agentType: 'Explore',
+			description: 'Inspect coupon & order discount schema references',
+			toolUseId: 'toolu_01',
+			spawnDepth: 1,
+			entries: 14,
+			lastAt: Date.now() - 12_000,
+			done: true,
+			parentAgentId: '',
+			workflow: { runId: 'wf_checkout_01', name: 'schema-check' }
+		}
+	],
 	screenTail: [
 		'  Rename the coupon table, or keep the old column name?',
 		'',
@@ -95,6 +134,8 @@ const DETAIL = {
 		'  Enter to select \u00b7 Esc to cancel'
 	].join('\n'),
 	statusLines: ['[model] | effort high | Context 24% | 📁 storefront'],
+	statusAnsi: ['[model] | effort high | Context 24% | 📁 storefront'],
+	statusRows: ['[model] | effort high | Context 24% | 📁 storefront'],
 	messages: [
 		{ role: 'user', text: 'Add a coupon code field to checkout.', tools: [] },
 		{
@@ -115,15 +156,15 @@ const DETAIL = {
 					summary: 'src/routes/checkout/+page.svelte',
 					input: { file_path: 'src/routes/checkout/+page.svelte' },
 					result: null,
-					diff: null
+					diffs: []
 				},
 				{
 					kind: 'tool',
 					name: 'Bash',
 					summary: 'bun run check',
 					input: { command: 'bun run check' },
-					result: { text: '0 errors, 0 warnings', isError: false },
-					diff: null
+					result: { text: '0 errors, 0 warnings', isError: false, truncatedLines: 0 },
+					diffs: []
 				}
 			]
 		}
@@ -151,6 +192,11 @@ const WORKSPACES = [
 		number: 1,
 		focused: true,
 		branch: 'feature/coupon-codes',
+		worktree: {
+			repoKey: '/home/dev/code/storefront',
+			repoName: 'storefront',
+			linked: false
+		},
 		tabs: [
 			{
 				tabId: 'w1:t1',
@@ -182,10 +228,45 @@ const WORKSPACES = [
 		]
 	},
 	{
+		workspaceId: 'w1b',
+		machine: '',
+		label: 'coupon-migration',
+		number: 2,
+		focused: false,
+		branch: 'fix/coupon-column',
+		worktree: {
+			repoKey: '/home/dev/code/storefront',
+			repoName: 'storefront',
+			linked: true
+		},
+		tabs: [
+			{
+				tabId: 'w1b:t1',
+				workspaceId: 'w1b',
+				label: 'drizzle',
+				number: 1,
+				focused: true,
+				panes: [
+					{
+						paneId: 'w1b:p1',
+						tabId: 'w1b:t1',
+						workspaceId: 'w1b',
+						agent: 'claude',
+						hasAgent: true,
+						status: 'done',
+						title: 'coupon-migration',
+						cwd: '/home/dev/code/storefront-migration',
+						focused: true
+					}
+				]
+			}
+		]
+	},
+	{
 		workspaceId: 'w2',
 		machine: '',
 		label: 'platform',
-		number: 2,
+		number: 3,
 		focused: false,
 		branch: 'main',
 		tabs: [
@@ -348,8 +429,8 @@ function detailFor(phase: Phase) {
 						name: 'Edit',
 						summary: 'drizzle/schema.ts',
 						input: { file_path: 'drizzle/schema.ts' },
-						result: { text: '1 migration written', isError: false },
-						diff: null
+						result: { text: '1 migration written', isError: false, truncatedLines: 0 },
+						diffs: []
 					}
 				]
 			}
@@ -380,6 +461,39 @@ const json = (body: unknown) => ({
 export async function stub(page: Page, initial: Phase = 'blocked') {
 	let phase: Phase = initial;
 
+	await page.addInitScript(
+		({ agents, compat }) => {
+			class DemoEventSource extends EventTarget {
+				static CONNECTING = 0;
+				static OPEN = 1;
+				static CLOSED = 2;
+				readyState = 1;
+				onopen: ((ev: Event) => unknown) | null = null;
+				onmessage: ((ev: MessageEvent) => unknown) | null = null;
+				onerror: ((ev: Event) => unknown) | null = null;
+				constructor() {
+					super();
+					const push = (list: unknown) => {
+						this.dispatchEvent(new MessageEvent('agents', { data: JSON.stringify(list) }));
+						this.dispatchEvent(new MessageEvent('read', { data: JSON.stringify({ 'w1:p2': 41 }) }));
+						this.dispatchEvent(new MessageEvent('compat', { data: JSON.stringify(compat) }));
+					};
+					window.addEventListener('demo-agents', (event) => push((event as CustomEvent).detail));
+					setTimeout(() => {
+						this.onopen?.(new Event('open'));
+						this.dispatchEvent(new Event('open'));
+						push(agents);
+					}, 20);
+				}
+				close() {
+					this.readyState = 2;
+				}
+			}
+			Object.defineProperty(window, 'EventSource', { value: DemoEventSource });
+		},
+		{ agents: agentsFor(phase), compat: COMPAT }
+	);
+
 	// Regexes, not globs: the detail request carries a `?bytes=` query that a
 	// `*` glob does not match, and the stub silently fell through to the real
 	// server, which knows nothing about these invented panes.
@@ -400,6 +514,7 @@ export async function stub(page: Page, initial: Phase = 'blocked') {
 	);
 	await page.route(/\/api\/layout/, (route) => route.fulfill(json({ ok: true })));
 	await page.route(/\/api\/tabs/, (route) => route.fulfill(json({ ok: true })));
+	await page.route(/\/api\/read-state/, (route) => route.fulfill(json({ 'w1:p2': 41 })));
 	// Answering must succeed, or the recording shows "no picker on screen".
 	//
 	// And it must take a moment. Answering is a round trip to the host, which
@@ -408,7 +523,7 @@ export async function stub(page: Page, initial: Phase = 'blocked') {
 	// all and the recording would not show the thing it is demonstrating.
 	await page.route(/\/api\/agents\/[^/]+\/(answer|prompt|keys|type)/, async (route) => {
 		await new Promise((r) => setTimeout(r, 700));
-		await route.fulfill(json({ ok: true, verified: true }));
+		await route.fulfill(json({ ok: true, verified: true, outcome: 'accepted' }));
 	});
 	await page.route(/\/api\/agents\/[^/]+\/commands/, (route) =>
 		route.fulfill(json({ agent: 'claude', commands: COMMANDS }))
@@ -417,27 +532,85 @@ export async function stub(page: Page, initial: Phase = 'blocked') {
 		route.fulfill(json({ text: SCREEN, lines: 24, atTop: true }))
 	);
 
-	// The stubbed stream is a finite body, so EventSource reconnects the moment
-	// it ends and the header shows its reconnect spinner. That is an artefact of
-	// the stub, not of the app, so keep it out of the picture.
-	//
-	// addInitScript, not addStyleTag: a style tag belongs to the document that
-	// was open when it was added and is lost on the next navigation, which is
-	// why the spinner came back in the recording.
-	await page.addInitScript(() => {
-		const hide = () => {
-			const style = document.createElement('style');
-			style.textContent = '[aria-label="Reconnecting"]{display:none!important}';
-			document.head.append(style);
-		};
-		if (document.head) hide();
-		else document.addEventListener('DOMContentLoaded', hide);
-	});
-
 	return {
-		/** Move the story on. The next reconnect carries it to the screen. */
+		/** Move the story on and broadcast it to the open DemoEventSource. */
 		set(next: Phase) {
 			phase = next;
+			void page
+				.evaluate(
+					(list) => window.dispatchEvent(new CustomEvent('demo-agents', { detail: list })),
+					agentsFor(phase)
+				)
+				.catch(() => {});
 		}
 	};
+}
+
+function freePort(): Promise<number> {
+	return new Promise((resolve, reject) => {
+		const srv = createServer();
+		srv.listen(0, '127.0.0.1', () => {
+			const addr = srv.address();
+			const port = typeof addr === 'object' && addr ? addr.port : 0;
+			srv.close((err) => (err ? reject(err) : resolve(port)));
+		});
+		srv.on('error', reject);
+	});
+}
+
+/**
+ * Boot an isolated local bordr build with invented `BORDR_FILE_ROOTS` when no
+ * URL was passed. Server-rendered routes like `/f` then list synthetic files
+ * instead of the operator's disk, and capture works even when the live service
+ * listens on a private Unix socket.
+ */
+export async function withDemoServer<T>(
+	explicitUrl: string | undefined,
+	run: (url: string) => Promise<T>
+): Promise<T> {
+	if (explicitUrl) return run(explicitUrl.replace(/\/$/, ''));
+	const root = mkdtempSync(join(tmpdir(), 'bordr-demo-'));
+	const docs = join(root, 'docs');
+	const designs = join(root, 'designs');
+	mkdirSync(docs, { recursive: true });
+	mkdirSync(designs, { recursive: true });
+	writeFileSync(join(docs, 'architecture.md'), '# Architecture\n\nSynthetic notes.\n');
+	writeFileSync(join(docs, 'schema.sql'), 'CREATE TABLE coupons (code text primary key);\n');
+	writeFileSync(join(docs, 'release-checklist.md'), '# Release Checklist\n');
+	writeFileSync(join(designs, 'checkout-flow.svg'), '<svg viewBox="0 0 100 100"></svg>\n');
+	writeFileSync(join(designs, 'receipt-preview.html'), '<!doctype html><p>Preview</p>\n');
+	writeFileSync(join(root, 'endpoints.json'), '{"ssh":[]}');
+
+	const port = await freePort();
+	const url = `http://127.0.0.1:${port}`;
+	const child = spawn('bun', ['--no-env-file', 'build/index.js'], {
+		env: {
+			...process.env,
+			SOCKET_PATH: '',
+			HOST: '127.0.0.1',
+			PORT: String(port),
+			HERDR_SOCKET: join(root, 'absent-herdr.sock'),
+			HERDR_ENDPOINTS: join(root, 'endpoints.json'),
+			BORDR_DATA_DIR: join(root, 'state'),
+			BORDR_FILE_ROOTS: `docs:${docs},designs:${designs}`
+		},
+		stdio: 'ignore'
+	});
+
+	try {
+		const deadline = Date.now() + 15_000;
+		while (Date.now() < deadline) {
+			try {
+				const res = await fetch(`${url}/settings`);
+				if (res.ok) break;
+			} catch {
+				// still starting
+			}
+			await new Promise((r) => setTimeout(r, 100));
+		}
+		return await run(url);
+	} finally {
+		child.kill('SIGTERM');
+		rmSync(root, { recursive: true, force: true });
+	}
 }
