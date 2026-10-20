@@ -2,7 +2,14 @@ import { building, dev } from '$app/environment';
 import { env } from '$env/dynamic/private';
 import type { Handle } from '@sveltejs/kit';
 import { startPushWatcher } from '$lib/server/push';
-import { ALLOW_FLAG, judgeBind, judgeHost, judgeUser, USERS_FLAG } from '$lib/server/bind';
+import {
+	ALLOW_FLAG,
+	judgeBind,
+	judgeHost,
+	judgeUser,
+	requestHost,
+	USERS_FLAG
+} from '$lib/server/bind';
 
 /**
  * Checked once at startup. bordr refuses to SERVE rather than refusing to
@@ -53,11 +60,17 @@ export const handle: Handle = async ({ event, resolve }) => {
 		});
 	}
 
+	const arrived = requestHost(
+		event.url,
+		event.request.headers.get('x-forwarded-host'),
+		env.SOCKET_PATH
+	);
+
 	// DNS rebinding: see judgeHost. 421 Misdirected Request is the status
 	// for "this server does not serve that name".
-	if (!judgeHost(event.url.hostname, hostPolicy)) {
+	if (!judgeHost(arrived.hostname, hostPolicy)) {
 		return new Response(
-			`bordr does not answer to the hostname "${event.url.hostname}".\n\n` +
+			`bordr does not answer to the hostname "${arrived.hostname}".\n\n` +
 				`It serves loopback, its own HOST, Tailscale addresses and *.ts.net names. ` +
 				`For a proxy on your own domain, set BORDR_ALLOWED_HOSTS=that.domain in .env.\n`,
 			{ status: 421, headers: { 'content-type': 'text/plain; charset=utf-8' } }
@@ -114,7 +127,7 @@ export const handle: Handle = async ({ event, resolve }) => {
 			} catch {
 				originHost = null;
 			}
-			if (originHost !== event.url.host) {
+			if (originHost !== arrived.host) {
 				return new Response('cross-origin writes are not allowed', { status: 403 });
 			}
 		}

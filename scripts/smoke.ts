@@ -55,6 +55,22 @@ try {
 		const r = await page.goto(target, { waitUntil: 'domcontentloaded', timeout: 15_000 });
 		if (!r?.ok()) failures.push(`${path} returned ${r?.status()}`);
 	}
+
+	// GETs skip the CSRF Origin check; a proxied Unix socket that rewrites
+	// Host to localhost while the browser sends Origin: https://…:8444 passed
+	// every navigation above and refused every write with 403.
+	const writeProbe = await page.request.post(new URL('/api/read-state', url).toString(), {
+		headers: {
+			origin: new URL(url).origin,
+			'sec-fetch-site': 'same-origin'
+		},
+		data: {}
+	});
+	if (writeProbe.status() !== 400) {
+		failures.push(
+			`same-origin POST /api/read-state returned ${writeProbe.status()} (expected 400)`
+		);
+	}
 } catch (e) {
 	failures.push(`page never became usable: ${(e as Error).message.split('\n')[0]}`);
 }

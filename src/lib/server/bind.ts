@@ -166,9 +166,9 @@ export interface HostPolicy {
  * not, and both are documented ways to run it.
  */
 export function judgeHost(hostname: string, policy: HostPolicy): boolean {
-	if (policy.allowPublic === '1') return true;
 	const name = hostname.trim().toLowerCase();
 	if (!name) return false;
+	if (policy.allowPublic === '1') return true;
 	if (isLoopback(name) || isTailscale(name)) return true;
 	if (name.endsWith('.ts.net')) return true;
 	const bound = (policy.bindHost ?? '').trim().toLowerCase();
@@ -178,6 +178,58 @@ export function judgeHost(hostname: string, policy: HostPolicy): boolean {
 		.map((entry) => entry.trim().toLowerCase())
 		.filter(Boolean)
 		.includes(name);
+}
+
+export interface RequestHost {
+	/** Hostname without port, for `judgeHost`. Empty when `X-Forwarded-Host` is malformed. */
+	hostname: string;
+	/** `hostname` or `hostname:port`, as `URL.host` spells it, for the `Origin` check. */
+	host: string;
+}
+
+/**
+ * Which host this request arrived at.
+ *
+ * On TCP (`socketPath` unset), that is `url` (built from `Host`).
+ * `X-Forwarded-Host` is ignored on TCP: `Host` is a forbidden Fetch header in
+ * browsers, whereas page scripts on a DNS-rebound origin can set
+ * `X-Forwarded-Host` on same-origin `fetch` calls and would otherwise name
+ * `localhost` to step past `judgeHost`.
+ *
+ * On a private Unix socket (`socketPath` set and verified by `judgeBind`),
+ * browsers reach bordr through `tailscale serve unix:…`, which rewrites the
+ * upstream `Host` to `localhost` and puts the client's `Host` into
+ * `X-Forwarded-Host`. Honouring `X-Forwarded-Host` there makes both `judgeHost`
+ * and the CSRF `Origin` comparison check the public tailnet host rather than
+ * `localhost`. Direct local socket clients send no `X-Forwarded-Host` and fall
+ * back to `url`.
+ */
+export function requestHost(
+	url: Pick<URL, 'host' | 'hostname'>,
+	forwardedHost: string | null | undefined,
+	socketPath?: string
+): RequestHost {
+	if (!socketPath) return { hostname: url.hostname, host: url.host };
+	const raw = (forwardedHost ?? '').trim();
+	if (!raw) return { hostname: url.hostname, host: url.host };
+	if (raw.includes(',') || raw.includes('/') || raw.includes('\\') || raw.includes('@')) {
+		return { hostname: '', host: '' };
+	}
+	try {
+		const parsed = new URL(`http://${raw}`);
+		if (
+			parsed.pathname !== '/' ||
+			parsed.search ||
+			parsed.hash ||
+			parsed.username ||
+			parsed.password
+		) {
+			return { hostname: '', host: '' };
+		}
+		return { hostname: parsed.hostname, host: parsed.host };
+	} catch {
+		return { hostname: '', host: '' };
+	}
 }
 
 export const USERS_FLAG = 'BORDR_ALLOWED_USERS';

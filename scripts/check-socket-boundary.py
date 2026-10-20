@@ -37,6 +37,36 @@ with tempfile.TemporaryDirectory(prefix='bordr-socket-check-') as temporary:
                     client.sendall(b'GET /settings HTTP/1.1\r\nHost: localhost\r\nConnection: close\r\n\r\n')
                     response = client.recv(4096)
                     assert response.startswith(b'HTTP/1.1 200'), response.split(b'\r\n')[0]
+                with socket.socket(socket.AF_UNIX) as proxied:
+                    proxied.settimeout(15)
+                    proxied.connect(str(endpoint))
+                    proxied.sendall(
+                        b'POST /api/read-state HTTP/1.1\r\n'
+                        b'Host: localhost\r\n'
+                        b'X-Forwarded-Host: box.tail1234.ts.net:8444\r\n'
+                        b'Origin: https://box.tail1234.ts.net:8444\r\n'
+                        b'Sec-Fetch-Site: same-origin\r\n'
+                        b'Content-Type: application/json\r\n'
+                        b'Content-Length: 2\r\n'
+                        b'Connection: close\r\n\r\n{}'
+                    )
+                    response = proxied.recv(4096)
+                    assert response.startswith(b'HTTP/1.1 400'), response.split(b'\r\n')[0]
+                with socket.socket(socket.AF_UNIX) as cross_origin:
+                    cross_origin.settimeout(15)
+                    cross_origin.connect(str(endpoint))
+                    cross_origin.sendall(
+                        b'POST /api/read-state HTTP/1.1\r\n'
+                        b'Host: localhost\r\n'
+                        b'X-Forwarded-Host: box.tail1234.ts.net:8444\r\n'
+                        b'Origin: https://evil.example\r\n'
+                        b'Sec-Fetch-Site: same-origin\r\n'
+                        b'Content-Type: application/json\r\n'
+                        b'Content-Length: 2\r\n'
+                        b'Connection: close\r\n\r\n{}'
+                    )
+                    response = cross_origin.recv(4096)
+                    assert response.startswith(b'HTTP/1.1 403'), response.split(b'\r\n')[0]
                 with socket.socket() as tcp:
                     tcp.settimeout(1)
                     assert tcp.connect_ex(('127.0.0.1', port)) != 0, 'TCP listener exposed'
