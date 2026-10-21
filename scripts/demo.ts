@@ -24,11 +24,10 @@ await withDemoServer(explicitUrl, async (url) => {
 	const browser = await chromium.launch();
 	const context = await browser.newContext({
 		viewport: { width: 402, height: 800 },
-		deviceScaleFactor: 2,
 		colorScheme: 'light',
 		hasTouch: true,
 		serviceWorkers: 'block',
-		recordVideo: { dir: raw, size: { width: 804, height: 1600 } }
+		recordVideo: { dir: raw, size: { width: 402, height: 800 } }
 	});
 	const page = await context.newPage();
 	// Start with the agent working, so the question can arrive on camera.
@@ -225,13 +224,13 @@ execFileSync(
 		'-i',
 		join(raw, webm),
 		'-vf',
-		'fps=30,scale=604:-2:flags=lanczos',
+		'fps=30,scale=402:800:flags=lanczos',
 		'-c:v',
 		'libx264',
 		'-preset',
 		'slow',
 		'-crf',
-		'20',
+		'18',
 		'-pix_fmt',
 		'yuv420p',
 		'-movflags',
