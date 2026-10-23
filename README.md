@@ -305,7 +305,8 @@ two servers for one session fight over the same socket.
 
 Both shipped bordr units use a private Unix socket, not the TCP port from the
 manual trial. Set `BORDR_URL` in `.env` to the HTTPS URL printed by Tailscale so
-`bun run deploy` smoke-tests the same route the phone uses. When upgrading an
+`bun run deploy` smoke-tests the same route the phone uses; without it, the smoke
+check reaches the installed unit's socket directly. When upgrading an
 existing unit, replace its TCP Tailscale target with the socket target above;
 restarting bordr alone does not migrate that proxy. Check `tailscale serve status`
 and verify the former TCP port no longer accepts connections. Do not enable a
