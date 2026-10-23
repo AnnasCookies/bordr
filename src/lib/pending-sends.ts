@@ -172,6 +172,26 @@ export function keepPending(
 	});
 }
 
+/**
+ * Re-stamp an accepted send on the server's clock.
+ *
+ * An echo is retired by a transcript prompt stamped no earlier than the send
+ * (`keepPending`). The transcript is stamped by the machine running the
+ * agent; the echo was stamped by the phone. A phone a second ahead put every
+ * delivery "before" its own send, so it never matched and the prompt showed
+ * twice for the rest of the turn. The send routes return their receipt time,
+ * taken before the text reaches herdr: the right clock, and earlier than the
+ * delivery by construction. A response without one keeps the phone's time.
+ */
+export function receivedAt(body: { at?: unknown } | null, now = Date.now()): Partial<PendingSend> {
+	const at = body?.at;
+	return {
+		state: 'queued',
+		deliveredAt: now,
+		...(typeof at === 'number' && Number.isFinite(at) && { at })
+	};
+}
+
 /** A page reload cannot turn an interrupted request into a delivery acknowledgment. */
 export function restorePending(p: PendingSend): PendingSend {
 	return { ...p, state: p.state === 'sending' ? 'unconfirmed' : p.state };
