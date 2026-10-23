@@ -82,6 +82,7 @@
 	import { glideInterrupted } from './glide-interrupt';
 	import {
 		keepPending,
+		receivedAt,
 		restorePending,
 		seenIn,
 		transcriptPrompts,
@@ -1221,25 +1222,6 @@
 		} catch {
 			// Persistence is best effort; the visible echo still receives the acknowledgment.
 		}
-	}
-
-	/**
-	 * Re-stamp an accepted send on the server's clock.
-	 *
-	 * The echo is retired by a transcript prompt stamped no earlier than the
-	 * send. The transcript is stamped by the rig; the echo was stamped by the
-	 * phone. A phone running a second ahead of the rig put every delivery
-	 * "before" its own send, so it never matched and the prompt showed twice
-	 * for the rest of the turn. The server's receipt time is on the right
-	 * clock and precedes the delivery by construction.
-	 */
-	function receivedAt(body: { at?: unknown } | null): Partial<Pending> {
-		const at = body?.at;
-		return {
-			state: 'queued',
-			deliveredAt: Date.now(),
-			...(typeof at === 'number' && Number.isFinite(at) && { at })
-		};
 	}
 
 	/** Remove an optimistic send after its request failed on a pane now off-screen. */

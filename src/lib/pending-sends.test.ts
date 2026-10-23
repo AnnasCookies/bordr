@@ -5,6 +5,7 @@ import {
 	keepPending,
 	landedIn,
 	onScreen,
+	receivedAt,
 	say,
 	seenIn,
 	transcriptPrompts,
@@ -106,6 +107,33 @@ describe('keepPending', () => {
 			expect(keepPending([sent], [{ text: 'run the tests', at: 0 }], false, NOW, 1)).toEqual([
 				sent
 			]);
+		}
+	});
+
+	/**
+	 * The duplicate-message bug. The phone stamped the echo, the agent's machine
+	 * stamped the transcript, and a phone running ahead put the delivery before
+	 * the send: both bubbles stayed for the whole turn.
+	 */
+	it('retires a delivery stamped before a fast phone clock once re-stamped by the server', () => {
+		const server = NOW;
+		const phone = server + 1_500;
+		const landed = [{ text: 'run the tests', at: server + 400 }];
+		const sent = pending({ at: phone });
+		expect(keepPending([sent], landed, false, NOW)).toEqual([sent]);
+		const acknowledged = { ...sent, ...receivedAt({ at: server }, NOW) };
+		expect(keepPending([acknowledged], landed, false, NOW)).toEqual([]);
+	});
+});
+
+describe('receivedAt', () => {
+	it("takes the server's receipt time", () => {
+		expect(receivedAt({ at: 42 }, NOW)).toEqual({ state: 'queued', deliveredAt: NOW, at: 42 });
+	});
+
+	it("keeps the phone's time when the server sent none or nonsense", () => {
+		for (const body of [null, {}, { at: '42' }, { at: Number.NaN }, { at: Infinity }]) {
+			expect(receivedAt(body, NOW)).toEqual({ state: 'queued', deliveredAt: NOW });
 		}
 	});
 });
