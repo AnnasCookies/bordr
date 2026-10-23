@@ -79,6 +79,8 @@ export const POST: RequestHandler = async ({ params, request }) => {
 	const allPhotos = files.every((file) => file.type in PHOTO_TYPES);
 	const text = attachPrompt(paths, allPhotos, caption);
 
+	// See the prompt route: the transcript's clock, not the phone's.
+	const at = Date.now();
 	try {
 		await promptAgent(params.pane, text);
 	} catch (e) {
@@ -86,5 +88,5 @@ export const POST: RequestHandler = async ({ params, request }) => {
 		if (e instanceof HerdrRequestError) throw error(409, e.message);
 		throw e;
 	}
-	return json({ ok: true, paths });
+	return json({ ok: true, paths, at });
 };
