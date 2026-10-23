@@ -1223,6 +1223,25 @@
 		}
 	}
 
+	/**
+	 * Re-stamp an accepted send on the server's clock.
+	 *
+	 * The echo is retired by a transcript prompt stamped no earlier than the
+	 * send. The transcript is stamped by the rig; the echo was stamped by the
+	 * phone. A phone running a second ahead of the rig put every delivery
+	 * "before" its own send, so it never matched and the prompt showed twice
+	 * for the rest of the turn. The server's receipt time is on the right
+	 * clock and precedes the delivery by construction.
+	 */
+	function receivedAt(body: { at?: unknown } | null): Partial<Pending> {
+		const at = body?.at;
+		return {
+			state: 'queued',
+			deliveredAt: Date.now(),
+			...(typeof at === 'number' && Number.isFinite(at) && { at })
+		};
+	}
+
 	/** Remove an optimistic send after its request failed on a pane now off-screen. */
 	function removeStoredPending(paneId: string, id: number) {
 		const key = pendingStorageKey(paneId);
@@ -2649,6 +2668,8 @@
 				// Same reason there is no JSON body to read on a 413.
 				if (sent.status === 413) throw new Error(TOO_LARGE);
 				if (!sent.ok) throw await failure(sent, 'upload');
+				const body = (await sent.json().catch(() => null)) as { at?: unknown } | null;
+				if (optimistic) acknowledgePending(paneId, optimistic, receivedAt(body));
 				clearAttachments();
 			} else {
 				const sent = await fetch(`/api/agents/${encodeURIComponent(paneId)}/prompt`, {
@@ -2659,19 +2680,15 @@
 				if (!sent.ok) throw await failure(sent, 'send');
 				const body = (await sent.json().catch(() => null)) as {
 					command?: { name?: string; message?: string } | null;
+					at?: unknown;
 				} | null;
 				if (optimistic)
 					acknowledgePending(paneId, optimistic, {
+						...receivedAt(body),
 						state: body?.command ? 'accepted' : 'queued',
-						deliveredAt: Date.now(),
 						...(body?.command?.message && { receipt: body.command.message })
 					});
 			}
-			if (hadAttachments && optimistic)
-				acknowledgePending(paneId, optimistic, {
-					state: 'queued',
-					deliveredAt: Date.now()
-				});
 		} catch (e) {
 			if (optimistic) {
 				removeStoredPending(paneId, optimistic);
