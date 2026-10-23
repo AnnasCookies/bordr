@@ -12,6 +12,7 @@
 	import { armChimes, chime } from '$lib/chime';
 	import { alertsFor, snapshot } from '$lib/alerts';
 	import { netBusy } from '$lib/pending.svelte';
+	import { mayReload, reloadHolds, typingUnsaved } from '$lib/reload-guard.svelte';
 	import type { AgentStatus } from '$lib/types';
 	let { children } = $props();
 
@@ -164,6 +165,58 @@
 	});
 
 	/**
+	 * Load the new build without the tap, when nothing would be lost.
+	 *
+	 * The rules are in $lib/reload-guard.svelte.ts. This only watches the
+	 * moment: when you last touched the page, whether it is showing, and
+	 * whether a page or a request has asked to hold. A page that comes back
+	 * stale straight after reloading itself keeps the banner instead — a
+	 * reload that cannot fix the staleness must not become a loop.
+	 */
+	const AUTO_RELOAD_KEY = 'bordr-auto-reload';
+	const AUTO_RELOAD_COOLDOWN_MS = 5 * 60_000;
+	const stale = $derived(updated.current || workerSaysStale);
+	let lastTouched = Date.now();
+	$effect(() => {
+		const touched = () => (lastTouched = Date.now());
+		const events = ['pointerdown', 'keydown', 'wheel', 'touchstart', 'scroll'] as const;
+		for (const name of events) addEventListener(name, touched, { passive: true, capture: true });
+		return () => {
+			for (const name of events) removeEventListener(name, touched, { capture: true });
+		};
+	});
+	$effect(() => {
+		if (!stale) return;
+		const consider = () => {
+			const moment = {
+				stale: true,
+				held: reloadHolds.any,
+				busy: netBusy.active,
+				typing: typingUnsaved(document.activeElement),
+				hidden: document.visibilityState === 'hidden',
+				idleMs: Date.now() - lastTouched
+			};
+			if (!mayReload(moment)) return;
+			try {
+				const last = Number(sessionStorage.getItem(AUTO_RELOAD_KEY) ?? 0);
+				if (Date.now() - last < AUTO_RELOAD_COOLDOWN_MS) return;
+				sessionStorage.setItem(AUTO_RELOAD_KEY, String(Date.now()));
+			} catch {
+				// Without storage there is no loop guard, so leave it to the banner.
+				return;
+			}
+			location.reload();
+		};
+		consider();
+		const timer = setInterval(consider, 5_000);
+		document.addEventListener('visibilitychange', consider);
+		return () => {
+			clearInterval(timer);
+			document.removeEventListener('visibilitychange', consider);
+		};
+	});
+
+	/**
 	 * A noise when an agent starts needing you, or finishes.
 	 *
 	 * In the layout because it should sound wherever you are in the app — the
@@ -269,11 +322,12 @@
 		? ''
 		: 'false'}
 >
-	{#if updated.current || workerSaysStale}
+	{#if stale}
 		<!--
-			Never reloaded for the person: a draft or a dictation in flight would
-			be lost. SvelteKit already makes the next navigation a full load;
-			this is for the page that never navigates.
+			The fallback for a page that cannot reload itself yet: a dictation, an
+			unsent photo, a request in flight, a field being typed into, or history
+			being read. Otherwise the effect above reloads it unprompted. SvelteKit
+			already makes the next navigation a full load.
 		-->
 		<!--
 			Along the bottom, not the top. At the top it sat straight over the

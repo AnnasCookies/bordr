@@ -71,6 +71,7 @@
 	import Spinner from '$lib/components/spinner.svelte';
 	import BubbleMeta from '$lib/components/bubble-meta.svelte';
 	import { track } from '$lib/pending.svelte';
+	import { holdReload } from '$lib/reload-guard.svelte';
 	import { nextFollowing } from '$lib/follow';
 	import { swipeSequence } from '$lib/swipe-order';
 	import { glideDuration, glidePosition } from '$lib/glide';
@@ -1878,6 +1879,13 @@
 	 * reader's decision alone.
 	 */
 	let following = $state(true);
+
+	// What a self-reload would still lose on this page; see reload-guard.
+	// Drafts are not here: they are saved, and the composer says so.
+	$effect(() => {
+		holdReload('agent-page', attachments.length > 0 || dictating || busy || !following);
+		return () => holdReload('agent-page', false);
+	});
 	let lastTop = 0;
 	/** Auto-history only follows a real upward reader scroll, never first-layout geometry. */
 	let historyScrollIntent = false;
@@ -4155,6 +4163,7 @@
 							disappears the moment you type into it.
 						-->
 						<textarea
+							data-draft-saved
 							bind:this={textarea}
 							bind:value={draft}
 							onfocus={holdComposerRefresh}
