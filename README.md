@@ -348,7 +348,10 @@ restarts the service and smoke tests it. The unit runs that copy
 rather than `build/`, so a build for a check never swaps files under the running
 app. A phone that has the app open keeps running the old code until it
 reloads, so the app checks for a new build every 30 seconds (and whenever it
-comes back to the foreground) and offers a "tap to reload" pill.
+comes back to the foreground). It loads the new build by itself once the page
+is in the background or untouched for a minute, and falls back to a "tap to
+reload" pill while a reload would lose something: a dictation, unsent photos,
+a request in flight, an unsaved field with focus, or a scrolled-back transcript.
 
 Already-installed units must be upgraded too: re-run
 `deploy/install-system-units.sh` (or copy `deploy/user/bordr.service` and run
