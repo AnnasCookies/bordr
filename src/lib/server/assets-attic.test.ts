@@ -95,3 +95,32 @@ it('records only what the build emitted, once, when the adapter step hands it ov
 		await rm(dir, { recursive: true, force: true });
 	}
 });
+
+it("adopts the running release's chunks before a deploy build, by its retirement rule", async () => {
+	const dir = await mkdtemp(join(tmpdir(), 'bordr-attic-adopt-'));
+	const script = resolve('scripts/assets-attic.ts');
+	const live = join(dir, 'live');
+	const chunks = join(live, 'client/_app/immutable');
+	const attic = join(dir, '.attic/build/immutable');
+	try {
+		await mkdir(chunks, { recursive: true });
+		await writeFile(join(chunks, 'emitted.js'), 'emitted');
+		await writeFile(join(chunks, 'kept.js'), 'kept');
+		await writeFile(join(chunks, 'expired.js'), 'expired');
+		await writeFile(join(live, '.emitted-assets.json'), JSON.stringify(['emitted.js']));
+		const aged = new Date(Date.now() - 8 * 86400_000);
+		await utimes(join(chunks, 'emitted.js'), aged, aged);
+		await utimes(join(chunks, 'expired.js'), aged, aged);
+		execFileSync('bun', [script, 'adopt'], {
+			cwd: dir,
+			env: { ...process.env, BORDR_BUILD_OUT: 'build', BORDR_LIVE_DIR: live },
+			stdio: 'pipe'
+		});
+		// Emitted by the running release: its week starts now, however old.
+		expect(Date.now() - (await stat(join(attic, 'emitted.js'))).mtimeMs).toBeLessThan(60_000);
+		expect((await stat(join(attic, 'kept.js'))).isFile()).toBe(true);
+		await expect(stat(join(attic, 'expired.js'))).rejects.toThrow();
+	} finally {
+		await rm(dir, { recursive: true, force: true });
+	}
+});

@@ -16,6 +16,7 @@
  * to deploy a single-page app; deleting them is the thing that breaks open
  * clients.
  *
+ *   adopt    before a deploy build: fold the running release's into the attic
  *   stash    before the build: fold what is there now into the attic
  *   restore  after it: put back anything the new build does not have
  *
@@ -25,6 +26,7 @@
 
 import { cp, mkdir, readdir, rm, stat, utimes, readFile, writeFile } from 'node:fs/promises';
 import { existsSync } from 'node:fs';
+import { homedir } from 'node:os';
 import { dirname, join, relative } from 'node:path';
 
 const OUT = process.env.BORDR_BUILD_OUT ?? 'build';
@@ -93,6 +95,37 @@ async function stash(): Promise<void> {
 }
 
 /**
+ * Fold the running release's hashed assets into the attic.
+ *
+ * publish-build.ts copies them into each new release as well, but that copy
+ * lands after the Bun adapter has listed what it will serve, so a chunk that
+ * only the running release had would 404. The same retirement rule as that
+ * copy: what the release emitted starts its week now, and anything it was
+ * already keeping only stays while its own week lasts.
+ */
+async function adopt(live: string): Promise<void> {
+	const from = join(live, 'client', '_app', 'immutable');
+	if (!existsSync(from)) return;
+	const emitted = await emittedAssets(live);
+	let added = 0;
+	for (const file of await walk(from)) {
+		const to = join(ATTIC, file);
+		if (existsSync(to)) continue;
+		const source = join(from, file);
+		const retiring = emitted.has(file);
+		if (!retiring && Date.now() - (await stat(source)).mtimeMs > KEEP_MS) continue;
+		await mkdir(dirname(to), { recursive: true });
+		await cp(source, to, { preserveTimestamps: true });
+		if (retiring) {
+			const now = new Date();
+			await utimes(to, now, now);
+		}
+		added += 1;
+	}
+	console.error(`assets-attic: adopted ${added} asset(s) from the running release`);
+}
+
+/**
  * Copy every unexpired attic file that `into` lacks, pruning expired ones.
  *
  * Runs twice per build. The Bun adapter serves only the files it listed at
@@ -141,10 +174,12 @@ async function restore(): Promise<void> {
 
 if (import.meta.main) {
 	const mode = process.argv[2];
-	if (mode === 'stash') await stash();
+	if (mode === 'adopt')
+		await adopt(process.env.BORDR_LIVE_DIR ?? join(homedir(), '.local', 'lib', 'bordr'));
+	else if (mode === 'stash') await stash();
 	else if (mode === 'restore') await restore();
 	else {
-		console.error('usage: assets-attic.ts stash|restore');
+		console.error('usage: assets-attic.ts adopt|stash|restore');
 		process.exit(2);
 	}
 }
