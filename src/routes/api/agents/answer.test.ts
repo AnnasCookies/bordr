@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { keysForOption } from '$lib/server/picker';
+import { keysForOption } from '#lib/server/picker.js';
 
 describe('keysForOption', () => {
 	it('sends the option digit — absolute, so no arrow counting', () => {

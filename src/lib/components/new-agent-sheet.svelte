@@ -1,12 +1,12 @@
 <script lang="ts">
 	import Spinner from './spinner.svelte';
-	import { track } from '$lib/pending.svelte';
+	import { track } from '#lib/pending.svelte.js';
 	import { goto } from '$app/navigation';
 	import { resolve } from '$app/paths';
 	import { page } from '$app/state';
-	import { replacesHistory } from '$lib/back';
-	import { prefs } from '$lib/prefs.svelte';
-	import { harnessText } from '$lib/theme';
+	import { replacesHistory } from '#lib/back.js';
+	import { prefs } from '#lib/prefs.svelte.js';
+	import { harnessText } from '#lib/theme.js';
 
 	let { open, onclose }: { open: boolean; onclose: () => void } = $props();
 
@@ -132,9 +132,9 @@
 			if (!response.ok || !result.paneId) {
 				throw new Error(result.message ?? `spawn failed: ${response.status}`);
 			}
-			// Pushed from the list, replaced from anywhere else: see $lib/back.
+			// Pushed from the list, replaced from anywhere else: see src/lib/back.
 			await goto(resolve('/a/[pane]', { pane: result.paneId }), {
-				replaceState: replacesHistory(prefs.value.backTo, page.url.pathname)
+				replace: replacesHistory(prefs.value.backTo, page.url.pathname)
 			});
 			onclose();
 		} catch (e) {

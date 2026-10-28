@@ -5,7 +5,7 @@ const fixture = vi.hoisted(() => ({
 		method === 'workspace.create' ? { workspace: { workspace_id: 'w1' } } : {}
 	)
 }));
-vi.mock('$lib/server/herdr', () => ({
+vi.mock('#lib/server/herdr/index.js', () => ({
 	getClient: () => ({ request: fixture.request }),
 	HerdrRequestError: class extends Error {},
 	sendText: vi.fn(),
@@ -15,7 +15,7 @@ vi.mock('$lib/server/herdr', () => ({
 	settleScreen: async () => {},
 	waitForActiveAgent: async () => true
 }));
-vi.mock('$lib/server/herdr/workspace-pane', () => ({
+vi.mock('#lib/server/herdr/workspace-pane.js', () => ({
 	waitForWorkspacePane: async () => 'w1:p1'
 }));
 

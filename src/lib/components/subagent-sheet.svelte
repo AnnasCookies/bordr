@@ -1,8 +1,8 @@
 <script lang="ts">
 	import MessageBlocks from './message-blocks.svelte';
-	import { prefs } from '$lib/prefs.svelte';
-	import type { Message } from '$lib/server/transcript/types';
-	import type { SubagentSummary } from '$lib/server/transcript/subagents';
+	import { prefs } from '#lib/prefs.svelte.js';
+	import type { Message } from '#lib/server/transcript/types.js';
+	import type { SubagentSummary } from '#lib/server/transcript/subagents.js';
 
 	/**
 	 * A sub-agent's conversation, over the one that spawned it.

@@ -12,12 +12,17 @@ async function staleSettings(page: Page) {
 	);
 	await page.goto('/settings');
 	// The layout re-checks the version whenever the page comes back into view.
-	await page.evaluate(() => document.dispatchEvent(new Event('visibilitychange')));
-	await expect(page.getByRole('button', { name: /bordr has updated/ })).toBeVisible();
+	// Repeated because the first event can land before hydration has attached
+	// the listener; a real phone only sends one long after.
+	const banner = page.getByRole('button', { name: /bordr has updated/ });
+	await expect(async () => {
+		await page.evaluate(() => document.dispatchEvent(new Event('visibilitychange')));
+		await expect(banner).toBeVisible({ timeout: 500 });
+	}).toPass();
 	await page.evaluate(() => ((window as unknown as { marker: boolean }).marker = true));
 }
 
-// IDLE_MS in $lib/reload-guard.svelte.ts. A runes module cannot be imported
+// IDLE_MS in src/lib/reload-guard.svelte.ts. A runes module cannot be imported
 // outside the Svelte compiler, so it is restated here.
 const IDLE_MS = 60_000;
 

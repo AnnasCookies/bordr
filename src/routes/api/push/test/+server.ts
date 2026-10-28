@@ -1,5 +1,5 @@
 import { json } from '@sveltejs/kit';
-import { sendToAll } from '$lib/server/push';
+import { sendToAll } from '#lib/server/push.js';
 import type { RequestHandler } from './$types';
 
 /** Fire a test notification to every subscription and report each result. */

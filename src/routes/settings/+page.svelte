@@ -5,22 +5,22 @@
 		type PreviewMode,
 		type SortBy,
 		type Theme
-	} from '$lib/prefs.svelte';
-	import SettingRow from '$lib/components/setting-row.svelte';
-	import ToggleRow from '$lib/components/toggle-row.svelte';
-	import ColourRow from '$lib/components/colour-row.svelte';
-	import TabBar from '$lib/components/tab-bar.svelte';
-	import AppHeader from '$lib/components/app-header.svelte';
-	import SessionTree from '$lib/components/session-tree.svelte';
-	import { screen, watchWide } from '$lib/wide.svelte';
-	import SettingsNav from '$lib/components/settings-nav.svelte';
-	import SettingsSection from '$lib/components/settings-section.svelte';
-	import { ROUTED, SECTIONS } from '$lib/settings-sections';
+	} from '#lib/prefs.svelte.js';
+	import SettingRow from '#lib/components/setting-row.svelte';
+	import ToggleRow from '#lib/components/toggle-row.svelte';
+	import ColourRow from '#lib/components/colour-row.svelte';
+	import TabBar from '#lib/components/tab-bar.svelte';
+	import AppHeader from '#lib/components/app-header.svelte';
+	import SessionTree from '#lib/components/session-tree.svelte';
+	import { screen, watchWide } from '#lib/wide.svelte.js';
+	import SettingsNav from '#lib/components/settings-nav.svelte';
+	import SettingsSection from '#lib/components/settings-section.svelte';
+	import { ROUTED, SECTIONS } from '#lib/settings-sections.js';
 	import { page } from '$app/state';
-	import Icon from '$lib/components/icon.svelte';
-	import { checkPush, togglePushDetailed, type PushState } from '$lib/push-client';
+	import Icon from '#lib/components/icon.svelte';
+	import { checkPush, togglePushDetailed, type PushState } from '#lib/push-client.js';
 	import { onMount } from 'svelte';
-	import { reduceMotion } from '$lib/motion';
+	import { reduceMotion } from '#lib/motion.js';
 	import { resolve } from '$app/paths';
 	import type {
 		BackTo,
@@ -44,15 +44,15 @@
 		PaneView,
 		TerminalFit,
 		TerminalDensity
-	} from '$lib/prefs.svelte';
-	import MessageBlocks from '$lib/components/message-blocks.svelte';
-	import Bubble from '$lib/components/bubble.svelte';
-	import BubbleMeta from '$lib/components/bubble-meta.svelte';
-	import Ticks from '$lib/components/ticks.svelte';
-	import Spinner from '$lib/components/spinner.svelte';
-	import { clockTime } from '$lib/clock-time';
+	} from '#lib/prefs.svelte.js';
+	import MessageBlocks from '#lib/components/message-blocks.svelte';
+	import Bubble from '#lib/components/bubble.svelte';
+	import BubbleMeta from '#lib/components/bubble-meta.svelte';
+	import Ticks from '#lib/components/ticks.svelte';
+	import Spinner from '#lib/components/spinner.svelte';
+	import { clockTime } from '#lib/clock-time.js';
 	// Aliased: `ToolDetail` is already the name of the preference type.
-	import ToolDetailView from '$lib/components/tool-detail.svelte';
+	import ToolDetailView from '#lib/components/tool-detail.svelte';
 	import {
 		harnessBubble,
 		harnessHex,
@@ -61,17 +61,17 @@
 		STATUS_RAIL,
 		STATUS_SYMBOL,
 		STATUS_WORD
-	} from '$lib/theme';
+	} from '#lib/theme.js';
 	import {
 		bubbleInk,
 		fillFar,
 		fillWorstContrast,
 		DEFAULT_FILL,
 		DEFAULT_USER
-	} from '$lib/bubble-colour';
-	import HarnessMark from '$lib/components/harness-mark.svelte';
-	import CodeBlock from '$lib/components/code-block.svelte';
-	import type { Block } from '$lib/server/transcript/types';
+	} from '#lib/bubble-colour.js';
+	import HarnessMark from '#lib/components/harness-mark.svelte';
+	import CodeBlock from '#lib/components/code-block.svelte';
+	import type { Block } from '#lib/server/transcript/types.js';
 
 	/**
 	 * The examples under each setting are rendered by the SAME components the

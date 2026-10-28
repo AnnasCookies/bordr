@@ -1,6 +1,6 @@
 import { error, json } from '@sveltejs/kit';
-import { commandReceipt } from '$lib/server/command-receipt';
-import { HerdrRequestError, promptAgent, readVisible } from '$lib/server/herdr';
+import { commandReceipt } from '#lib/server/command-receipt.js';
+import { HerdrRequestError, promptAgent, readVisible } from '#lib/server/herdr/index.js';
 import type { RequestHandler } from './$types';
 
 export const POST: RequestHandler = async ({ params, request }) => {

@@ -1,4 +1,4 @@
-import type { WorkspaceNode } from '$lib/types';
+import type { WorkspaceNode } from '#lib/types.js';
 
 /**
  * The part of /api/panes that can change the conversation's split geometry.

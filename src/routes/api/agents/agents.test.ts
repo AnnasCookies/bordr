@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { sortAgents, toSummary } from '$lib/server/herdr';
+import { sortAgents, toSummary } from '#lib/server/herdr/index.js';
 
 const RAW = {
 	pane_id: 'w2:p1',

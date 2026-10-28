@@ -2,18 +2,18 @@
 	import './layout.css';
 	import { navigating, page, updated } from '$app/state';
 	import { afterNavigate, beforeNavigate } from '$app/navigation';
-	import { browser } from '$app/environment';
-	import { homeBelowAfter, replacesHistory, stepsBackHome } from '$lib/back';
+	import { browser } from '$app/env';
+	import { homeBelowAfter, replacesHistory, stepsBackHome } from '#lib/back.js';
 	import { onMount } from 'svelte';
-	import { installCapture } from '$lib/install-event.svelte';
-	import { prefs } from '$lib/prefs.svelte';
-	import { reportStandalone } from '$lib/push-client';
-	import { agentStore } from '$lib/agents.svelte';
-	import { armChimes, chime } from '$lib/chime';
-	import { alertsFor, snapshot } from '$lib/alerts';
-	import { netBusy } from '$lib/pending.svelte';
-	import { mayReload, reloadHolds, typingUnsaved } from '$lib/reload-guard.svelte';
-	import type { AgentStatus } from '$lib/types';
+	import { installCapture } from '#lib/install-event.svelte.js';
+	import { prefs } from '#lib/prefs.svelte.js';
+	import { reportStandalone } from '#lib/push-client.js';
+	import { agentStore } from '#lib/agents.svelte.js';
+	import { armChimes, chime } from '#lib/chime.js';
+	import { alertsFor, snapshot } from '#lib/alerts.js';
+	import { netBusy } from '#lib/pending.svelte.js';
+	import { mayReload, reloadHolds, typingUnsaved } from '#lib/reload-guard.svelte.js';
+	import type { AgentStatus } from '#lib/types.js';
 	let { children } = $props();
 
 	/**
@@ -51,8 +51,10 @@
 	 * underneath. Tracked here because only the layout sees every navigation.
 	 */
 	let homeBelow = false;
+	// SvelteKit 3 reports shallow URL updates (replaceState) here too; they
+	// move nothing in history this tracks, so they must not count.
 	beforeNavigate((nav) => {
-		if (!nav.to || !nav.from) return;
+		if (nav.shallow || !nav.to || !nav.from) return;
 		const move = {
 			type: nav.type,
 			from: nav.from.url.pathname,
@@ -65,6 +67,7 @@
 		queueMicrotask(() => history.back());
 	});
 	afterNavigate((nav) => {
+		if (nav.shallow) return;
 		homeBelow = homeBelowAfter(
 			homeBelow,
 			{
@@ -167,7 +170,7 @@
 	/**
 	 * Load the new build without the tap, when nothing would be lost.
 	 *
-	 * The rules are in $lib/reload-guard.svelte.ts. This only watches the
+	 * The rules are in src/lib/reload-guard.svelte.ts. This only watches the
 	 * moment: when you last touched the page, whether it is showing, and
 	 * whether a page or a request has asked to hold. A page that comes back
 	 * stale straight after reloading itself keeps the banner instead — a

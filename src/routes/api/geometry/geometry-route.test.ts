@@ -1,12 +1,12 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { HerdrHangupError, HerdrRequestError } from '$lib/server/herdr/client';
+import { HerdrHangupError, HerdrRequestError } from '#lib/server/herdr/client.js';
 
 const herdr = vi.hoisted(() => ({
 	request: vi.fn(),
 	clientFor: vi.fn()
 }));
-vi.mock('$lib/server/herdr', async () => ({
-	HerdrRequestError: (await import('$lib/server/herdr/client')).HerdrRequestError,
+vi.mock('#lib/server/herdr/index.js', async () => ({
+	HerdrRequestError: (await import('#lib/server/herdr/client.js')).HerdrRequestError,
 	clientFor: herdr.clientFor
 }));
 

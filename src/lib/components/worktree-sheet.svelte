@@ -1,9 +1,9 @@
 <script lang="ts">
 	import { onMount, untrack } from 'svelte';
-	import { track } from '$lib/pending.svelte';
+	import { track } from '#lib/pending.svelte.js';
 	import Spinner from './spinner.svelte';
-	import { collapseHome } from '$lib/grouping';
-	import type { WorktreeList } from '$lib/server/herdr/controls';
+	import { collapseHome } from '#lib/grouping.js';
+	import type { WorktreeList } from '#lib/server/herdr/controls.js';
 
 	/**
 	 * The repository's checkouts, and a new one.

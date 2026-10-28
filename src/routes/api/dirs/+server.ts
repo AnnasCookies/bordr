@@ -2,7 +2,7 @@ import { readdirSync, realpathSync, statSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { join, resolve, sep } from 'node:path';
 import { json } from '@sveltejs/kit';
-import { createHomeDirectory, DirectoryError, homeDisplay } from '$lib/server/home-directories';
+import { createHomeDirectory, DirectoryError, homeDisplay } from '#lib/server/home-directories.js';
 import type { RequestHandler } from './$types';
 
 const HOME = homedir();

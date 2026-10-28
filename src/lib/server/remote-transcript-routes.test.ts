@@ -12,7 +12,7 @@ const fixture = vi.hoisted(() => ({
 	remote: vi.fn(),
 	adapter: vi.fn()
 }));
-vi.mock('$lib/server/herdr', () => ({
+vi.mock('#lib/server/herdr/index.js', () => ({
 	rawAgent: async () => ({
 		pane_id: 'remote~w1:p1',
 		agent: 'codex',
@@ -26,11 +26,11 @@ vi.mock('$lib/server/herdr', () => ({
 	sendText: vi.fn(),
 	getClient: vi.fn()
 }));
-vi.mock('$lib/server/herdr/connections', () => ({
+vi.mock('#lib/server/herdr/connections.js', () => ({
 	ensureConnection: async () => ({ machine: { id: 'remote' }, client: { sourceScope: 'fixture' } }),
 	remoteTranscriptTail: fixture.remote
 }));
-vi.mock('$lib/server/transcript', () => ({ adapterFor: fixture.adapter }));
+vi.mock('#lib/server/transcript/index.js', () => ({ adapterFor: fixture.adapter }));
 import { POST } from '../../routes/api/agents/[pane]/answer/+server';
 import { GET } from '../../routes/api/agents/[pane]/subagents/[id]/+server';
 

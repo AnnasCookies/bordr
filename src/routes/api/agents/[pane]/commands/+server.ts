@@ -1,7 +1,7 @@
 import { error, json } from '@sveltejs/kit';
-import { rawAgent } from '$lib/server/herdr';
-import { parsePane } from '$lib/server/herdr/address';
-import { commandsFor } from '$lib/server/commands';
+import { rawAgent } from '#lib/server/herdr/index.js';
+import { parsePane } from '#lib/server/herdr/address.js';
+import { commandsFor } from '#lib/server/commands.js';
 import type { RequestHandler } from './$types';
 
 /** The slash commands this pane's harness knows, for the composer's `/` list. */

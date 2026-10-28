@@ -1,8 +1,8 @@
 import { readFileSync, statSync } from 'node:fs';
 import { basename, extname } from 'node:path';
 import { error } from '@sveltejs/kit';
-import { MIME, resolveSafe } from '$lib/server/files';
-import { allowsArtefact } from '$lib/server/artefact-token';
+import { MIME, resolveSafe } from '#lib/server/files.js';
+import { allowsArtefact } from '#lib/server/artefact-token.js';
 import type { RequestHandler } from './$types';
 
 const MAX_BYTES = 50 * 1024 * 1024;

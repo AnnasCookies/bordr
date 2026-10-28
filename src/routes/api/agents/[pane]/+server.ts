@@ -1,5 +1,5 @@
 import { createHash } from 'node:crypto';
-import { readScopeFor } from '$lib/server/state-store';
+import { readScopeFor } from '#lib/server/state-store.js';
 import { error } from '@sveltejs/kit';
 import {
 	clientFor,
@@ -10,32 +10,32 @@ import {
 	toSummary,
 	tabLabels,
 	workspaceLabels
-} from '$lib/server/herdr';
-import { adapterFor } from '$lib/server/transcript';
-import { agentCwd } from '$lib/server/transcript/cwd';
-import { parsePane } from '$lib/server/herdr/address';
-import { branchesFor } from '$lib/server/herdr/branches';
-import { pullFor } from '$lib/server/herdr/pulls';
-import { ensureConnection, remoteTranscriptTail } from '$lib/server/herdr/connections';
-import { backfillBlocks } from '$lib/server/transcript/types';
+} from '#lib/server/herdr/index.js';
+import { adapterFor } from '#lib/server/transcript/index.js';
+import { agentCwd } from '#lib/server/transcript/cwd.js';
+import { parsePane } from '#lib/server/herdr/address.js';
+import { branchesFor } from '#lib/server/herdr/branches.js';
+import { pullFor } from '#lib/server/herdr/pulls.js';
+import { ensureConnection, remoteTranscriptTail } from '#lib/server/herdr/connections.js';
+import { backfillBlocks } from '#lib/server/transcript/types.js';
 import {
 	DEFAULT_TAIL_BYTES,
 	MAX_TAIL_BYTES,
 	readTranscriptHead,
 	readTranscriptTail
-} from '$lib/server/transcript/tail';
-import { listSubagents } from '$lib/server/transcript/subagents';
-import { parseQueue, type QueuedPrompt } from '$lib/server/transcript/queue';
-import { latestModel, parseModel } from '$lib/server/transcript/model';
-import { menuFooter, parsePicker, pendingAsk, suggestionFrom } from '$lib/server/picker';
-import { piSessionEnded } from '$lib/server/transcript/pi';
-import { resolveLocalTranscript } from '$lib/server/transcript/resolve';
-import { extractStatusLines } from '$lib/server/status';
-import { extractActivity } from '$lib/server/activity';
-import { piScreenWorking, piTranscriptSettled, piStatusDiagnostic } from '$lib/server/pi-status';
-import { stripAnsi } from '$lib/ansi';
-import { cleanSnapshot } from '$lib/server/snapshot';
-import type { AgentDetail, Message } from '$lib/types';
+} from '#lib/server/transcript/tail.js';
+import { listSubagents } from '#lib/server/transcript/subagents.js';
+import { parseQueue, type QueuedPrompt } from '#lib/server/transcript/queue.js';
+import { latestModel, parseModel } from '#lib/server/transcript/model.js';
+import { menuFooter, parsePicker, pendingAsk, suggestionFrom } from '#lib/server/picker.js';
+import { piSessionEnded } from '#lib/server/transcript/pi.js';
+import { resolveLocalTranscript } from '#lib/server/transcript/resolve.js';
+import { extractStatusLines } from '#lib/server/status.js';
+import { extractActivity } from '#lib/server/activity.js';
+import { piScreenWorking, piTranscriptSettled, piStatusDiagnostic } from '#lib/server/pi-status.js';
+import { stripAnsi } from '#lib/ansi.js';
+import { cleanSnapshot } from '#lib/server/snapshot.js';
+import type { AgentDetail, Message } from '#lib/types.js';
 import type { RequestHandler } from './$types';
 
 type Degraded = AgentDetail['degraded'];

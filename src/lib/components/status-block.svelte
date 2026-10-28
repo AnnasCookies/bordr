@@ -1,6 +1,6 @@
 <script lang="ts">
-	import { ansiToHtml } from '$lib/ansi';
-	import { prefs } from '$lib/prefs.svelte';
+	import { ansiToHtml } from '#lib/ansi.js';
+	import { prefs } from '#lib/prefs.svelte.js';
 
 	let {
 		rows,

@@ -1,11 +1,11 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
-	import SettingsNav from '$lib/components/settings-nav.svelte';
-	import AppHeader from '$lib/components/app-header.svelte';
-	import SessionTree from '$lib/components/session-tree.svelte';
-	import TabBar from '$lib/components/tab-bar.svelte';
-	import Spinner from '$lib/components/spinner.svelte';
-	import { screen, watchWide } from '$lib/wide.svelte';
+	import SettingsNav from '#lib/components/settings-nav.svelte';
+	import AppHeader from '#lib/components/app-header.svelte';
+	import SessionTree from '#lib/components/session-tree.svelte';
+	import TabBar from '#lib/components/tab-bar.svelte';
+	import Spinner from '#lib/components/spinner.svelte';
+	import { screen, watchWide } from '#lib/wide.svelte.js';
 
 	interface Session {
 		name: string;

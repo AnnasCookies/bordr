@@ -2,7 +2,7 @@ import { redirect } from '@sveltejs/kit';
 import { mkdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { randomBytes } from 'node:crypto';
-import { uploadsDir } from '$lib/server/files';
+import { uploadsDir } from '#lib/server/files.js';
 import type { RequestHandler } from './$types';
 
 /** Same ceiling the image route uses; the shrink happens on the phone. */

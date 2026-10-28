@@ -1,4 +1,4 @@
-import type { Picker } from '$lib/server/picker';
+import type { Picker } from '#lib/server/picker.js';
 
 export type PickerShortcut =
 	| { kind: 'confirm' }

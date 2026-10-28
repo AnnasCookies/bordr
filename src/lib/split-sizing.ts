@@ -1,4 +1,4 @@
-import type { SplitNode } from '$lib/types';
+import type { SplitNode } from '#lib/types.js';
 
 /** Whether a rebuilt Herdr split branch contains the pane being read. */
 export function splitContains(node: SplitNode, paneId: string): boolean {

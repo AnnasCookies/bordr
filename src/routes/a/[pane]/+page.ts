@@ -1,8 +1,8 @@
 import { error, redirect } from '@sveltejs/kit';
-import { browser } from '$app/environment';
+import { browser } from '$app/env';
 import { resolve } from '$app/paths';
-import { paneAfterExit } from '$lib/pane-exit';
-import type { AgentDetail, WorkspaceNode } from '$lib/types';
+import { paneAfterExit } from '#lib/pane-exit.js';
+import type { AgentDetail, WorkspaceNode } from '#lib/types.js';
 import type { PageLoad } from './$types';
 
 /** One boolean off one endpoint: narrow it rather than asserting a shape over it. */

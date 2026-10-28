@@ -26,7 +26,7 @@ vi.mock('./index', async (importOriginal) => {
 	};
 });
 
-vi.mock('$env/dynamic/private', () => ({ env: {} }));
+vi.mock('#lib/server/env.js', () => ({ env: {} }));
 
 beforeEach(() => {
 	herdr.requests.length = 0;

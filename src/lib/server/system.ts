@@ -3,7 +3,7 @@ import { existsSync } from 'node:fs';
 import { mkdir, readdir, readFile, readlink, rm, stat, writeFile } from 'node:fs/promises';
 import { homedir } from 'node:os';
 import { basename, dirname, join } from 'node:path';
-import { env } from '$env/dynamic/private';
+import { env } from '#lib/server/env.js';
 import { getClient, listAgents } from './herdr';
 import { HerdrHangupError } from './herdr/client';
 import { sendToAll } from './push';
@@ -165,7 +165,7 @@ function notifyFinished(job: Job) {
 
 /**
  * Start a job and return at once. Jobs rather than one long request because
- * the adapter drops a connection idle for IDLE_TIMEOUT (120s), and a quiet
+ * the adapter drops a connection idle for CONNECTION_IDLE_TIMEOUT (120s), and a quiet
  * update easily outlasts that; the page polls instead.
  *
  * The same action cannot run twice at once — a double tap on "update" should

@@ -1,6 +1,6 @@
 import { expect, it } from 'vitest';
 import { execFileSync } from 'node:child_process';
-import { mkdtemp, mkdir, writeFile, rm, utimes, stat } from 'node:fs/promises';
+import { mkdtemp, mkdir, readFile, writeFile, rm, utimes, stat } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 
@@ -60,6 +60,37 @@ it('keeps the emitted set of a quiet active build through a retirement grace per
 		await writeFile(join(live, 'next.js'), 'next');
 		run('restore');
 		expect((await stat(join(live, 'active.js'))).isFile()).toBe(true);
+	} finally {
+		await rm(dir, { recursive: true, force: true });
+	}
+});
+
+it('records only what the build emitted, once, when the adapter step hands it over', async () => {
+	const dir = await mkdtemp(join(tmpdir(), 'bordr-attic-handoff-'));
+	const script = resolve('scripts/assets-attic.ts');
+	const live = join(dir, 'build/client/_app/immutable');
+	const run = (mode: string) =>
+		execFileSync('bun', [script, mode], {
+			cwd: dir,
+			env: { ...process.env, BORDR_BUILD_OUT: 'build' },
+			stdio: 'pipe'
+		});
+	const recorded = async () =>
+		JSON.parse(await readFile(join(dir, 'build/.emitted-assets.json'), 'utf8'));
+	try {
+		// The attic's chunk is already beside the new one, as the adapter
+		// step leaves it; only new.js was the build's own.
+		await mkdir(live, { recursive: true });
+		await writeFile(join(live, 'new.js'), 'new');
+		await writeFile(join(live, 'old.js'), 'old');
+		await writeFile(join(dir, 'build/.emitted-by-build.json'), JSON.stringify(['new.js']));
+		run('restore');
+		expect(await recorded()).toEqual(['new.js']);
+		await expect(stat(join(dir, 'build/.emitted-by-build.json'))).rejects.toThrow();
+
+		// A later run with no handoff must not reuse the last one.
+		run('restore');
+		expect((await recorded()).sort()).toEqual(['new.js', 'old.js']);
 	} finally {
 		await rm(dir, { recursive: true, force: true });
 	}

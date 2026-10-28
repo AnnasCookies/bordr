@@ -1,5 +1,5 @@
-import type { Block } from '$lib/server/transcript/types';
-import { parseTodoPlan, type TodoPlan } from '$lib/todo-plan';
+import type { Block } from '#lib/server/transcript/types.js';
+import { parseTodoPlan, type TodoPlan } from '#lib/todo-plan.js';
 
 export type MessageSegment = {
 	kind: 'prose' | 'work';

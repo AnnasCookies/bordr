@@ -1,9 +1,9 @@
 <script lang="ts">
 	import { tick } from 'svelte';
 	import type { Action } from 'svelte/action';
-	import { ansiToHtml } from '$lib/ansi';
-	import { prefs } from '$lib/prefs.svelte';
-	import { termGrid } from '$lib/term-grid';
+	import { ansiToHtml } from '#lib/ansi.js';
+	import { prefs } from '#lib/prefs.svelte.js';
+	import { termGrid } from '#lib/term-grid.js';
 
 	/**
 	 * The terminal's painted screen, shared by focused and sibling panes.

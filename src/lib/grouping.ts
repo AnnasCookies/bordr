@@ -1,6 +1,6 @@
 import { pickerIdentity } from './picker-shortcut';
-import type { AgentStatus, AgentSummary, WorkspaceNode } from '$lib/types';
-import type { GroupBy, SortBy } from '$lib/prefs.svelte';
+import type { AgentStatus, AgentSummary, WorkspaceNode } from '#lib/types.js';
+import type { GroupBy, SortBy } from '#lib/prefs.svelte.js';
 
 /** Order statuses appear in the rollup and in status grouping. */
 export const STATUS_ORDER: AgentStatus[] = ['blocked', 'working', 'done', 'idle', 'unknown'];

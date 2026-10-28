@@ -12,7 +12,7 @@ function loadWorker(
 	openWindow: (url: string) => Promise<unknown> = async () => null
 ) {
 	const listeners = new Map<string, Handler>();
-	const source = readFileSync(new URL('../service-worker.ts', import.meta.url), 'utf8');
+	const source = readFileSync(new URL('../service-worker/index.ts', import.meta.url), 'utf8');
 	const compiled = transpileModule(source, {
 		compilerOptions: { module: ModuleKind.CommonJS }
 	}).outputText;
@@ -21,15 +21,16 @@ function loadWorker(
 		URL,
 		console: { info: vi.fn() },
 		require: (name: string) =>
-			name === '$service-worker'
-				? {
-						version: 'fixture-build',
-						build: ['/_app/immutable/a.js'],
-						files: ['/fonts/x.woff2', '/logo.png']
-					}
-				: notify,
+			name === '$app/env'
+				? { version: 'fixture-build' }
+				: name === '$app/manifest'
+					? {
+							immutable: [{ path: '_app/immutable/a.js' }],
+							assets: [{ path: 'fonts/x.woff2' }, { path: 'logo.png' }]
+						}
+					: notify,
 		self: {
-			location: { origin: 'https://bordr.test' },
+			location: { origin: 'https://bordr.test', href: 'https://bordr.test/service-worker.js' },
 			navigator: { userAgent: 'fixture' },
 			addEventListener: (name: string, listener: Handler) => listeners.set(name, listener),
 			clients: { claim: async () => {}, matchAll: async () => clients, openWindow }
@@ -138,7 +139,7 @@ it('activation notifies hidden and visible clients without destroying their draf
 		postMessage: vi.fn(),
 		navigate: vi.fn()
 	}));
-	const source = readFileSync(new URL('../service-worker.ts', import.meta.url), 'utf8');
+	const source = readFileSync(new URL('../service-worker/index.ts', import.meta.url), 'utf8');
 	const compiled = transpileModule(source, {
 		compilerOptions: { module: ModuleKind.CommonJS }
 	}).outputText;
@@ -151,8 +152,13 @@ it('activation notifies hidden and visible clients without destroying their draf
 			delete: async (key: string) => void deleted.push(key)
 		},
 		require: (name: string) =>
-			name === '$service-worker' ? { version: 'fixture-build', build: [], files: [] } : notify,
+			name === '$app/env'
+				? { version: 'fixture-build' }
+				: name === '$app/manifest'
+					? { immutable: [], assets: [] }
+					: notify,
 		self: {
+			location: { origin: 'https://bordr.test', href: 'https://bordr.test/service-worker.js' },
 			navigator: { userAgent: 'fixture' },
 			addEventListener: (
 				name: string,

@@ -39,6 +39,8 @@ const LIVE = join(OUT, 'client', '_app', 'immutable');
  */
 const ATTIC = join('.attic', OUT.replace(/[^\w.-]/g, '_'), 'immutable');
 const KEEP_MS = 7 * 24 * 60 * 60 * 1000;
+/** What the adapter step saw the build emit, for `restore` to pick up. */
+export const EMITTED_HANDOFF = '.emitted-by-build.json';
 
 /** Every file under a directory, as paths relative to it. */
 export async function walk(root: string, base = root): Promise<string[]> {
@@ -90,16 +92,15 @@ async function stash(): Promise<void> {
 	console.error(`assets-attic: kept ${files.length} (+${added} new, -${pruned} stale)`);
 }
 
-async function restore(): Promise<void> {
-	await writeFile(join(OUT, '.emitted-assets.json'), JSON.stringify(await walk(LIVE)));
-	// Before restoring old chunks, refresh only files this build actually emitted.
-	for (const file of await walk(LIVE)) {
-		const to = join(ATTIC, file);
-		await mkdir(dirname(to), { recursive: true });
-		await cp(join(LIVE, file), to);
-		const now = new Date();
-		await utimes(to, now, now);
-	}
+/**
+ * Copy every unexpired attic file that `into` lacks, pruning expired ones.
+ *
+ * Runs twice per build. The Bun adapter serves only the files it listed at
+ * build time, so vite.config.ts calls this on SvelteKit's client output
+ * before the adapter writes that list; `restore` calls it again on the output
+ * for anything a release copy left out.
+ */
+export async function putBack(into: string): Promise<number> {
 	let put = 0;
 	for (const file of await walk(ATTIC)) {
 		const from = join(ATTIC, file);
@@ -107,12 +108,34 @@ async function restore(): Promise<void> {
 			await rm(from);
 			continue;
 		}
-		const to = join(LIVE, file);
+		const to = join(into, file);
 		if (existsSync(to)) continue;
 		await mkdir(dirname(to), { recursive: true });
 		await cp(from, to, { preserveTimestamps: true });
 		put += 1;
 	}
+	return put;
+}
+
+async function restore(): Promise<void> {
+	// The adapter step hands over what the build emitted before the attic's
+	// files joined it. Read once and removed, so a build that wrote none can
+	// never inherit the last one's; without it, everything on disk is new.
+	const handoff = join(OUT, EMITTED_HANDOFF);
+	const emitted: string[] = existsSync(handoff)
+		? JSON.parse(await readFile(handoff, 'utf8'))
+		: await walk(LIVE);
+	await rm(handoff, { force: true });
+	await writeFile(join(OUT, '.emitted-assets.json'), JSON.stringify(emitted));
+	// Before restoring old chunks, refresh only files this build actually emitted.
+	for (const file of emitted) {
+		const to = join(ATTIC, file);
+		await mkdir(dirname(to), { recursive: true });
+		await cp(join(LIVE, file), to);
+		const now = new Date();
+		await utimes(to, now, now);
+	}
+	const put = await putBack(LIVE);
 	console.error(`assets-attic: put back ${put} asset(s) an open page may still want`);
 }
 

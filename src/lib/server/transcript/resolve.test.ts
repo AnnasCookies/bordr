@@ -1,6 +1,6 @@
 import { expect, it, vi } from 'vitest';
 const request = vi.hoisted(() => vi.fn());
-vi.mock('$lib/server/herdr', () => ({ getClient: () => ({ request }) }));
+vi.mock('#lib/server/herdr/index.js', () => ({ getClient: () => ({ request }) }));
 import { resolveLocalTranscript } from './resolve';
 it('refuses every remote local-resolution caller before process or file lookup', async () => {
 	const resolve = vi.fn(async () => '/local-only/session');

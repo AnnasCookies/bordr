@@ -1,5 +1,5 @@
-import { isRemote } from '$lib/server/herdr/address';
-import { getClient } from '$lib/server/herdr';
+import { isRemote } from '#lib/server/herdr/address.js';
+import { getClient } from '#lib/server/herdr/index.js';
 import { activeOmpTranscript, type PaneProcessInfo } from './omp-active';
 import type { Adapter } from './types';
 

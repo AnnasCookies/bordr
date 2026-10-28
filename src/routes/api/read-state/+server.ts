@@ -1,7 +1,7 @@
 import { error, json } from '@sveltejs/kit';
-import { markRead, readScopeFor, readState } from '$lib/server/state-store';
-import { parsePane } from '$lib/server/herdr/address';
-import { projector } from '$lib/server/projector';
+import { markRead, readScopeFor, readState } from '#lib/server/state-store.js';
+import { parsePane } from '#lib/server/herdr/address.js';
+import { projector } from '#lib/server/projector.js';
 import type { RequestHandler } from './$types';
 
 export const GET: RequestHandler = async () => json(readState());

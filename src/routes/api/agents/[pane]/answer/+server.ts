@@ -1,19 +1,19 @@
-import { pickerIdentity } from '$lib/picker-shortcut';
+import { pickerIdentity } from '#lib/picker-shortcut.js';
 import { createHash } from 'node:crypto';
 import { error, json } from '@sveltejs/kit';
-import { promptAgent, rawAgent, readVisible, sendKeys, sendText } from '$lib/server/herdr';
+import { promptAgent, rawAgent, readVisible, sendKeys, sendText } from '#lib/server/herdr/index.js';
 import {
 	asyncQuestionKey,
 	keysForOption,
 	parsePicker,
 	pendingAsk,
 	type Picker
-} from '$lib/server/picker';
-import { adapterFor } from '$lib/server/transcript';
-import { resolveLocalTranscript } from '$lib/server/transcript/resolve';
-import { parsePane } from '$lib/server/herdr/address';
-import { ensureConnection, remoteTranscriptTail } from '$lib/server/herdr/connections';
-import { readTranscriptTail, DEFAULT_TAIL_BYTES } from '$lib/server/transcript/tail';
+} from '#lib/server/picker.js';
+import { adapterFor } from '#lib/server/transcript/index.js';
+import { resolveLocalTranscript } from '#lib/server/transcript/resolve.js';
+import { parsePane } from '#lib/server/herdr/address.js';
+import { ensureConnection, remoteTranscriptTail } from '#lib/server/herdr/connections.js';
+import { readTranscriptTail, DEFAULT_TAIL_BYTES } from '#lib/server/transcript/tail.js';
 import type { RequestHandler } from './$types';
 
 const MAX_TEXT = 2000;

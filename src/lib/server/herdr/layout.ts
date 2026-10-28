@@ -1,6 +1,6 @@
 import { clientFor } from './index';
 import { formatPane } from './address';
-import type { SplitNode, TabLayout } from '$lib/types';
+import type { SplitNode, TabLayout } from '#lib/types.js';
 
 /**
  * A tab's real split, as herdr has it.

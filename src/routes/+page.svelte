@@ -2,10 +2,10 @@
 	import { onMount } from 'svelte';
 	import { page } from '$app/state';
 	import { goto, replaceState } from '$app/navigation';
-	import { version } from '$app/environment';
+	import { version } from '$app/env';
 	import { resolve } from '$app/paths';
-	import { agentStore } from '$lib/agents.svelte';
-	import { prefs, type GroupBy } from '$lib/prefs.svelte';
+	import { agentStore } from '#lib/agents.svelte.js';
+	import { prefs, type GroupBy } from '#lib/prefs.svelte.js';
 	import {
 		answerSettled,
 		collapseHome,
@@ -14,24 +14,24 @@
 		pickerKey,
 		rollupCounts,
 		type AnsweredMark
-	} from '$lib/grouping';
-	import { harnessText, STATUS_INK, STATUS_RAIL } from '$lib/theme';
-	import AgentRow from '$lib/components/agent-row.svelte';
-	import ConnectionBanner from '$lib/components/connection-banner.svelte';
-	import InstallPrompt from '$lib/components/install-prompt.svelte';
-	import AppHeader from '$lib/components/app-header.svelte';
-	import Icon from '$lib/components/icon.svelte';
-	import Spinner from '$lib/components/spinner.svelte';
-	import Ticks from '$lib/components/ticks.svelte';
-	import { track } from '$lib/pending.svelte';
-	import TabBar from '$lib/components/tab-bar.svelte';
-	import NewAgentSheet from '$lib/components/new-agent-sheet.svelte';
-	import SessionTree from '$lib/components/session-tree.svelte';
-	import SidebarResizer from '$lib/components/sidebar-resizer.svelte';
-	import { DEFAULT_SIDEBAR } from '$lib/sidebar';
-	import { checkPush, togglePushDetailed, type PushState } from '$lib/push-client';
-	import { screen, watchWide } from '$lib/wide.svelte';
-	import type { AgentStatus, AgentSummary } from '$lib/types';
+	} from '#lib/grouping.js';
+	import { harnessText, STATUS_INK, STATUS_RAIL } from '#lib/theme.js';
+	import AgentRow from '#lib/components/agent-row.svelte';
+	import ConnectionBanner from '#lib/components/connection-banner.svelte';
+	import InstallPrompt from '#lib/components/install-prompt.svelte';
+	import AppHeader from '#lib/components/app-header.svelte';
+	import Icon from '#lib/components/icon.svelte';
+	import Spinner from '#lib/components/spinner.svelte';
+	import Ticks from '#lib/components/ticks.svelte';
+	import { track } from '#lib/pending.svelte.js';
+	import TabBar from '#lib/components/tab-bar.svelte';
+	import NewAgentSheet from '#lib/components/new-agent-sheet.svelte';
+	import SessionTree from '#lib/components/session-tree.svelte';
+	import SidebarResizer from '#lib/components/sidebar-resizer.svelte';
+	import { DEFAULT_SIDEBAR } from '#lib/sidebar.js';
+	import { checkPush, togglePushDetailed, type PushState } from '#lib/push-client.js';
+	import { screen, watchWide } from '#lib/wide.svelte.js';
+	import type { AgentStatus, AgentSummary } from '#lib/types.js';
 
 	const store = agentStore;
 	/**
@@ -99,15 +99,10 @@
 	$effect(() => {
 		if (page.url.searchParams.get('new') !== '1') return;
 		showNew = true;
-		const clean = new URL(page.url);
+		const clean = new URL(page.url.href);
 		clean.searchParams.delete('new');
 		// `replaceState`, not `goto`: nothing is being navigated to. The URL is
 		// simply losing a parameter it has already been acted on.
-		// The rule wants `resolve()` as the bare argument, which would mean
-		// dropping the rest of the query — and a share arriving at the same time
-		// carries `shared` and `text` there. The route is this page's own, and
-		// only a parameter is being removed from it.
-		// eslint-disable-next-line svelte/no-navigation-without-resolve
 		replaceState(`${resolve('/')}${clean.search}`, page.state);
 	});
 	/** paneId → what went wrong with the last inline answer, shown for a while. */

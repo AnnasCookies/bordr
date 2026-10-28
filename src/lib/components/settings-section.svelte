@@ -14,7 +14,7 @@
 -->
 <script lang="ts">
 	import type { Snippet } from 'svelte';
-	import { screen } from '$lib/wide.svelte';
+	import { screen } from '#lib/wide.svelte.js';
 
 	let { heading, children }: { heading: string; children: Snippet } = $props();
 

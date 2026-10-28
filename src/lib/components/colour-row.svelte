@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { contrastRatio, meetsAA } from '$lib/contrast';
+	import { contrastRatio, meetsAA } from '#lib/contrast.js';
 
 	let {
 		label,

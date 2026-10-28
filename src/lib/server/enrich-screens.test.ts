@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import type { AgentSummary } from '$lib/types';
+import type { AgentSummary } from '#lib/types.js';
 
 /**
  * Status consistency across harnesses: herdr flags Claude Code's prompts as

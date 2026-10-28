@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import type { Block } from '$lib/server/transcript/types';
+import type { Block } from '#lib/server/transcript/types.js';
 import {
 	hasTodoPlan,
 	messageSegments,

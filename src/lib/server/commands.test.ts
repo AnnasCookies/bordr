@@ -2,7 +2,7 @@ import { afterAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { rankCommands, type SlashCommand } from '$lib/commands';
+import { rankCommands, type SlashCommand } from '#lib/commands.js';
 
 /** A home directory laid out the way the harnesses lay theirs out. */
 const HOME = mkdtempSync(join(tmpdir(), 'bordr-test-commands-'));

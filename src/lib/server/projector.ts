@@ -1,4 +1,4 @@
-import type { AgentSummary } from '$lib/types';
+import type { AgentSummary } from '#lib/types.js';
 import { checkCompatibility, getManager, listAgents, unreachableCompatibility } from './herdr';
 import { enrichAgents } from './enrich';
 import { observeStatus } from './push';

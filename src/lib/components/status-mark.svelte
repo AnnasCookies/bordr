@@ -1,6 +1,6 @@
 <script lang="ts">
-	import { prefs } from '$lib/prefs.svelte';
-	import { STATUS_INK, STATUS_RAIL, STATUS_SYMBOL, STATUS_WORD } from '$lib/theme';
+	import { prefs } from '#lib/prefs.svelte.js';
+	import { STATUS_INK, STATUS_RAIL, STATUS_SYMBOL, STATUS_WORD } from '#lib/theme.js';
 
 	/**
 	 * An agent's status, in whichever form the reader chose — herdr's own

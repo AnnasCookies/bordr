@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { queueVerdict } from '$lib/queue';
+import { queueVerdict } from '#lib/queue.js';
 import { parseQueue } from './queue';
 
 const op = (operation: string, content: string, extra: Record<string, unknown> = {}) =>

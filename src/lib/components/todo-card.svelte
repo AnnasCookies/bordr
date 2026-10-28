@@ -6,7 +6,7 @@
 </script>
 
 <script lang="ts">
-	import type { TodoPlan, TodoStatus } from '$lib/todo-plan';
+	import type { TodoPlan, TodoStatus } from '#lib/todo-plan.js';
 
 	let {
 		plan,

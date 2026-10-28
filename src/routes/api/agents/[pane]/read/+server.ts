@@ -1,6 +1,6 @@
 import { error, json } from '@sveltejs/kit';
-import { HerdrRequestError, readPane } from '$lib/server/herdr';
-import { cleanSnapshot } from '$lib/server/snapshot';
+import { HerdrRequestError, readPane } from '#lib/server/herdr/index.js';
+import { cleanSnapshot } from '#lib/server/snapshot.js';
 import type { RequestHandler } from './$types';
 
 const MAX_LINES = 20_000;

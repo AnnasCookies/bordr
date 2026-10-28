@@ -2,7 +2,7 @@ import { afterAll, describe, expect, it, vi } from 'vitest';
 import { mkdtempSync, mkdirSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { artefactToken } from '$lib/server/artefact-token';
+import { artefactToken } from '#lib/server/artefact-token.js';
 import { GET } from './+server';
 
 const root = mkdtempSync(join(tmpdir(), 'bordr-raw-capability-'));
@@ -14,8 +14,8 @@ writeFileSync(join(root, 'report/index.html'), '<script src="app.js"></script>')
 symlinkSync(join(root, 'secret.js'), join(root, 'report', 'alias.js'));
 afterAll(() => rmSync(root, { recursive: true, force: true }));
 
-vi.mock('$lib/server/files', async (importOriginal) => {
-	const files = await importOriginal<typeof import('$lib/server/files')>();
+vi.mock('#lib/server/files.js', async (importOriginal) => {
+	const files = await importOriginal<typeof import('#lib/server/files.js')>();
 	return { ...files, resolveSafe: (path: string) => files.resolveSafe(path, { fixture: root }) };
 });
 

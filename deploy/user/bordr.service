@@ -16,12 +16,14 @@ UMask=0077
 Environment=SOCKET_PATH=%t/bordr/bordr.sock
 Environment=HOST=127.0.0.1
 EnvironmentFile=%h/bordr/.env
-# svelte-adapter-bun defaults to a 512KB request cap — camera photos need
+# The Bun adapter defaults to a 512KB request cap — camera photos need
 # more; the image endpoint allows six 15MB images per message above this.
 Environment=BODY_SIZE_LIMIT=100M
-# svelte-adapter-bun defaults Bun's idle timeout to 10s, which kills the SSE
-# stream between heartbeats. The heartbeat is now well under that on its own;
-# this is belt and braces so a slow tick cannot drop a phone's connection.
+# Bun's idle timeout defaults to 10s. The adapter lifts it for the SSE
+# stream, and the heartbeat is well under it anyway; this is belt and braces
+# for every other slow request. IDLE_TIMEOUT is the same setting under the
+# name releases before 1.2 read, so rolling back keeps it.
+Environment=CONNECTION_IDLE_TIMEOUT=120
 Environment=IDLE_TIMEOUT=120
 # Live state outside the checkout: a git clean, worktree op or test run in
 # the working tree would otherwise delete push subscriptions and watches.

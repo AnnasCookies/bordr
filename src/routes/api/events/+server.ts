@@ -1,4 +1,4 @@
-import { projector, type Projection } from '$lib/server/projector';
+import { projector, type Projection } from '#lib/server/projector.js';
 import type { RequestHandler } from './$types';
 
 /**
@@ -67,11 +67,13 @@ export const GET: RequestHandler = async () => {
 			// for a connection that is already torn down.
 			if (closed) return;
 
-			// MUST stay under the server's idle timeout, which svelte-adapter-bun
-			// defaults to 10s (IDLE_TIMEOUT). At 20s the stream was killed before
-			// a single ping arrived: measured dying at 9.06s direct to Bun and
-			// ~12s through tailscale serve, every time, so the phone reconnected
-			// every ten seconds all day and flashed "bordr unreachable".
+			// MUST stay under the server's idle timeout, which Bun defaults to
+			// 10s (CONNECTION_IDLE_TIMEOUT). The Bun adapter lifts it for event
+			// streams today; this does not rely on that. At 20s the stream was
+			// killed before a single ping arrived: measured dying at 9.06s
+			// direct to Bun and ~12s through tailscale serve, every time, so the
+			// phone reconnected every ten seconds all day and flashed "bordr
+			// unreachable".
 			// unref'd: an open stream must never hold the process open.
 			heartbeat = setInterval(() => send('ping', Date.now()), 5_000);
 			(heartbeat as unknown as { unref?: () => void }).unref?.();

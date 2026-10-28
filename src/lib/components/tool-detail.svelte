@@ -1,8 +1,8 @@
 <script lang="ts">
 	import CodeBlock from './code-block.svelte';
 	import JsonTree from './json-tree.svelte';
-	import { langForPath } from '$lib/highlight';
-	import { prefs } from '$lib/prefs.svelte';
+	import { langForPath } from '#lib/highlight.js';
+	import { prefs } from '#lib/prefs.svelte.js';
 
 	let {
 		name,

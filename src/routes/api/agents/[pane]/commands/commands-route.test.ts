@@ -11,8 +11,8 @@ const doubles = vi.hoisted(() => ({
 	),
 	commandsFor: vi.fn(async () => [])
 }));
-vi.mock('$lib/server/herdr', () => ({ rawAgent: doubles.rawAgent }));
-vi.mock('$lib/server/commands', () => ({ commandsFor: doubles.commandsFor }));
+vi.mock('#lib/server/herdr/index.js', () => ({ rawAgent: doubles.rawAgent }));
+vi.mock('#lib/server/commands.js', () => ({ commandsFor: doubles.commandsFor }));
 
 async function get(pane: string) {
 	const { GET } = await import('./+server');

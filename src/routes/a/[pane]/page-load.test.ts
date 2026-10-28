@@ -7,7 +7,7 @@ import { load } from './+page';
  * so one test can play the server's first render.
  */
 const environment = vi.hoisted(() => ({ browser: true }));
-vi.mock('$app/environment', () => ({
+vi.mock('$app/env', () => ({
 	get browser() {
 		return environment.browser;
 	}

@@ -36,7 +36,7 @@ const policy = vi.hoisted(() => ({
 }));
 vi.mock('./machines', () => ({ listMachines: () => policy.machines }));
 
-vi.mock('$env/dynamic/private', () => ({ env: {} }));
+vi.mock('#lib/server/env.js', () => ({ env: {} }));
 
 const saved = {
 	runtime: process.env.XDG_RUNTIME_DIR,

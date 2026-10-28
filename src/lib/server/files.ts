@@ -1,4 +1,4 @@
-import { env } from '$env/dynamic/private';
+import { env } from '#lib/server/env.js';
 import { readdirSync, realpathSync, statSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { join, normalize, relative, resolve, sep } from 'node:path';

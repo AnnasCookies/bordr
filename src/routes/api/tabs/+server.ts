@@ -1,6 +1,6 @@
 import { error, json } from '@sveltejs/kit';
-import { clientFor, HerdrRequestError } from '$lib/server/herdr';
-import { formatPane, parsePane } from '$lib/server/herdr/address';
+import { clientFor, HerdrRequestError } from '#lib/server/herdr/index.js';
+import { formatPane, parsePane } from '#lib/server/herdr/address.js';
 import type { RequestHandler } from './$types';
 
 /**

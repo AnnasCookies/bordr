@@ -1,7 +1,7 @@
 <script lang="ts">
 	import type { Snippet } from 'svelte';
-	import { contrastRatio, luminance, parseHex } from '$lib/contrast';
-	import { fillFar } from '$lib/bubble-colour';
+	import { contrastRatio, luminance, parseHex } from '#lib/contrast.js';
+	import { fillFar } from '#lib/bubble-colour.js';
 
 	/**
 	 * One chat bubble — the shape, the rule, the run corners and the tail.

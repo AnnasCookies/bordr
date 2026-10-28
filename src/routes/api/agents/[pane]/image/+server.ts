@@ -2,15 +2,15 @@ import { mkdirSync, readdirSync, statSync, unlinkSync } from 'node:fs';
 import { unlink, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { error, json } from '@sveltejs/kit';
-import { HerdrRequestError, promptAgent, rawAgent } from '$lib/server/herdr';
+import { HerdrRequestError, promptAgent, rawAgent } from '#lib/server/herdr/index.js';
 import {
 	attachPrompt,
 	MAX_ATTACH_BYTES,
 	MAX_ATTACH_FILES,
 	PHOTO_TYPES,
 	storedName
-} from '$lib/server/attachments';
-import { DATA_DIR } from '$lib/server/state-store';
+} from '#lib/server/attachments.js';
+import { DATA_DIR } from '#lib/server/state-store.js';
 import type { RequestHandler } from './$types';
 
 const UPLOADS = join(DATA_DIR, 'uploads');

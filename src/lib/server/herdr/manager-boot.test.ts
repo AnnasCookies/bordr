@@ -7,7 +7,7 @@ const fixture = vi.hoisted(() => ({
 	request: vi.fn(),
 	subscribe: vi.fn()
 }));
-vi.mock('$env/dynamic/private', () => ({ env: { HERDR_SOCKET: '/fixture/herdr.sock' } }));
+vi.mock('#lib/server/env.js', () => ({ env: { HERDR_SOCKET: '/fixture/herdr.sock' } }));
 vi.mock('./machines', () => ({ listMachines: () => [] }));
 vi.mock('./client', () => ({
 	HerdrClient: class {

@@ -1,7 +1,7 @@
 <script lang="ts">
-	import { prefs } from '$lib/prefs.svelte';
-	import { followPointer } from '$lib/pointer-drag';
-	import { clampSidebar } from '$lib/sidebar';
+	import { prefs } from '#lib/prefs.svelte.js';
+	import { followPointer } from '#lib/pointer-drag.js';
+	import { clampSidebar } from '#lib/sidebar.js';
 
 	/**
 	 * The grab strip down the sidebar's right edge.

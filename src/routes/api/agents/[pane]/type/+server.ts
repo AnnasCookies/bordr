@@ -1,5 +1,5 @@
 import { error, json } from '@sveltejs/kit';
-import { HerdrRequestError, sendText } from '$lib/server/herdr';
+import { HerdrRequestError, sendText } from '#lib/server/herdr/index.js';
 import type { RequestHandler } from './$types';
 
 /**

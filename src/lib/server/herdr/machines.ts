@@ -1,4 +1,4 @@
-import { env } from '$env/dynamic/private';
+import { env } from '#lib/server/env.js';
 import { ALLOW_FLAG, machinesInherit } from '../bind';
 import { readFileSync } from 'node:fs';
 import { homedir } from 'node:os';

@@ -1,7 +1,7 @@
 <script lang="ts">
 	import { resolve } from '$app/paths';
 	import type { ResolvedPathname } from '$app/types';
-	import { ROUTED, SECTIONS } from '$lib/settings-sections';
+	import { ROUTED, SECTIONS } from '#lib/settings-sections.js';
 
 	/**
 	 * The settings sections, as a desktop nav.

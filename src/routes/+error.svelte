@@ -1,5 +1,5 @@
 <script lang="ts" module>
-	import { FIRST_WAIT_MS, MAX_WAIT_MS, recoverable, waitFor } from '$lib/recover';
+	import { FIRST_WAIT_MS, MAX_WAIT_MS, recoverable, waitFor } from '#lib/recover.js';
 
 	/*
 	 * The recovery loop's decisions, kept out of the component so they can be
@@ -96,8 +96,8 @@
 	import { onMount } from 'svelte';
 	import { page } from '$app/state';
 	import { resolve } from '$app/paths';
-	import TabBar from '$lib/components/tab-bar.svelte';
-	import Spinner from '$lib/components/spinner.svelte';
+	import TabBar from '#lib/components/tab-bar.svelte';
+	import Spinner from '#lib/components/spinner.svelte';
 
 	const status = $derived(page.status);
 	const path = $derived(page.url.pathname);

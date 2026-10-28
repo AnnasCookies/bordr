@@ -1,5 +1,5 @@
 import { error, json } from '@sveltejs/kit';
-import { setWatched, watchedPanes } from '$lib/server/state-store';
+import { setWatched, watchedPanes } from '#lib/server/state-store.js';
 import type { RequestHandler } from './$types';
 
 /**
