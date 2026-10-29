@@ -1,6 +1,6 @@
 <script lang="ts">
-	import { prefs } from '$lib/prefs.svelte';
-	import { highlight } from '$lib/highlight';
+	import { prefs } from '#lib/prefs.svelte.js';
+	import { highlight } from '#lib/highlight.js';
 
 	let {
 		code,

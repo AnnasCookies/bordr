@@ -4,16 +4,16 @@
 	import { goto, invalidateAll } from '$app/navigation';
 	import { navigating, page } from '$app/state';
 	import { resolve } from '$app/paths';
-	import { agentStore } from '$lib/agents.svelte';
-	import { mergeResults } from '$lib/dictation';
-	import { shrinkImage } from '$lib/shrink-image';
-	import { splitLayoutFingerprint } from '$lib/layout-fingerprint';
-	import { tabViewport } from '$lib/tab-viewport';
+	import { agentStore } from '#lib/agents.svelte.js';
+	import { mergeResults } from '#lib/dictation.js';
+	import { shrinkImage } from '#lib/shrink-image.js';
+	import { splitLayoutFingerprint } from '#lib/layout-fingerprint.js';
+	import { tabViewport } from '#lib/tab-viewport.js';
 
-	/** The upload route's per-file cap (`$lib/server/attachments`), which the page cannot import. */
+	/** The upload route's per-file cap (`#lib/server/attachments`), which the page cannot import. */
 	const MAX_ATTACH_BYTES = 15 * 1024 * 1024;
-	import { prefs } from '$lib/prefs.svelte';
-	import { agentTitle, collapseHome, flatOrder } from '$lib/grouping';
+	import { prefs } from '#lib/prefs.svelte.js';
+	import { agentTitle, collapseHome, flatOrder } from '#lib/grouping.js';
 	import {
 		decideSwipe,
 		dragTarget,
@@ -21,7 +21,7 @@
 		inHorizontalScroller,
 		neighbourPane,
 		swipeNavigationDelta
-	} from '$lib/swipe';
+	} from '#lib/swipe.js';
 	import {
 		CHECK_INK,
 		CHECK_MARK,
@@ -31,13 +31,13 @@
 		harnessText,
 		PULL_INK,
 		STATUS_INK
-	} from '$lib/theme';
-	import { ansiToHtml } from '$lib/ansi';
-	import { termGrid } from '$lib/term-grid';
-	import { throttleTrailing } from '$lib/throttle';
-	import { createSessionDraftStore, type SessionDraftStore } from '$lib/session-draft';
-	import { rankCommands, slashCommandName, type SlashCommand } from '$lib/commands';
-	import { bubbleInk, DEFAULT_FILL, DEFAULT_USER } from '$lib/bubble-colour';
+	} from '#lib/theme.js';
+	import { ansiToHtml } from '#lib/ansi.js';
+	import { termGrid } from '#lib/term-grid.js';
+	import { throttleTrailing } from '#lib/throttle.js';
+	import { createSessionDraftStore, type SessionDraftStore } from '#lib/session-draft.js';
+	import { rankCommands, slashCommandName, type SlashCommand } from '#lib/commands.js';
+	import { bubbleInk, DEFAULT_FILL, DEFAULT_USER } from '#lib/bubble-colour.js';
 	import {
 		messageSegments,
 		hasTodoPlan,
@@ -46,39 +46,39 @@
 		proseBlocks,
 		workBlocks,
 		type MessageSegment
-	} from '$lib/message-segments';
-	import HarnessMark from '$lib/components/harness-mark.svelte';
-	import StatusMark from '$lib/components/status-mark.svelte';
-	import Bubble from '$lib/components/bubble.svelte';
-	import AppHeader from '$lib/components/app-header.svelte';
-	import PaneTerminal, { type TerminalAnswerTarget } from '$lib/components/pane-terminal.svelte';
-	import PaneScreen from '$lib/components/pane-screen.svelte';
-	import PaneSplit from '$lib/components/pane-split.svelte';
-	import Icon from '$lib/components/icon.svelte';
-	import MessageBlocks from '$lib/components/message-blocks.svelte';
-	import SessionTree from '$lib/components/session-tree.svelte';
-	import SidebarResizer from '$lib/components/sidebar-resizer.svelte';
-	import { DEFAULT_SIDEBAR } from '$lib/sidebar';
-	import WorkspaceTabs from '$lib/components/workspace-tabs.svelte';
-	import StatusBlock from '$lib/components/status-block.svelte';
-	import NewAgentSheet from '$lib/components/new-agent-sheet.svelte';
-	import ControlSheet from '$lib/components/control-sheet.svelte';
-	import type { ControlTarget } from '$lib/components/control-sheet.svelte';
-	import ResourceContextMenu from '$lib/components/resource-context-menu.svelte';
-	import type { ResourceAction } from '$lib/components/resource-context-menu.svelte';
-	import WorktreeSheet from '$lib/components/worktree-sheet.svelte';
-	import SubagentSheet from '$lib/components/subagent-sheet.svelte';
-	import Spinner from '$lib/components/spinner.svelte';
-	import BubbleMeta from '$lib/components/bubble-meta.svelte';
-	import { track } from '$lib/pending.svelte';
-	import { holdReload } from '$lib/reload-guard.svelte';
-	import { nextFollowing } from '$lib/follow';
-	import { swipeSequence } from '$lib/swipe-order';
-	import { glideDuration, glidePosition } from '$lib/glide';
-	import { reduceMotion } from '$lib/motion';
-	import { showChrome, touchPoints } from '$lib/header-chrome';
-	import { screen as layout, watchWide } from '$lib/wide.svelte';
-	import { afterClose } from '$lib/after-close';
+	} from '#lib/message-segments.js';
+	import HarnessMark from '#lib/components/harness-mark.svelte';
+	import StatusMark from '#lib/components/status-mark.svelte';
+	import Bubble from '#lib/components/bubble.svelte';
+	import AppHeader from '#lib/components/app-header.svelte';
+	import PaneTerminal, { type TerminalAnswerTarget } from '#lib/components/pane-terminal.svelte';
+	import PaneScreen from '#lib/components/pane-screen.svelte';
+	import PaneSplit from '#lib/components/pane-split.svelte';
+	import Icon from '#lib/components/icon.svelte';
+	import MessageBlocks from '#lib/components/message-blocks.svelte';
+	import SessionTree from '#lib/components/session-tree.svelte';
+	import SidebarResizer from '#lib/components/sidebar-resizer.svelte';
+	import { DEFAULT_SIDEBAR } from '#lib/sidebar.js';
+	import WorkspaceTabs from '#lib/components/workspace-tabs.svelte';
+	import StatusBlock from '#lib/components/status-block.svelte';
+	import NewAgentSheet from '#lib/components/new-agent-sheet.svelte';
+	import ControlSheet from '#lib/components/control-sheet.svelte';
+	import type { ControlTarget } from '#lib/components/control-sheet.svelte';
+	import ResourceContextMenu from '#lib/components/resource-context-menu.svelte';
+	import type { ResourceAction } from '#lib/components/resource-context-menu.svelte';
+	import WorktreeSheet from '#lib/components/worktree-sheet.svelte';
+	import SubagentSheet from '#lib/components/subagent-sheet.svelte';
+	import Spinner from '#lib/components/spinner.svelte';
+	import BubbleMeta from '#lib/components/bubble-meta.svelte';
+	import { track } from '#lib/pending.svelte.js';
+	import { holdReload } from '#lib/reload-guard.svelte.js';
+	import { nextFollowing } from '#lib/follow.js';
+	import { swipeSequence } from '#lib/swipe-order.js';
+	import { glideDuration, glidePosition } from '#lib/glide.js';
+	import { reduceMotion } from '#lib/motion.js';
+	import { showChrome, touchPoints } from '#lib/header-chrome.js';
+	import { screen as layout, watchWide } from '#lib/wide.svelte.js';
+	import { afterClose } from '#lib/after-close.js';
 	import { cardHeld, echoesAnswer, holdsAnswer } from './answer-echo';
 	import { glideInterrupted } from './glide-interrupt';
 	import {
@@ -88,14 +88,14 @@
 		seenIn,
 		transcriptPrompts,
 		type PendingSend
-	} from '$lib/pending-sends';
-	import { uniqueKeys } from '$lib/row-keys';
-	import { queueVerdict } from '$lib/queue';
-	import { pickerShortcut, pickerIdentity } from '$lib/picker-shortcut';
-	import { parseModelLine } from '$lib/model-line';
-	import { shortModel } from '$lib/short-model';
-	import type { Block } from '$lib/server/transcript/types';
-	import type { AgentStatus, SplitNode, WorkspaceNode } from '$lib/types';
+	} from '#lib/pending-sends.js';
+	import { uniqueKeys } from '#lib/row-keys.js';
+	import { queueVerdict } from '#lib/queue.js';
+	import { pickerShortcut, pickerIdentity } from '#lib/picker-shortcut.js';
+	import { parseModelLine } from '#lib/model-line.js';
+	import { shortModel } from '#lib/short-model.js';
+	import type { Block } from '#lib/server/transcript/types.js';
+	import type { AgentStatus, SplitNode, WorkspaceNode } from '#lib/types.js';
 	let { data } = $props();
 	const detail = $derived(data.detail);
 
@@ -266,7 +266,7 @@
 	async function openSplitPane(paneId: string) {
 		if (paneId !== detail.paneId) {
 			await goto(resolve('/a/[pane]', { pane: paneId }), {
-				replaceState: prefs.value.backTo === 'home'
+				replace: prefs.value.backTo === 'home'
 			});
 		}
 		await focusPaneInput();
@@ -548,7 +548,7 @@
 			...closingContext
 		});
 		await goto(next ? resolve('/a/[pane]', { pane: next }) : resolve('/'), {
-			replaceState: true
+			replace: true
 		});
 	}
 
@@ -1286,7 +1286,7 @@
 
 		const landed = transcriptPrompts(detail.messages);
 
-		// The rule itself is in $lib/pending-sends.ts, with its tests — it is the
+		// The rule itself is in src/lib/pending-sends.ts, with its tests — it is the
 		// one that lost messages, and it is easier to get wrong than it looks.
 		const settled = detail.status === 'idle' || detail.status === 'done';
 		// The clock, not Date.now(): reading it is what re-runs this as time
@@ -1491,9 +1491,8 @@
 		if (text && !draft) draft = text;
 		if (files.length) await attach(files);
 		await goto(resolve('/a/[pane]', { pane: detail.paneId }), {
-			replaceState: true,
-			noScroll: true,
-			keepFocus: true
+			replace: true,
+			reset: false
 		});
 	}
 
@@ -1582,7 +1581,7 @@
 			// no-navigation-without-resolve enforced everywhere else rather than
 			// switching the rule off for the file.
 			const target = `${route}?w=${next}` as typeof route;
-			await goto(target, { replaceState: true, noScroll: true, keepFocus: true });
+			await goto(target, { replace: true, reset: false });
 		}
 		// After the reveal, not before it. `shown` is what decides how much of
 		// the loaded transcript is actually in the DOM, so anchoring ahead of it
@@ -2780,7 +2779,7 @@
 	 * reached by the gesture at all. `swipeSequence` weaves the two together.
 	 */
 	let tabSiblings = $state<string[]>([]);
-	let navigationTree = $state<import('$lib/types').WorkspaceNode[]>([]);
+	let navigationTree = $state<import('#lib/types.js').WorkspaceNode[]>([]);
 	const swipeOrder = $derived(swipeSequence(order, navigationTree));
 
 	function paneControlTarget(paneId: string): ControlTarget {
@@ -2963,7 +2962,7 @@
 		// gesture had to retrace all five before the agent list reappeared.
 		// Back now always returns to where you came from; left swipe is how you
 		// go to the previous agent.
-		await goto(resolve('/a/[pane]', { pane }), { replaceState: true });
+		await goto(resolve('/a/[pane]', { pane }), { replace: true });
 		// Land from the opposite edge, then release to centre on the next frame.
 		dragX = physicalDx > 0 ? -window.innerWidth / 3 : window.innerWidth / 3;
 		leaving = false;

@@ -1,8 +1,8 @@
 /**
  * A prompt the harness has queued, and how to ask about one.
  *
- * In `$lib` rather than beside the parser because the VIEW needs to ask the
- * question and `$lib/server/*` cannot be imported into the browser. The
+ * In `src/lib` rather than beside the parser because the VIEW needs to ask the
+ * question and `#lib/server/*` cannot be imported into the browser. The
  * parser that produces these stays server-side, where the transcript is.
  */
 

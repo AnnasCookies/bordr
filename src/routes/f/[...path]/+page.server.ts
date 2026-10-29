@@ -1,9 +1,9 @@
 import { statSync } from 'node:fs';
 import { basename, dirname } from 'node:path';
 import { error } from '@sveltejs/kit';
-import { FILE_ROOTS, listDirectory, MIME, resolveSafe, viewerKind } from '$lib/server/files';
-import { artefactToken } from '$lib/server/artefact-token';
-import type { ViewerKind } from '$lib/server/files';
+import { FILE_ROOTS, listDirectory, MIME, resolveSafe, viewerKind } from '#lib/server/files.js';
+import { artefactToken } from '#lib/server/artefact-token.js';
+import type { ViewerKind } from '#lib/server/files.js';
 import type { PageServerLoad } from './$types';
 
 /** Above this, the viewer refuses to render inline and offers the file instead. */

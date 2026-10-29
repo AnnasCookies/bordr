@@ -8,13 +8,13 @@ import {
 	outdatedProcesses,
 	runAction,
 	type Action
-} from '$lib/server/system';
+} from '#lib/server/system.js';
 import type { RequestHandler } from './$types';
 
 /**
  * Host housekeeping: herdr's server and sessions, and the operator's own
  * commands. GET is the whole page's state, polled while a job runs; POST names
- * one action and starts it. See `$lib/server/system` for why nothing here
+ * one action and starts it. See `#lib/server/system` for why nothing here
  * accepts a command, only the name of one.
  */
 export const GET: RequestHandler = async () => {

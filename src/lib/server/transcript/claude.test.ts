@@ -10,7 +10,7 @@ import {
 	unwrapPastedContent
 } from './claude';
 import { adapterFor } from './index';
-import { landedIn, say } from '$lib/pending-sends';
+import { landedIn, say } from '#lib/pending-sends.js';
 
 const jsonl = readFileSync(new URL('./fixtures/claude-session.jsonl', import.meta.url), 'utf8');
 

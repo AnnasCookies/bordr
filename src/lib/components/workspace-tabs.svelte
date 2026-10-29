@@ -1,16 +1,16 @@
 <script lang="ts">
-	import { track } from '$lib/pending.svelte';
+	import { track } from '#lib/pending.svelte.js';
 	import Icon from './icon.svelte';
 	import Spinner from './spinner.svelte';
 	import { goto } from '$app/navigation';
 	import { resolve } from '$app/paths';
 	import { page } from '$app/state';
-	import { replacesHistory } from '$lib/back';
-	import { prefs } from '$lib/prefs.svelte';
-	import { STATUS_RAIL, harnessText } from '$lib/theme';
+	import { replacesHistory } from '#lib/back.js';
+	import { prefs } from '#lib/prefs.svelte.js';
+	import { STATUS_RAIL, harnessText } from '#lib/theme.js';
 	import HarnessMark from './harness-mark.svelte';
-	import { currentTabPanes } from '$lib/swipe-order';
-	import type { WorkspaceNode } from '$lib/types';
+	import { currentTabPanes } from '#lib/swipe-order.js';
+	import type { WorkspaceNode } from '#lib/types.js';
 	import type { ControlTarget } from './control-sheet.svelte';
 
 	let {
@@ -184,7 +184,7 @@
 			if (paneId && onselect) onselect(paneId);
 			else if (paneId) {
 				await goto(resolve('/a/[pane]', { pane: paneId }), {
-					replaceState: replacesHistory(prefs.value.backTo, page.url.pathname)
+					replace: replacesHistory(prefs.value.backTo, page.url.pathname)
 				});
 			}
 		} catch {

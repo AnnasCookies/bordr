@@ -1,7 +1,7 @@
 <script lang="ts">
 	import Ticks from './ticks.svelte';
-	import { prefs } from '$lib/prefs.svelte';
-	import { clockTime } from '$lib/clock-time';
+	import { prefs } from '#lib/prefs.svelte.js';
+	import { clockTime } from '#lib/clock-time.js';
 	import type { RunPos } from './bubble.svelte';
 
 	/**

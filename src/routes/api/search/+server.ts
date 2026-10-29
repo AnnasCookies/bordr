@@ -1,10 +1,15 @@
 import { json } from '@sveltejs/kit';
-import { listAgents, rawAgents } from '$lib/server/herdr';
-import { adapterFor } from '$lib/server/transcript';
-import { piSessionEnded } from '$lib/server/transcript/pi';
-import { resolveLocalTranscript } from '$lib/server/transcript/resolve';
-import { MAX_TAIL_BYTES, readTranscriptTail } from '$lib/server/transcript/tail';
-import { isEmptyQuery, matchIndex, matchLength, parseSearchQuery } from '$lib/server/search-query';
+import { listAgents, rawAgents } from '#lib/server/herdr/index.js';
+import { adapterFor } from '#lib/server/transcript/index.js';
+import { piSessionEnded } from '#lib/server/transcript/pi.js';
+import { resolveLocalTranscript } from '#lib/server/transcript/resolve.js';
+import { MAX_TAIL_BYTES, readTranscriptTail } from '#lib/server/transcript/tail.js';
+import {
+	isEmptyQuery,
+	matchIndex,
+	matchLength,
+	parseSearchQuery
+} from '#lib/server/search-query.js';
 import type { RequestHandler } from './$types';
 
 interface Hit {

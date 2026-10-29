@@ -3,9 +3,9 @@ import { mkdtemp, readdir, readFile, rm, stat, writeFile } from 'node:fs/promise
 import { homedir, tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { BUILTIN_COMMANDS } from './commands-builtin';
-import type { SlashCommand } from '$lib/commands';
+import type { SlashCommand } from '#lib/commands.js';
 
-export type { SlashCommand } from '$lib/commands';
+export type { SlashCommand } from '#lib/commands.js';
 
 /**
  * What the composer offers when the person types `/`.

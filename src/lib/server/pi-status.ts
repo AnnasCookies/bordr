@@ -1,4 +1,4 @@
-import type { AgentStatus } from '$lib/types';
+import type { AgentStatus } from '#lib/types.js';
 import type { Message } from './transcript/types';
 
 /** A recognized busy row is evidence of work; its absence is not evidence of idle. */

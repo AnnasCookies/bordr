@@ -1,6 +1,6 @@
-import { browser } from '$app/environment';
+import { browser } from '$app/env';
 import { DEFAULT_FILL, DEFAULT_USER } from './bubble-colour';
-import { parseHex, readableTextOn } from '$lib/contrast';
+import { parseHex, readableTextOn } from '#lib/contrast.js';
 import type { ListFilter } from './grouping';
 import { clampSidebar, DEFAULT_SIDEBAR } from './sidebar';
 
@@ -160,7 +160,7 @@ export interface Prefs {
 	 * is what the gesture is for on a phone, and it was asked for explicitly; a
 	 * swipe or the tab strip is how you move sideways. It used to cover only
 	 * the conversation page, and four folders deep in Files was five backs.
-	 * The rules live in `$lib/back`.
+	 * The rules live in `#lib/back`.
 	 *
 	 * 'history': every move pushes, and back retraces them one at a time. Ten
 	 * gestures to get home after a few minutes of switching is the behaviour

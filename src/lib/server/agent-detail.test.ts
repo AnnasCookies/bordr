@@ -2,7 +2,7 @@ import { afterEach, expect, it, vi } from 'vitest';
 import { mkdtemp, writeFile, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import type { AgentDetail } from '$lib/types';
+import type { AgentDetail } from '#lib/types.js';
 
 const fixture = vi.hoisted(() => ({
 	raw: {} as Record<string, unknown>,
@@ -10,17 +10,17 @@ const fixture = vi.hoisted(() => ({
 	tail: '',
 	head: ''
 }));
-vi.mock('$lib/server/herdr', async (importOriginal) => ({
-	...(await importOriginal<typeof import('$lib/server/herdr')>()),
+vi.mock('#lib/server/herdr/index.js', async (importOriginal) => ({
+	...(await importOriginal<typeof import('#lib/server/herdr/index.js')>()),
 	rawAgent: async () => fixture.raw,
 	rawPane: async () => fixture.raw,
 	rawAgents: async () => [fixture.raw],
 	readVisible: async () => fixture.visible,
 	readPane: async () => fixture.visible
 }));
-vi.mock('$lib/server/herdr/branches', () => ({ branchesFor: async () => new Map() }));
-vi.mock('$lib/server/herdr/pulls', () => ({ pullFor: () => null }));
-vi.mock('$lib/server/herdr/connections', () => ({
+vi.mock('#lib/server/herdr/branches.js', () => ({ branchesFor: async () => new Map() }));
+vi.mock('#lib/server/herdr/pulls.js', () => ({ pullFor: () => null }));
+vi.mock('#lib/server/herdr/connections.js', () => ({
 	connectionFor: () => null,
 	ensureConnection: async () => ({ machine: { id: 'remote', label: 'Fixture' } }),
 	remoteTranscriptTail: async (
@@ -32,7 +32,7 @@ vi.mock('$lib/server/herdr/connections', () => ({
 	) => (head ? fixture.head : fixture.tail)
 }));
 import { GET } from '../../routes/api/agents/[pane]/+server';
-import { toSummary } from '$lib/server/herdr';
+import { toSummary } from '#lib/server/herdr/index.js';
 import { enrichAgents, resetScreenCache } from './enrich';
 
 const dirs: string[] = [];

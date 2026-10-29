@@ -1,7 +1,7 @@
 import { json } from '@sveltejs/kit';
-import { paneTree } from '$lib/server/herdr/tree';
-import { machineStates } from '$lib/server/herdr/connections';
-import { knownMachineLabels } from '$lib/server/herdr/machines';
+import { paneTree } from '#lib/server/herdr/tree.js';
+import { machineStates } from '#lib/server/herdr/connections.js';
+import { knownMachineLabels } from '#lib/server/herdr/machines.js';
 import type { RequestHandler } from './$types';
 
 /**

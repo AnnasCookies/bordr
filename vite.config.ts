@@ -1,11 +1,14 @@
 import { createHash } from 'node:crypto';
 import { readFileSync } from 'node:fs';
+import { writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import tailwindcss from '@tailwindcss/vite';
 import { defineConfig } from 'vitest/config';
-import adapter from 'svelte-adapter-bun';
+import adapter from '@sveltejs/adapter-bun';
+import type { Adapter } from '@sveltejs/kit';
 import { sveltekit } from '@sveltejs/kit/vite';
+import { EMITTED_HANDOFF, putBack, walk } from './scripts/assets-attic.ts';
 
 /**
  * The hash of the theme script in app.html.
@@ -21,6 +24,30 @@ function inlineScriptHash(): `sha256-${string}` {
 	const body = html.match(/<script>([\s\S]*?)<\/script>/)?.[1] ?? '';
 	return `sha256-${createHash('sha256').update(body).digest('base64')}`;
 }
+
+/**
+ * The Bun adapter, with the previous builds' hashed chunks folded in first.
+ *
+ * @sveltejs/adapter-bun serves only the files it lists at build time, so the
+ * chunks scripts/assets-attic.ts keeps for pages still open on an old build
+ * have to be in SvelteKit's client output before the adapter reads it — put
+ * back afterwards, they 404. What the build emitted is recorded first, so the
+ * attic still retires old chunks on their own clock.
+ */
+function withAttic(inner: Adapter, out: string): Adapter {
+	return {
+		...inner,
+		async adapt(builder) {
+			const immutable = join(builder.getClientDirectory(), '_app', 'immutable');
+			const emitted = await walk(immutable);
+			await putBack(immutable);
+			await inner.adapt(builder);
+			await writeFile(join(out, EMITTED_HANDOFF), JSON.stringify(emitted));
+		}
+	};
+}
+
+const out = process.env.BORDR_BUILD_OUT ?? 'build';
 
 export default defineConfig({
 	plugins: [
@@ -44,7 +71,7 @@ export default defineConfig({
 				}
 			},
 			// The hook in src/hooks.server.ts does this check itself, by host
-			// rather than full origin: svelte-adapter-bun assumes https when it
+			// rather than full origin: the Bun adapter assumes https when it
 			// has no PROTOCOL_HEADER, so the built-in check refused every form
 			// POST on a plain-HTTP loopback run. Do not remove the hook's check.
 			csrf: { trustedOrigins: ['*'] },
@@ -64,7 +91,7 @@ export default defineConfig({
 			// rebuild ./build under the live service, which then lazy-loaded
 			// route chunks that no longer existed and answered 500 on every
 			// page but the one already in memory.
-			adapter: adapter({ out: process.env.BORDR_BUILD_OUT ?? 'build' })
+			adapter: withAttic(adapter({ out }), out)
 		})
 	],
 	test: {

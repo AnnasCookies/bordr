@@ -2,7 +2,7 @@ import { closeSync, constants, fstatSync, openSync, readFileSync } from 'node:fs
 import { access } from 'node:fs/promises';
 import { homedir } from 'node:os';
 import { join } from 'node:path';
-import { PiTodoTracker, todoPlanFromDetails } from '$lib/todo-plan';
+import { PiTodoTracker, todoPlanFromDetails } from '#lib/todo-plan.js';
 import {
 	fromBlocks,
 	type Adapter,

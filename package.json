@@ -15,10 +15,10 @@
 	"type": "module",
 	"scripts": {
 		"dev": "vite dev",
-		"build": "bun scripts/assets-attic.ts stash && vite build && bun scripts/assets-attic.ts restore",
+		"build": "bun scripts/assets-attic.ts stash && bun --bun vite build && bun scripts/assets-attic.ts restore",
 		"preview": "vite preview",
 		"prepare": "svelte-kit sync || echo ''",
-		"check": "svelte-kit sync && svelte-check --tsconfig ./tsconfig.json",
+		"check": "svelte-kit sync && svelte-check --tsconfig ./tsconfig.json && tsc -p src/service-worker",
 		"check:watch": "svelte-kit sync && svelte-check --tsconfig ./tsconfig.json --watch",
 		"lint": "prettier --check . && eslint .",
 		"format": "prettier --write .",
@@ -27,12 +27,13 @@
 		"test:e2e": "playwright install chromium && playwright test",
 		"test:security": "BORDR_BUILD_OUT=.security-build bun run build && playwright test --config playwright.security.config.ts",
 		"smoke": "bun run scripts/smoke.ts",
-		"deploy": "bun run build && bun scripts/publish-build.ts && bash scripts/restart-service.sh && sleep 3 && bun run smoke"
+		"deploy": "bun scripts/assets-attic.ts adopt && bun run build && bun scripts/publish-build.ts && bash scripts/restart-service.sh && sleep 3 && bun run smoke"
 	},
 	"devDependencies": {
 		"@eslint/js": "^10.0.1",
 		"@playwright/test": "^1.60.0",
-		"@sveltejs/kit": "^2.63.0",
+		"@sveltejs/adapter-bun": "^1.0.0",
+		"@sveltejs/kit": "^3.1.0",
 		"@sveltejs/vite-plugin-svelte": "^7.1.2",
 		"@tailwindcss/vite": "^4.3.0",
 		"@types/node": "^24",
@@ -45,8 +46,7 @@
 		"prettier-plugin-svelte": "^4.1.0",
 		"prettier-plugin-tailwindcss": "^0.8.0",
 		"simple-icons": "^16.30.0",
-		"svelte": "^5.56.1",
-		"svelte-adapter-bun": "^1.0.1",
+		"svelte": "^5.57.1",
 		"svelte-check": "^4.6.0",
 		"tailwindcss": "^4.3.0",
 		"typescript": "^6.0.3",
@@ -61,5 +61,8 @@
 		"marked": "^18.0.11",
 		"shiki": "^4.4.3",
 		"web-push": "^3.6.7"
+	},
+	"imports": {
+		"#lib/*": "./src/lib/*"
 	}
 }

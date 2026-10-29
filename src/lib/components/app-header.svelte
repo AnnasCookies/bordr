@@ -3,8 +3,8 @@
 	import NetDot from './net-dot.svelte';
 	import { resolve } from '$app/paths';
 	import { page } from '$app/state';
-	import { prefs } from '$lib/prefs.svelte';
-	import { showBackArrow, showChrome, touchPoints } from '$lib/header-chrome';
+	import { prefs } from '#lib/prefs.svelte.js';
+	import { showBackArrow, showChrome, touchPoints } from '#lib/header-chrome.js';
 
 	/**
 	 * The one bar across the top of the app.

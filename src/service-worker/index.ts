@@ -1,6 +1,7 @@
 /// <reference lib="webworker" />
-import { build, files, version } from '$service-worker';
-import { actionFor, chosenIndex, MAX_ACTIONS } from '$lib/notify';
+import { version } from '$app/env';
+import { assets, immutable } from '$app/manifest';
+import { actionFor, chosenIndex, MAX_ACTIONS } from '#lib/notify.js';
 
 declare const self: ServiceWorkerGlobalScope;
 
@@ -65,6 +66,20 @@ function readPayload(data: PushMessageData | null): PushPayload {
 	}
 }
 
+/**
+ * Notification buttons and re-alerting. TypeScript's WebWorker lib leaves them
+ * out because not every engine has them; Chromium and Android honour them and
+ * the rest ignore them.
+ */
+interface NotificationAction {
+	action: string;
+	title: string;
+}
+interface AlertOptions extends NotificationOptions {
+	actions?: NotificationAction[];
+	renotify?: boolean;
+}
+
 /** Notification buttons are a strip, not a menu: two short ones fit. */
 function actionsFor(options: PickerAction[] | undefined): NotificationAction[] {
 	return (options ?? []).slice(0, MAX_ACTIONS).map(actionFor);
@@ -82,7 +97,7 @@ function actionsFor(options: PickerAction[] | undefined): NotificationAction[] {
  * `/` is not a loss, because blocked agents are pinned to the top of it.
  */
 async function show(data: PushPayload): Promise<void> {
-	await self.registration.showNotification(data.title ?? 'bordr', {
+	const alert: AlertOptions = {
 		body: data.body ?? 'An agent needs you.',
 		data: {
 			url: data.url ?? '/',
@@ -100,7 +115,8 @@ async function show(data: PushPayload): Promise<void> {
 		renotify: true,
 		icon: ICON,
 		badge: BADGE
-	});
+	};
+	await self.registration.showNotification(data.title ?? 'bordr', alert);
 
 	const showing = await self.registration.getNotifications();
 	const summary = showing.find((notification) => notification.tag === SUMMARY_TAG);
@@ -110,7 +126,7 @@ async function show(data: PushPayload): Promise<void> {
 	if (total < 2) return;
 
 	for (const notification of showing) notification.close();
-	await self.registration.showNotification('bordr', {
+	const summaryAlert: AlertOptions = {
 		body: `${total} agents need you.`,
 		data: { url: '/', count: total } satisfies NotificationData,
 		tag: SUMMARY_TAG,
@@ -119,7 +135,8 @@ async function show(data: PushPayload): Promise<void> {
 		renotify: true,
 		icon: ICON,
 		badge: BADGE
-	});
+	};
+	await self.registration.showNotification('bordr', summaryAlert);
 }
 
 self.addEventListener('push', (event) => {
@@ -240,7 +257,13 @@ self.addEventListener('install', () => void self.skipWaiting());
  * is for.
  */
 const ASSET_CACHE = `bordr-assets-${BUILD}`;
-const ASSETS = new Set([...build, ...files.filter((f) => f.startsWith('/fonts/'))]);
+// Manifest paths are relative to the app's base; the fetch handler compares
+// absolute pathnames, so resolve them against the worker's own location.
+const absolute = (path: string) => new URL(path, self.location.href).pathname;
+const ASSETS = new Set([
+	...immutable.map(({ path }) => absolute(path)),
+	...assets.filter(({ path }) => path.startsWith('fonts/')).map(({ path }) => absolute(path))
+]);
 
 self.addEventListener('fetch', (event) => {
 	const { request } = event;

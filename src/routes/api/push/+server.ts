@@ -5,8 +5,8 @@ import {
 	publicKey,
 	removeSubscription,
 	subscriptionCount
-} from '$lib/server/push';
-import { getManager } from '$lib/server/herdr';
+} from '#lib/server/push.js';
+import { getManager } from '#lib/server/herdr/index.js';
 import type { RequestHandler } from './$types';
 
 /** GET: the VAPID public key the browser needs to subscribe. */

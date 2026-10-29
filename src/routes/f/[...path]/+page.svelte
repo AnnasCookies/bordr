@@ -1,15 +1,15 @@
 <script lang="ts">
-	import AppHeader from '$lib/components/app-header.svelte';
-	import SessionTree from '$lib/components/session-tree.svelte';
+	import AppHeader from '#lib/components/app-header.svelte';
+	import SessionTree from '#lib/components/session-tree.svelte';
 	let treeOpen = $state(false);
-	import { track } from '$lib/pending.svelte';
+	import { track } from '#lib/pending.svelte.js';
 	import { resolve } from '$app/paths';
 	import type { ResolvedPathname } from '$app/types';
 	import { marked } from 'marked';
-	import { sanitiseMarkdown } from '$lib/sanitise-markdown';
-	import { prefs } from '$lib/prefs.svelte';
-	import Icon from '$lib/components/icon.svelte';
-	import TabBar from '$lib/components/tab-bar.svelte';
+	import { sanitiseMarkdown } from '#lib/sanitise-markdown.js';
+	import { prefs } from '#lib/prefs.svelte.js';
+	import Icon from '#lib/components/icon.svelte';
+	import TabBar from '#lib/components/tab-bar.svelte';
 	import type { DirEntry } from './+page.server';
 
 	let { data } = $props();

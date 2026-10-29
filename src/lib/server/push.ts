@@ -1,6 +1,6 @@
-import { env } from '$env/dynamic/private';
+import { env } from '#lib/server/env.js';
 import { createHash } from 'node:crypto';
-import { pickerIdentity } from '$lib/picker-shortcut';
+import { pickerIdentity } from '#lib/picker-shortcut.js';
 import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { homedir } from 'node:os';
@@ -8,7 +8,7 @@ import webpush, { WebPushError, type PushSubscription } from 'web-push';
 import { getManager, listAgents, readVisible } from './herdr';
 import { enrichAgents } from './enrich';
 import { parsePicker, type Picker } from './picker';
-import { offerable } from '$lib/notify';
+import { offerable } from '#lib/notify.js';
 import { isWatched, loadJson, saveJson } from './state-store';
 
 /**

@@ -1,12 +1,12 @@
 <script lang="ts">
 	import { resolve } from '$app/paths';
-	import { agentTitle, collapseHome } from '$lib/grouping';
-	import { harnessText, STATUS_INK, STATUS_RAIL, UNKNOWN_RAIL } from '$lib/theme';
-	import { prefs } from '$lib/prefs.svelte';
+	import { agentTitle, collapseHome } from '#lib/grouping.js';
+	import { harnessText, STATUS_INK, STATUS_RAIL, UNKNOWN_RAIL } from '#lib/theme.js';
+	import { prefs } from '#lib/prefs.svelte.js';
 	import HarnessMark from './harness-mark.svelte';
 	import PreviewText from './preview-text.svelte';
 	import type { ResolvedPathname } from '$app/types';
-	import type { AgentSummary } from '$lib/types';
+	import type { AgentSummary } from '#lib/types.js';
 
 	let {
 		agent,

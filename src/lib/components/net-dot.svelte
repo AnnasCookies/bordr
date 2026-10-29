@@ -1,9 +1,9 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
 	import { resolve } from '$app/paths';
-	import { version } from '$app/environment';
-	import { agentStore } from '$lib/agents.svelte';
-	import { netBusy } from '$lib/pending.svelte';
+	import { version } from '$app/env';
+	import { agentStore } from '#lib/agents.svelte.js';
+	import { netBusy } from '#lib/pending.svelte.js';
 	import NetStatus, { netLabel, netState } from './net-status.svelte';
 
 	/**

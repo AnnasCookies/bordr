@@ -1,7 +1,7 @@
 import { error, isHttpError, json } from '@sveltejs/kit';
-import { clientFor, HerdrRequestError } from '$lib/server/herdr';
-import { HerdrHangupError } from '$lib/server/herdr/client';
-import { parsePane } from '$lib/server/herdr/address';
+import { clientFor, HerdrRequestError } from '#lib/server/herdr/index.js';
+import { HerdrHangupError } from '#lib/server/herdr/client.js';
+import { parsePane } from '#lib/server/herdr/address.js';
 import type { RequestHandler } from './$types';
 
 interface GeometryBody {

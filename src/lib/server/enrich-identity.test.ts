@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import type { Machine } from './herdr/machines';
-import type { AgentSummary } from '$lib/types';
+import type { AgentSummary } from '#lib/types.js';
 import { connectionKey } from './herdr/connections';
 
 const fixture = vi.hoisted(() => ({
@@ -10,7 +10,7 @@ const fixture = vi.hoisted(() => ({
 	reads: vi.fn(),
 	keys: vi.fn()
 }));
-vi.mock('$lib/server/herdr', () => ({
+vi.mock('#lib/server/herdr/index.js', () => ({
 	rawAgents: async () => [],
 	rawAgent: async () => null,
 	readVisible: async () => {

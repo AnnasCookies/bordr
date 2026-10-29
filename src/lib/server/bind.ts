@@ -67,14 +67,14 @@ export function judgeBind(
 	if (allowPublic === '1') return { ok: true, reason: null };
 	const value = (host ?? '').trim();
 
-	// An unset HOST is the most dangerous value of all: svelte-adapter-bun's
+	// An unset HOST is the most dangerous value of all: the Bun adapter's
 	// own default is 0.0.0.0, so "I forgot the line" is indistinguishable from
 	// "expose me to everything". Refuse, and say which line to add.
 	if (!value) {
 		return {
 			ok: false,
 			reason:
-				`HOST is not set, and svelte-adapter-bun then binds 0.0.0.0, every network ` +
+				`HOST is not set, and the Bun adapter then binds 0.0.0.0, every network ` +
 				`interface. bordr has no authentication: anyone who can reach this port can ` +
 				`drive your coding agents and read your files. Put HOST=127.0.0.1 in .env and ` +
 				`front it with \`tailscale serve\`, or bind your 100.x tailnet address. ` +

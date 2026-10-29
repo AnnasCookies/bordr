@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { treeFrom, type RawLayout } from './layout';
-import type { SplitNode } from '$lib/types';
+import type { SplitNode } from '#lib/types.js';
 
 const AREA = { x: 0, y: 0, width: 198, height: 115 };
 

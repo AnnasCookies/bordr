@@ -1,8 +1,8 @@
 import { readFileSync, statSync } from 'node:fs';
 import { extname } from 'node:path';
 import { error } from '@sveltejs/kit';
-import { PHOTO_TYPES } from '$lib/server/attachments';
-import { MIME, resolveUpload } from '$lib/server/files';
+import { PHOTO_TYPES } from '#lib/server/attachments.js';
+import { MIME, resolveUpload } from '#lib/server/files.js';
 import type { RequestHandler } from './$types';
 
 /** Photos are camera-sized; the upload route already caps what can get here. */

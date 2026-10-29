@@ -1,5 +1,5 @@
 import { redactSecrets } from './redact';
-import { queueKey, type QueuedPrompt } from '$lib/queue';
+import { queueKey, type QueuedPrompt } from '#lib/queue.js';
 
 /**
  * What the harness says about prompts it has queued.

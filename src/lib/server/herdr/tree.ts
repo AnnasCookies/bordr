@@ -6,7 +6,7 @@ import { layoutsFor } from './layout';
 import { listMachines, type Machine } from './machines';
 import { formatPane } from './address';
 import { readState, seenStatus } from '../state-store';
-import type { PaneNode, TabLayout, TabNode, WorkspaceNode } from '$lib/types';
+import type { PaneNode, TabLayout, TabNode, WorkspaceNode } from '#lib/types.js';
 
 /**
  * The whole session as herdr sees it: workspaces, their tabs, their panes.

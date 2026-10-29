@@ -1,9 +1,9 @@
 <script lang="ts">
-	import { browser } from '$app/environment';
-	import { prefs } from '$lib/prefs.svelte';
-	import { highlight } from '$lib/highlight';
+	import { browser } from '$app/env';
+	import { prefs } from '#lib/prefs.svelte.js';
+	import { highlight } from '#lib/highlight.js';
 	import { marked } from 'marked';
-	import { sanitiseMarkdown } from '$lib/sanitise-markdown';
+	import { sanitiseMarkdown } from '#lib/sanitise-markdown.js';
 
 	let { text, mono = 11 }: { text: string; mono?: number } = $props();
 

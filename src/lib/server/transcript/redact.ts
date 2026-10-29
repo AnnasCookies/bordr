@@ -1,4 +1,4 @@
-import type { TodoPlan } from '$lib/todo-plan';
+import type { TodoPlan } from '#lib/todo-plan.js';
 import type { Adapter, Block, EditDiff, Message, ToolResult } from './types';
 
 const PRIVATE_KEY_BLOCK = /-----BEGIN ((?:[A-Z0-9]+ )*PRIVATE KEY)-----[\s\S]*?-----END \1-----/g;

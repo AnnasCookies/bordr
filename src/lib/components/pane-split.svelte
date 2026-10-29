@@ -1,7 +1,7 @@
 <script lang="ts">
 	import type { Snippet } from 'svelte';
-	import type { SplitNode } from '$lib/types';
-	import { splitBranchStyles, splitContains } from '$lib/split-sizing';
+	import type { SplitNode } from '#lib/types.js';
+	import { splitBranchStyles, splitContains } from '#lib/split-sizing.js';
 	import Self from './pane-split.svelte';
 
 	/**

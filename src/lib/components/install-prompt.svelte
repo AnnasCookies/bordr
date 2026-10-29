@@ -1,7 +1,7 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
-	import { installOffer, isIOS, type InstallOffer } from '$lib/install';
-	import { installCapture } from '$lib/install-event.svelte';
+	import { installOffer, isIOS, type InstallOffer } from '#lib/install.js';
+	import { installCapture } from '#lib/install-event.svelte.js';
 
 	/**
 	 * An offer to install bordr, for the browser copy.

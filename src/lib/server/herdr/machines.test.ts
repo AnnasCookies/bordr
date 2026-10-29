@@ -27,7 +27,7 @@ async function load(path: string, env: Record<string, string> = {}) {
 	// Reset here, not only in afterEach: a test that loads twice would
 	// otherwise get the first call's module and silently assert nothing.
 	vi.resetModules();
-	vi.doMock('$env/dynamic/private', () => ({
+	vi.doMock('#lib/server/env.js', () => ({
 		env: { HERDR_ENDPOINTS: path, BORDR_MACHINES: 'a,b,tm-dev,hermes', ...env }
 	}));
 	return (await import('./machines')).listMachines();
@@ -60,7 +60,7 @@ describe('listMachines', () => {
 
 	/**
 	 * With no list, what is reachable depends on the bind (`machinesInherit`).
-	 * A bind nobody can vouch for — HOST unset, which svelte-adapter-bun turns
+	 * A bind nobody can vouch for — HOST unset, which the Bun adapter turns
 	 * into every interface — inherits nothing.
 	 */
 	it('reaches no machine without BORDR_MACHINES when the bind cannot be vouched for', async () => {

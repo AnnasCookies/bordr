@@ -1,13 +1,13 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
-	import { version } from '$app/environment';
-	import SettingsNav from '$lib/components/settings-nav.svelte';
-	import AppHeader from '$lib/components/app-header.svelte';
-	import SessionTree from '$lib/components/session-tree.svelte';
-	import { screen, watchWide } from '$lib/wide.svelte';
-	import { agentStore } from '$lib/agents.svelte';
-	import ConnectionBanner, { type Connection } from '$lib/components/connection-banner.svelte';
-	import TabBar from '$lib/components/tab-bar.svelte';
+	import { version } from '$app/env';
+	import SettingsNav from '#lib/components/settings-nav.svelte';
+	import AppHeader from '#lib/components/app-header.svelte';
+	import SessionTree from '#lib/components/session-tree.svelte';
+	import { screen, watchWide } from '#lib/wide.svelte.js';
+	import { agentStore } from '#lib/agents.svelte.js';
+	import ConnectionBanner, { type Connection } from '#lib/components/connection-banner.svelte';
+	import TabBar from '#lib/components/tab-bar.svelte';
 
 	const store = agentStore;
 	/** Ticks so the "last event" age counts up rather than freezing on load. */

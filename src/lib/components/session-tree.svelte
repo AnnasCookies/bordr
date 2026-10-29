@@ -1,21 +1,21 @@
 <script lang="ts">
-	import { cachedPanes, recall, remember } from '$lib/last-seen';
+	import { cachedPanes, recall, remember } from '#lib/last-seen.js';
 	import { resolve } from '$app/paths';
 	import { page } from '$app/state';
-	import { showBackArrow, touchPoints } from '$lib/header-chrome';
+	import { showBackArrow, touchPoints } from '#lib/header-chrome.js';
 	import Icon from './icon.svelte';
 	import { untrack } from 'svelte';
 	import { SvelteSet } from 'svelte/reactivity';
-	import { agentTitle, compareAgentPriority, nestWorktrees } from '$lib/grouping';
-	import { agentStore } from '$lib/agents.svelte';
-	import { prefs, type AgentOrder } from '$lib/prefs.svelte';
-	import { followPointer } from '$lib/pointer-drag';
-	import { harnessText } from '$lib/theme';
+	import { agentTitle, compareAgentPriority, nestWorktrees } from '#lib/grouping.js';
+	import { agentStore } from '#lib/agents.svelte.js';
+	import { prefs, type AgentOrder } from '#lib/prefs.svelte.js';
+	import { followPointer } from '#lib/pointer-drag.js';
+	import { harnessText } from '#lib/theme.js';
 	import HarnessMark from './harness-mark.svelte';
 	import PreviewText from './preview-text.svelte';
-	import { tabName } from '$lib/tab-label';
+	import { tabName } from '#lib/tab-label.js';
 	import StatusMark from './status-mark.svelte';
-	import type { MachineStatus, PaneNode, WorkspaceNode } from '$lib/types';
+	import type { MachineStatus, PaneNode, WorkspaceNode } from '#lib/types.js';
 
 	let {
 		current = '',

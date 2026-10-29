@@ -1,10 +1,10 @@
-import { isRemote } from '$lib/server/herdr/address';
+import { isRemote } from '#lib/server/herdr/address.js';
 import { error, json } from '@sveltejs/kit';
-import { rawAgent, rawPane, toSummary } from '$lib/server/herdr';
-import { adapterFor } from '$lib/server/transcript';
-import { resolveLocalTranscript } from '$lib/server/transcript/resolve';
-import { readSubagent } from '$lib/server/transcript/subagents';
-import { backfillBlocks } from '$lib/server/transcript/types';
+import { rawAgent, rawPane, toSummary } from '#lib/server/herdr/index.js';
+import { adapterFor } from '#lib/server/transcript/index.js';
+import { resolveLocalTranscript } from '#lib/server/transcript/resolve.js';
+import { readSubagent } from '#lib/server/transcript/subagents.js';
+import { backfillBlocks } from '#lib/server/transcript/types.js';
 import type { RequestHandler } from './$types';
 
 /**

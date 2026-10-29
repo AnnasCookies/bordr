@@ -10,10 +10,10 @@
 	import CodeBlock from './code-block.svelte';
 	import ToolDetail from './tool-detail.svelte';
 	import TodoCard from './todo-card.svelte';
-	import { langForPath } from '$lib/highlight';
-	import { prefs } from '$lib/prefs.svelte';
-	import { todoPlanForBlock } from '$lib/message-segments';
-	import type { Block } from '$lib/server/transcript/types';
+	import { langForPath } from '#lib/highlight.js';
+	import { prefs } from '#lib/prefs.svelte.js';
+	import { todoPlanForBlock } from '#lib/message-segments.js';
+	import type { Block } from '#lib/server/transcript/types.js';
 
 	let {
 		blocks,

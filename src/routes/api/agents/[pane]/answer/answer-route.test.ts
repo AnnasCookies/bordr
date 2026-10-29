@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { parsePicker } from '$lib/server/picker';
-import { pickerIdentity } from '$lib/picker-shortcut';
+import { parsePicker } from '#lib/server/picker.js';
+import { pickerIdentity } from '#lib/picker-shortcut.js';
 import { createHash } from 'node:crypto';
 
 /**
@@ -25,7 +25,7 @@ const herdr = vi.hoisted(() => ({
 		herdr.sent.push([`prompt:${text}`]);
 	})
 }));
-vi.mock('$lib/server/herdr', () => herdr);
+vi.mock('#lib/server/herdr/index.js', () => herdr);
 
 /**
  * A codex transcript whose newest record is an unanswered question. Only the
@@ -36,13 +36,13 @@ const CODEX_ASK = {
 	question: 'Where will you test Sera?',
 	options: ['Existing staging site', 'Local preview']
 };
-vi.mock('$lib/server/transcript', () => ({
+vi.mock('#lib/server/transcript/index.js', () => ({
 	adapterFor: () => ({ parse: () => [{ role: 'assistant', text: '', ask: CODEX_ASK }] })
 }));
-vi.mock('$lib/server/transcript/resolve', () => ({
+vi.mock('#lib/server/transcript/resolve.js', () => ({
 	resolveLocalTranscript: async () => '/tmp/codex-session.jsonl'
 }));
-vi.mock('$lib/server/transcript/tail', () => ({
+vi.mock('#lib/server/transcript/tail.js', () => ({
 	readTranscriptTail: async () => ({ text: '' }),
 	DEFAULT_TAIL_BYTES: 1
 }));

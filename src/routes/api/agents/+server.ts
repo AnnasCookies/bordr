@@ -1,6 +1,6 @@
 import { json } from '@sveltejs/kit';
-import { checkCompatibility, listAgents } from '$lib/server/herdr';
-import { enrichAgents } from '$lib/server/enrich';
+import { checkCompatibility, listAgents } from '#lib/server/herdr/index.js';
+import { enrichAgents } from '#lib/server/enrich.js';
 import type { RequestHandler } from './$types';
 
 export const GET: RequestHandler = async () => {

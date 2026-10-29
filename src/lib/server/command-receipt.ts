@@ -1,4 +1,4 @@
-import { slashCommandName } from '$lib/commands';
+import { slashCommandName } from '#lib/commands.js';
 
 export interface CommandReceipt {
 	name: string;

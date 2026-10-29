@@ -1,6 +1,6 @@
 import { beforeEach, expect, it, vi } from 'vitest';
-import { pickerIdentity } from '$lib/picker-shortcut';
-import { parsePicker } from '$lib/server/picker';
+import { pickerIdentity } from '#lib/picker-shortcut.js';
+import { parsePicker } from '#lib/server/picker.js';
 
 const fixture = vi.hoisted(() => ({
 	scope: 'original',
@@ -9,8 +9,8 @@ const fixture = vi.hoisted(() => ({
 	inputs: [] as string[]
 }));
 const screen = 'Approve the fixture?\n❯ 1. Yes\n  2. No\nEnter to select · Esc to cancel';
-vi.mock('$lib/server/herdr/connections', async (importOriginal) => ({
-	...(await importOriginal<typeof import('$lib/server/herdr/connections')>()),
+vi.mock('#lib/server/herdr/connections.js', async (importOriginal) => ({
+	...(await importOriginal<typeof import('#lib/server/herdr/connections.js')>()),
 	ensureConnection: async () => {
 		const captured = fixture.scope;
 		return {
@@ -31,7 +31,7 @@ vi.mock('$lib/server/herdr/connections', async (importOriginal) => ({
 		};
 	}
 }));
-vi.mock('$lib/server/herdr/machines', () => ({ listMachines: () => [] }));
+vi.mock('#lib/server/herdr/machines.js', () => ({ listMachines: () => [] }));
 
 beforeEach(() => {
 	fixture.scope = 'original';

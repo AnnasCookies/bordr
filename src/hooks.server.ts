@@ -1,7 +1,7 @@
-import { building, dev } from '$app/environment';
-import { env } from '$env/dynamic/private';
-import type { Handle } from '@sveltejs/kit';
-import { startPushWatcher } from '$lib/server/push';
+import { building, dev } from '$app/env';
+import { env } from '#lib/server/env.js';
+import type { Handle } from '@sveltejs/kit/hooks';
+import { startPushWatcher } from '#lib/server/push.js';
 import {
 	ALLOW_FLAG,
 	judgeBind,
@@ -9,7 +9,7 @@ import {
 	judgeUser,
 	requestHost,
 	USERS_FLAG
-} from '$lib/server/bind';
+} from '#lib/server/bind.js';
 
 /**
  * Checked once at startup. bordr refuses to SERVE rather than refusing to
@@ -101,7 +101,7 @@ export const handle: Handle = async ({ event, resolve }) => {
 	//    have no Sec-Fetch-Site, and a sandboxed artifact sends the literal
 	//    "null", which fails to parse and is refused. Compared by host, not
 	//    scheme: SvelteKit's own check (disabled in vite.config.ts) compared
-	//    full origins, and svelte-adapter-bun assumes https when nothing says
+	//    full origins, and the Bun adapter assumes https when nothing says
 	//    otherwise, so on the plain-HTTP loopback trial every photo upload was
 	//    refused as cross-site.
 	//

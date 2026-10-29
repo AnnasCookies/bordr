@@ -1,6 +1,6 @@
 import { error, json } from '@sveltejs/kit';
-import { createWorktree, listWorktrees, openWorktree } from '$lib/server/herdr/controls';
-import { HerdrRequestError } from '$lib/server/herdr/client';
+import { createWorktree, listWorktrees, openWorktree } from '#lib/server/herdr/controls.js';
+import { HerdrRequestError } from '#lib/server/herdr/client.js';
 import type { RequestHandler } from './$types';
 
 /**

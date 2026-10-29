@@ -7,7 +7,7 @@ import type { Adapter, Message } from './types';
 
 // Svelte's dynamic env otherwise reads the developer .env in Vitest; route it
 // to the test project's guarded temp directory before `files.ts` is evaluated.
-vi.mock('$env/dynamic/private', () => ({ env: process.env }));
+vi.mock('#lib/server/env.js', () => ({ env: process.env }));
 
 const dataDir = process.env.BORDR_DATA_DIR;
 if (!dataDir) throw new Error('BORDR_DATA_DIR is required for photo tests');

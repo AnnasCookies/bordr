@@ -8,8 +8,8 @@ import {
 	swapWithFocusedPane,
 	zoomPane,
 	type Scope
-} from '$lib/server/herdr/controls';
-import { HerdrRequestError } from '$lib/server/herdr/client';
+} from '#lib/server/herdr/controls.js';
+import { HerdrRequestError } from '#lib/server/herdr/client.js';
 import type { RequestHandler } from './$types';
 
 /**

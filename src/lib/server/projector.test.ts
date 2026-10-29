@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import type { AgentSummary } from '$lib/types';
+import type { AgentSummary } from '#lib/types.js';
 import type { Compatibility } from './herdr/compat';
 import { observeStatus } from './push';
 

@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { previewPlain, previewSegments } from '$lib/preview-markdown';
+	import { previewPlain, previewSegments } from '#lib/preview-markdown.js';
 
 	/**
 	 * A one-line preview with its markdown read rather than printed.

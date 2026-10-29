@@ -1,6 +1,6 @@
 <script lang="ts">
 	import { resolve } from '$app/paths';
-	import { track } from '$lib/pending.svelte';
+	import { track } from '#lib/pending.svelte.js';
 	import Spinner from './spinner.svelte';
 
 	/**

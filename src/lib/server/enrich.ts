@@ -9,7 +9,7 @@ import { branchesFor, type BranchInfo } from './herdr/branches';
 import { connectionFor, connectionKey } from './herdr/connections';
 import { extractStatusLines } from './status';
 import { piScreenWorking, piTranscriptSettled, piStatusDiagnostic } from './pi-status';
-import type { AgentSummary } from '$lib/types';
+import type { AgentSummary } from '#lib/types.js';
 import type { Message } from './transcript/types';
 
 /**

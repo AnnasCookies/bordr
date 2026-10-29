@@ -11,12 +11,12 @@ import {
 	sendKeys,
 	settleScreen,
 	waitForActiveAgent
-} from '$lib/server/herdr';
-import { encodeOmpStartupPrompt } from '$lib/server/omp-startup-prompt';
-import { waitForWorkspacePane } from '$lib/server/herdr/workspace-pane';
-import { herdrAgentName, uniqueHerdrAgentName } from '$lib/server/herdr/agent-name';
-import { piAdapter } from '$lib/server/transcript/pi';
-import { readTranscriptTail } from '$lib/server/transcript/tail';
+} from '#lib/server/herdr/index.js';
+import { encodeOmpStartupPrompt } from '#lib/server/omp-startup-prompt.js';
+import { waitForWorkspacePane } from '#lib/server/herdr/workspace-pane.js';
+import { herdrAgentName, uniqueHerdrAgentName } from '#lib/server/herdr/agent-name.js';
+import { piAdapter } from '#lib/server/transcript/pi.js';
+import { readTranscriptTail } from '#lib/server/transcript/tail.js';
 import type { RequestHandler } from './$types';
 
 const KINDS = new Set([

@@ -1,7 +1,7 @@
-import type { AgentSummary } from '$lib/types';
+import type { AgentSummary } from '#lib/types.js';
 import { untrack } from 'svelte';
-import { cachedAgents, recall, remember } from '$lib/last-seen';
-import type { Connection } from '$lib/components/connection-banner.svelte';
+import { cachedAgents, recall, remember } from '#lib/last-seen.js';
+import type { Connection } from '#lib/components/connection-banner.svelte';
 
 export interface CompatInfo {
 	level: string;

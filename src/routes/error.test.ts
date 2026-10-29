@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { FIRST_WAIT_MS, MAX_WAIT_MS } from '$lib/recover';
+import { FIRST_WAIT_MS, MAX_WAIT_MS } from '#lib/recover.js';
 import {
 	afterProbe,
 	attemptsKey,

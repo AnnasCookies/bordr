@@ -1,9 +1,9 @@
-import { env } from '$env/dynamic/private';
+import { env } from '#lib/server/env.js';
 import { error } from '@sveltejs/kit';
 import { homedir } from 'node:os';
 import { join } from 'node:path';
-import { tabName } from '$lib/tab-label';
-import type { AgentStatus, AgentSummary } from '$lib/types';
+import { tabName } from '#lib/tab-label.js';
+import type { AgentStatus, AgentSummary } from '#lib/types.js';
 import { HerdrClient, HerdrRequestError } from './client';
 import { judgeCompatibility, type Compatibility } from './compat';
 import { SubscriptionManager } from './subscriptions';

@@ -1,4 +1,4 @@
-import type { WorkspaceNode } from '$lib/types';
+import type { WorkspaceNode } from '#lib/types.js';
 
 /** Pick a surviving pane after the pane in the current URL has exited. */
 export function paneAfterExit(

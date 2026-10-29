@@ -10,8 +10,8 @@
 <script lang="ts">
 	import { onMount, type Snippet } from 'svelte';
 	import { SvelteSet } from 'svelte/reactivity';
-	import { prefs } from '$lib/prefs.svelte';
-	import { promptMark, splitAtPrompt } from '$lib/screen-split';
+	import { prefs } from '#lib/prefs.svelte.js';
+	import { promptMark, splitAtPrompt } from '#lib/screen-split.js';
 	import Icon from './icon.svelte';
 	import StatusBlock from './status-block.svelte';
 	import TerminalSurface from './terminal-surface.svelte';

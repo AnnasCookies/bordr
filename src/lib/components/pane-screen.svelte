@@ -12,7 +12,7 @@
 </script>
 
 <script lang="ts">
-	import { terminalScreenColumns } from '$lib/ansi';
+	import { terminalScreenColumns } from '#lib/ansi.js';
 	import TerminalSurface from './terminal-surface.svelte';
 
 	/**

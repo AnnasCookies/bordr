@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
-import { pickerIdentity } from '$lib/picker-shortcut';
+import { pickerIdentity } from '#lib/picker-shortcut.js';
 import { parsePicker } from './picker';
 
 const fixture = vi.hoisted(() => ({
@@ -8,7 +8,7 @@ const fixture = vi.hoisted(() => ({
 	keys: vi.fn<(pane: string, keys: string[], scope: string) => Promise<void>>(),
 	text: vi.fn<(pane: string, text: string, scope: string) => Promise<void>>()
 }));
-vi.mock('$lib/server/herdr', () => ({
+vi.mock('#lib/server/herdr/index.js', () => ({
 	rawAgent: async () => null,
 	readVisible: fixture.read,
 	sendKeys: fixture.keys,

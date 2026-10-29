@@ -253,7 +253,7 @@ Put them in `.env` as `VAPID_PUBLIC_KEY`, `VAPID_PRIVATE_KEY` and
 bell in the app. Without these keys everything else works and the push endpoint
 returns 503.
 
-`BODY_SIZE_LIMIT` and `IDLE_TIMEOUT` in `.env` raise two adapter defaults that
+`BODY_SIZE_LIMIT` and `CONNECTION_IDLE_TIMEOUT` in `.env` raise two adapter defaults that
 are too small for phones (a 512KB request cap refuses every camera photo). Bun
 reads `.env` when you run the build by hand, and the unit below sets the same.
 

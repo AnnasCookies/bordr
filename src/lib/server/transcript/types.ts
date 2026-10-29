@@ -1,4 +1,4 @@
-import type { TodoPlan } from '$lib/todo-plan';
+import type { TodoPlan } from '#lib/todo-plan.js';
 
 export interface ToolCall {
 	name: string;

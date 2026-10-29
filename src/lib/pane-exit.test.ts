@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import type { WorkspaceNode } from '$lib/types';
+import type { WorkspaceNode } from '#lib/types.js';
 import { paneAfterExit } from './pane-exit';
 
 function workspaces(): WorkspaceNode[] {

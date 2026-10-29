@@ -1,7 +1,7 @@
 <script lang="ts">
-	import { HARNESS_LOGO } from '$lib/harness-logos';
-	import { HARNESS_MARK } from '$lib/harness-marks';
-	import { harnessIcon } from '$lib/theme';
+	import { HARNESS_LOGO } from '#lib/harness-logos.js';
+	import { HARNESS_MARK } from '#lib/harness-marks.js';
+	import { harnessIcon } from '#lib/theme.js';
 
 	/**
 	 * A harness's own mark, where one exists.

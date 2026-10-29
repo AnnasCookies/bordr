@@ -1,12 +1,12 @@
 <script lang="ts">
 	let treeOpen = $state(false);
-	import AppHeader from '$lib/components/app-header.svelte';
-	import SessionTree from '$lib/components/session-tree.svelte';
+	import AppHeader from '#lib/components/app-header.svelte';
+	import SessionTree from '#lib/components/session-tree.svelte';
 	import { onMount } from 'svelte';
 	import { resolve } from '$app/paths';
-	import { agentStore } from '$lib/agents.svelte';
-	import { harnessText, STATUS_RAIL, UNKNOWN_RAIL } from '$lib/theme';
-	import TabBar from '$lib/components/tab-bar.svelte';
+	import { agentStore } from '#lib/agents.svelte.js';
+	import { harnessText, STATUS_RAIL, UNKNOWN_RAIL } from '#lib/theme.js';
+	import TabBar from '#lib/components/tab-bar.svelte';
 
 	const store = agentStore;
 	onMount(() => {
