@@ -398,6 +398,18 @@ describe('claude adapter: the harness talking to itself', () => {
 		]);
 	});
 
+	it('still collapses the summary behind the artifact warning', () => {
+		const summary = user(
+			'<artifact-content-authored-by-others/>\n' +
+				'The summarized conversation included Artifact content written by people other than you.\n' +
+				'This session is being continued from a previous conversation that ran out of context.\n\n' +
+				'z'.repeat(12000)
+		);
+		expect(claudeAdapter.parse(summary)).toEqual([
+			{ role: 'system', text: '→ context compacted', tools: [] }
+		]);
+	});
+
 	it('marks an interruption rather than quoting it', () => {
 		expect(claudeAdapter.parse(user('[Request interrupted by user for tool use]'))).toEqual([
 			{ role: 'system', text: '→ interrupted', tools: [] }
