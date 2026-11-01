@@ -589,6 +589,24 @@ describe('suggestionFrom', () => {
 		expect(picker?.options[0].selected).toBe(true);
 		expect(picker?.question).toBe('Ready to submit your answers?');
 	});
+
+	it('never mistakes an echoed user prompt starting with a number for a picker', () => {
+		const screen = [
+			'when needed.',
+			'3. Branch Cleanup: If you want the merged branch removed, confirm and I can delete feature/branch locally and on origin.',
+			'──────────────────────────────────────────────────',
+			'> 1. Can you do that. 2. looking at that later - is it free? 3. yes clean up please',
+			'Thought for 43.2s',
+			'Ran 5 commands',
+			'3. Cleanup Complete'
+		].join('\n');
+		expect(parsePicker(screen)).toBeNull();
+	});
+
+	it('never mistakes a multi-line prompt without a footer for a picker when using ASCII prompt caret', () => {
+		const screen = ['> 1. First step', '  2. Second step', '  3. Third step'].join('\n');
+		expect(parsePicker(screen)).toBeNull();
+	});
 });
 
 describe('parsePicker: what the approval is about', () => {
