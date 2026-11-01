@@ -240,6 +240,7 @@ function dropPreviewPanel(lines: string[]): { lines: string[]; preview?: string[
 export function parsePicker(visible: string): Picker | null {
 	const { lines, preview } = dropPreviewPanel(visible.split('\n'));
 	const options: PickerOption[] = [];
+	const asciiCarets = new Set<number>();
 	let firstOptionLine = -1;
 	let lastOptionLine = -1;
 	let sawFooter = false;
@@ -254,6 +255,7 @@ export function parsePicker(visible: string): Picker | null {
 			}
 			// Prose, not a dialog: forget it and keep looking below.
 			options.length = 0;
+			asciiCarets.clear();
 			firstOptionLine = -1;
 			continue;
 		}
@@ -269,6 +271,7 @@ export function parsePicker(visible: string): Picker | null {
 		// wrong permission. Only the group nearest the footer is the picker.
 		if (options.length > 0 && index === 1) {
 			options.length = 0;
+			asciiCarets.clear();
 			firstOptionLine = -1;
 		} else if (options.some((o) => o.index === index)) {
 			continue; // a description line can repeat a label but never re-numbers
@@ -288,6 +291,7 @@ export function parsePicker(visible: string): Picker | null {
 			...(box ? { checked: box[1] !== ' ' } : {}),
 			...(WRITE_IN.test(text) ? { writeIn: true } : {})
 		});
+		if (match[1] === '>') asciiCarets.add(index);
 	}
 
 	// The footer is what distinguishes a live picker from an ordinary
@@ -307,9 +311,21 @@ export function parsePicker(visible: string): Picker | null {
 	 * and the whole form was unanswerable from a phone because of it — the
 	 * options showed as text with nothing to tap. A caret on one of the
 	 * options is proof of its own: prose does not mark which line is selected.
+	 *
+	 * However, without a footer:
+	 * 1. The selection indicator must be a genuine dialog marker (❯, ›, ●, ◉).
+	 *    An ASCII '>' is the shell/CLI prompt echoed before user input (e.g.
+	 *    `> 1. Yes, do that`), which without a footer is not a dialog choice.
+	 * 2. There must be at least two options. A single line without a footer is
+	 *    indistinguishable from an echoed prompt or prose.
 	 */
-	const selected = options.some((o) => o.selected);
-	if (options.length === 0 || (!sawFooter && !selected)) {
+	if (!sawFooter) {
+		for (const option of options) {
+			if (asciiCarets.has(option.index)) option.selected = false;
+		}
+	}
+	const liveWithoutFooter = options.length >= 2 && options.some((o) => o.selected);
+	if (options.length === 0 || (!sawFooter && !liveWithoutFooter)) {
 		return parseSlider(lines) ?? parseUnnumbered(lines);
 	}
 

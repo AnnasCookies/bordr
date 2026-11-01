@@ -2046,18 +2046,59 @@
 	 */
 	let screenBox = $state<HTMLDivElement | undefined>();
 	let screenPinned = true;
+	let screenProgrammatic = false;
 	function onScreenScroll() {
-		if (!screenBox) return;
+		if (!screenBox || screenProgrammatic) return;
 		screenPinned = screenBox.scrollTop + screenBox.clientHeight >= screenBox.scrollHeight - 24;
+	}
+	function scrollScreenBottom() {
+		const box = screenBox;
+		if (!box) return;
+		screenProgrammatic = true;
+		box.scrollTop = box.scrollHeight;
+		requestAnimationFrame(() => {
+			if (box && screenPinned) box.scrollTop = box.scrollHeight;
+			requestAnimationFrame(() => {
+				screenProgrammatic = false;
+			});
+		});
 	}
 	$effect(() => {
 		void detail.screenTail;
-		const box = screenBox;
-		if (!box || !screenPinned) return;
-		requestAnimationFrame(() => {
-			box.scrollTop = box.scrollHeight;
-		});
+		if (screenPinned) scrollScreenBottom();
 	});
+	$effect(() => {
+		const box = screenBox;
+		if (!box) return;
+		const observer = new ResizeObserver(() => {
+			if (screenPinned) scrollScreenBottom();
+		});
+		observer.observe(box);
+		return () => observer.disconnect();
+	});
+
+	function openControls(scrollIntoStart = false) {
+		showControls = true;
+		prefs.set('keyStrip', 'always');
+		screenPinned = true;
+		requestAnimationFrame(() => {
+			scrollScreenBottom();
+			if (screenBox) {
+				screenBox.scrollIntoView({
+					block: scrollIntoStart ? 'start' : 'nearest',
+					behavior: 'smooth'
+				});
+			}
+		});
+	}
+	function toggleControls() {
+		if (showControls) {
+			showControls = false;
+			prefs.set('keyStrip', 'peek');
+		} else {
+			openControls(false);
+		}
+	}
 
 	function schedulePoll() {
 		clearTimeout(poll);
@@ -2078,6 +2119,7 @@
 		shown = TAIL;
 		scrollback = null;
 		following = true;
+		screenPinned = true;
 		historyScrollIntent = false;
 		requestAnimationFrame(scrollBottom);
 	});
@@ -3915,10 +3957,7 @@
 								{#if !showControls}
 									<button
 										class="mt-2.5 rounded-lg bg-ink px-3.5 py-2 text-[13px] font-medium text-card"
-										onclick={() => {
-											showControls = true;
-											requestAnimationFrame(() => screenBox?.scrollIntoView({ block: 'start' }));
-										}}
+										onclick={() => openControls(true)}
 									>
 										Show the screen and key strip
 									</button>
@@ -4118,13 +4157,7 @@
 								: 'text-muted'}"
 							aria-label="Manual controls"
 							aria-pressed={showControls}
-							onclick={() => {
-								showControls = !showControls;
-								// Remembered, not just for this conversation: the keyboard
-								// button is the only place most people will ever change
-								// this, and it used to reset on every open.
-								prefs.set('keyStrip', showControls ? 'always' : 'peek');
-							}}
+							onclick={toggleControls}
 						>
 							<Icon name="keyboard" size={19} />
 						</button>
