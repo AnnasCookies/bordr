@@ -247,9 +247,16 @@ export const POST: RequestHandler = async ({ params, request }) => {
 	const current = picker.options.find((option) => option.selected)?.index;
 	// One confirmation, never a probe followed by Enter into an identical successor.
 	await send(keysForOption(index, current, picker.numbered && current === undefined, picker.axis));
-	// Still one confirmation read, but on herdr-core it need not wait the full
-	// half second: core says the moment the agent stops being blocked.
-	await settleAfterAnswer(params.pane, 500);
+	// Still one confirmation read, taken once herdr says the agent is no longer
+	// blocked: at once on a quick redraw, later on a slow one. A checkbox tick
+	// leaves it blocked by design, so that waits only the old half second.
+	const answered = pickerIdentity(picker);
+	await settleAfterAnswer(params.pane, picker.multi ? 500 : 2_000, scope, async () => {
+		// A different question (Claude asks several in one go) or none at all
+		// means this one is done redrawing; a moved highlight does not.
+		const now = parsePicker(await read());
+		return !now || pickerIdentity(now) !== answered;
+	});
 	let outcome: 'accepted' | 'unknown' = 'unknown';
 	try {
 		const after = parsePicker(await read());
