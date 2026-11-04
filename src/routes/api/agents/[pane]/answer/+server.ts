@@ -102,6 +102,22 @@ function isBlocked(cause: unknown): boolean {
 	);
 }
 
+/**
+ * Claude Code asks several questions as one set, under a tab strip:
+ * `← ☐ Fruit  ☐ Drink  ✔ Submit →`. Answering one ticks its tab (`☒`) and
+ * shows the next. The same strip with one more tab ticked is that answer
+ * recorded, not some other dialog: a permission prompt has no strip, so it
+ * stays unconfirmed. Nothing here sends a key.
+ */
+function advancedInSet(before: Picker, after: Picker): boolean {
+	const strip = (picker: Picker) => picker.context?.find((line) => /[☐☒]/.test(line)) ?? '';
+	const [a, b] = [strip(before), strip(after)];
+	if (!a || !b) return false;
+	const tabs = (line: string) => line.replace(/[☐☒]/g, '').replace(/\s+/g, ' ').trim();
+	const ticked = (line: string) => (line.match(/☒/g) ?? []).length;
+	return tabs(a) === tabs(b) && ticked(b) > ticked(a);
+}
+
 export const POST: RequestHandler = async ({ params, request }) => {
 	let input: unknown;
 	try {
@@ -260,7 +276,7 @@ export const POST: RequestHandler = async ({ params, request }) => {
 	let outcome: 'accepted' | 'unknown' = 'unknown';
 	try {
 		const after = parsePicker(await read());
-		if (!after) outcome = 'accepted';
+		if (!after || advancedInSet(picker, after)) outcome = 'accepted';
 		else if (
 			after.multi &&
 			after.options.find((option) => option.index === index)?.checked !== wanted.checked
