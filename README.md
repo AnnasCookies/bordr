@@ -151,7 +151,7 @@ before you install.
 | Thing                              | Why                                 | Notes                                                         |
 | ---------------------------------- | ----------------------------------- | ------------------------------------------------------------- |
 | [Bun](https://bun.sh) 1.2+         | runtime + package manager           | install per the Bun docs                                      |
-| [herdr](https://herdr.dev)         | the terminal workspace bordr drives | must be running; protocol 19 or newer, tested on 20           |
+| [herdr](https://herdr.dev)         | the terminal workspace bordr drives | the TUI (protocol 19+) or herdr-core (`hc`, API generation 1) |
 | At least one coding agent          | the point of it all                 | Claude Code, codex, pi, omp, grok… running inside herdr panes |
 | herdr's integration per harness    | how bordr finds each transcript     | `herdr integration install claude` (and codex, pi, omp…)      |
 | [Tailscale](https://tailscale.com) | the security boundary + HTTPS       | optional for a loopback-only trial, required to use a phone   |
@@ -190,6 +190,18 @@ ls ~/.config/herdr/sessions/*/herdr.sock
 
 If that prints nothing, herdr is not running. Start a session
 (`herdr --session main`) and look again.
+
+On **herdr-core** (the desktop app's runtime, `hc`), the socket is
+`$XDG_RUNTIME_DIR/herdr-core/default.sock`, and bordr finds it on its own when
+`HERDR_SOCKET` is unset. Core has no panes or workspaces of its own: bordr
+shows herdr-app's spaces and tabs from core, and leaves out what only
+herdr-app can do: rename, focus, split, swap, zoom, new tabs and worktrees.
+Agents bordr starts get a terminal of their own, listed under "Other" until
+herdr-app places them. Machines core links (`hc machine add`) show up as
+bordr machines, reached through core rather than bordr's own ssh forward,
+and their transcripts are read there through core too.
+Core needs no `herdr integration`: bordr finds each transcript from the
+agent's own process.
 
 While you are there, install herdr's integration for each harness you use.
 It is how herdr learns which session file an agent is writing, and without it

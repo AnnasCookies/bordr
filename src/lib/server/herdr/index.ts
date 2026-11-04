@@ -4,15 +4,36 @@ import { homedir } from 'node:os';
 import { join } from 'node:path';
 import { tabName } from '#lib/tab-label.js';
 import type { AgentStatus, AgentSummary } from '#lib/types.js';
+import { existsSync } from 'node:fs';
 import { HerdrClient, HerdrRequestError } from './client';
-import { judgeCompatibility, type Compatibility } from './compat';
+import { CORE_GENERATION, judgeCompatibility, type Compatibility } from './compat';
+import { CoreClient } from './core';
 import { SubscriptionManager } from './subscriptions';
 import { ensureConnection } from './connections';
+import { setCoreMachines } from './machines';
 import { formatPane, parsePane } from './address';
 import { promptWithPaneFallback } from './prompt-retry';
 import { readScopeFor, readState, seenStatus } from '../state-store';
 
 const DEFAULT_SOCKET = join(homedir(), '.config', 'herdr', 'sessions', 'main', 'herdr.sock');
+
+/** herdr-core's client socket (its docs/security.md): `<runtime>/herdr-core/<session>.sock`. */
+function coreSocket(): string {
+	if (env.HC_SOCKET) return env.HC_SOCKET;
+	const runtime = env.XDG_RUNTIME_DIR || `/run/user/${process.getuid?.() ?? 0}`;
+	return join(runtime, 'herdr-core', 'default.sock');
+}
+
+/**
+ * Which herdr a socket belongs to, by where it lives: core's sit in a
+ * `herdr-core` directory, the TUI's are `herdr.sock`. Set HERDR_BACKEND to
+ * say so outright when a socket has been moved somewhere that hides it.
+ */
+export function isCoreSocket(path: string): boolean {
+	if (env.HERDR_BACKEND === 'core') return true;
+	if (env.HERDR_BACKEND === 'tui') return false;
+	return path.split('/').includes('herdr-core');
+}
 
 /**
  * `…/sessions/<name>/herdr.sock` names its session by directory. The default
@@ -21,6 +42,7 @@ const DEFAULT_SOCKET = join(homedir(), '.config', 'herdr', 'sessions', 'main', '
  */
 export function sessionName(socketPath: string): string {
 	const parts = socketPath.split('/').filter(Boolean);
+	if (isCoreSocket(socketPath)) return (parts.at(-1) ?? 'default').replace(/\.sock$/, '');
 	return parts.at(-3) === 'sessions' ? parts[parts.length - 2] : 'default';
 }
 const STATUSES: AgentStatus[] = ['idle', 'working', 'blocked', 'done', 'unknown'];
@@ -30,8 +52,14 @@ let client: HerdrClient | undefined;
 let manager: SubscriptionManager | undefined;
 let managerPending: Promise<SubscriptionManager> | undefined;
 
+/**
+ * HERDR_SOCKET wins. Unset, a running herdr-core is preferred over the TUI:
+ * once both are installed, core is where the terminals live.
+ */
 function socketPath(): string {
-	return env.HERDR_SOCKET || DEFAULT_SOCKET;
+	if (env.HERDR_SOCKET) return env.HERDR_SOCKET;
+	const core = coreSocket();
+	return existsSync(core) ? core : DEFAULT_SOCKET;
 }
 
 /**
@@ -45,10 +73,45 @@ function socketPath(): string {
 export function getClient(): HerdrClient {
 	if (!client) {
 		const path = socketPath();
-		console.log(`bordr: herdr socket ${path}`);
-		client = new HerdrClient(path);
+		const core = isCoreSocket(path);
+		console.log(`bordr: ${core ? 'herdr-core' : 'herdr'} socket ${path}`);
+		client = core ? new CoreClient(path) : new HerdrClient(path);
+		if (core) {
+			setCoreMachines([], loadCoreMachines);
+			void loadCoreMachines();
+		}
 	}
 	return client;
+}
+
+let coreMachinesAt = 0;
+
+/**
+ * herdr-core's machines as bordr machines. Throttled: the tree asks on every
+ * poll, and the list changes only when someone runs `hc machine add`.
+ */
+async function loadCoreMachines(): Promise<void> {
+	const herdr = getClient();
+	if (!(herdr instanceof CoreClient) || Date.now() - coreMachinesAt < 10_000) return;
+	coreMachinesAt = Date.now();
+	try {
+		const machines = await herdr.machines();
+		setCoreMachines(
+			machines
+				// Core's machine names are `a-z 0-9 - _ .`; anything else is not ours to address.
+				.filter((m) => /^[a-z0-9._-]{1,32}$/.test(m.name))
+				.map((m) => ({
+					id: m.name,
+					label: m.name,
+					target: m.target ?? m.name,
+					session: 'core',
+					enabled: true,
+					core: { socket: herdr.socketPath, state: m.state ?? 'unknown' }
+				}))
+		);
+	} catch {
+		coreMachinesAt = 0; // core down: try again on the next ask
+	}
 }
 
 /**
@@ -417,6 +480,12 @@ export async function promptAgent(
 		text = text.slice(1);
 		// `!` alone has nothing to run; leave the mode open for the next send.
 		if (!text.trim()) return;
+		// Core holds a paste for ~3 s after anyone types, and the `!` was typing.
+		// Typed keystrokes are not held, so the command goes the same way.
+		if (herdr instanceof CoreClient) {
+			await herdr.request('pane.send_text', { pane_id: paneId, text: `${text}\r` });
+			return;
+		}
 	}
 	try {
 		const registration = await rawAgent(address).catch(() => null);
@@ -508,7 +577,10 @@ function logCompatibility(value: Compatibility): void {
 	if (value.level === loggedLevel) return;
 	loggedLevel = value.level;
 	const summary =
-		value.message ?? `herdr ${value.version ?? '?'} speaks protocol ${value.protocol ?? '?'}`;
+		value.message ??
+		(value.backend === 'core'
+			? `herdr-core ${value.version ?? '?'}, API generation ${CORE_GENERATION}`
+			: `herdr ${value.version ?? '?'} speaks protocol ${value.protocol ?? '?'}`);
 	console.log(`bordr: herdr compatibility ${value.level} — ${summary}`);
 }
 
@@ -529,6 +601,32 @@ export async function checkCompatibility(): Promise<Compatibility> {
 		logCompatibility(value);
 		return value;
 	}
+}
+
+/**
+ * Give an answered dialog time to go away before it is read again.
+ *
+ * On the TUI there is no signal, so it is a fixed wait. herdr-core reports a
+ * blocked agent's status the moment it changes (measured 92 ms), so the wait
+ * ends there; a multi-select that stays blocked still waits it out.
+ */
+export async function settleAfterAnswer(address: string, budgetMs: number): Promise<void> {
+	const herdr = getClient();
+	if (!(herdr instanceof CoreClient) || parsePane(address).machineId) {
+		await new Promise((r) => setTimeout(r, budgetMs));
+		return;
+	}
+	await herdr.waitUnblocked(address, budgetMs);
+}
+
+/** Tell herdr-core a person has seen this turn, so herdr-app stops showing it done. */
+export async function shareSeen(address: string, seq: number): Promise<void> {
+	const { machineId, paneId } = parsePane(address);
+	// Another machine core links has its own client, scoped to it; a TUI
+	// machine's forward is a HerdrClient, and the TUI has no such label.
+	const herdr = machineId ? (await ensureConnection(machineId))?.client : getClient();
+	if (!(herdr instanceof CoreClient)) return;
+	await herdr.markSeen(paneId, seq);
 }
 
 export { HerdrRequestError } from './client';

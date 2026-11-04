@@ -16,19 +16,23 @@
 		x,
 		y,
 		onchoose,
-		onclose
+		onclose,
+		core = false
 	}: {
 		target: ControlTarget;
+		/** On herdr-core the layout is herdr-app's: no rename, split, swap or zoom. */
+		core?: boolean;
 		x: number;
 		y: number;
 		onchoose: (action: ResourceAction) => void;
 		onclose: () => void;
 	} = $props();
 
-	let first = $state<HTMLButtonElement>();
+	let menu = $state<HTMLDivElement>();
 
 	$effect(() => {
-		const button = first;
+		// The first item shown, whichever that is: on core there is no Rename.
+		const button = menu?.querySelector<HTMLButtonElement>('[role="menuitem"]');
 		if (!button) return;
 		const frame = requestAnimationFrame(() => button.focus({ preventScroll: true }));
 		return () => cancelAnimationFrame(frame);
@@ -58,21 +62,23 @@
 		class="fixed w-52 overflow-hidden rounded-lg border border-edge bg-card py-1 shadow-2xl"
 		style:left="{x}px"
 		style:top="{y}px"
+		bind:this={menu}
 		role="menu"
 		tabindex="-1"
 		aria-label="{target.scope} options for {target.label || target.id}"
 		oncontextmenu={(event) => event.preventDefault()}
 	>
-		<button
-			bind:this={first}
-			type="button"
-			role="menuitem"
-			class="flex min-h-9 w-full items-center px-3 text-left text-[13px] hover:bg-chip focus:bg-chip focus:outline-none"
-			onclick={() => onchoose('rename')}
-		>
-			Rename {target.scope}
-		</button>
-		{#if target.scope === 'pane'}
+		{#if !core}
+			<button
+				type="button"
+				role="menuitem"
+				class="flex min-h-9 w-full items-center px-3 text-left text-[13px] hover:bg-chip focus:bg-chip focus:outline-none"
+				onclick={() => onchoose('rename')}
+			>
+				Rename {target.scope}
+			</button>
+		{/if}
+		{#if target.scope === 'pane' && !core}
 			{#if target.canSwap}
 				<button
 					type="button"
@@ -124,13 +130,15 @@
 				Use Herdr right-click menu
 			</button>
 		{/if}
-		<button
-			type="button"
-			role="menuitem"
-			class="flex min-h-9 w-full items-center border-t border-hairline px-3 text-left text-[13px] text-blocked-ink hover:bg-blocked-bg focus:bg-blocked-bg focus:outline-none"
-			onclick={() => onchoose('close')}
-		>
-			Close {target.scope}
-		</button>
+		{#if !core || target.scope === 'pane'}
+			<button
+				type="button"
+				role="menuitem"
+				class="flex min-h-9 w-full items-center border-t border-hairline px-3 text-left text-[13px] text-blocked-ink hover:bg-blocked-bg focus:bg-blocked-bg focus:outline-none"
+				onclick={() => onchoose('close')}
+			>
+				Close {target.scope}
+			</button>
+		{/if}
 	</div>
 </div>

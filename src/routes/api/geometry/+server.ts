@@ -46,7 +46,8 @@ function herdrError(e: unknown): never {
 		) {
 			throw error(409, `${e.code}: ${e.message}`);
 		}
-		if (UNKNOWN_METHOD.test(e.message)) {
+		// herdr-core has no viewports: herdr-app sizes its own terminals.
+		if (UNKNOWN_METHOD.test(e.message) || e.code === 'unsupported') {
 			throw error(501, 'this Herdr build does not support tab viewport leases');
 		}
 		// `clientFor` names a configured machine it cannot reach this way.

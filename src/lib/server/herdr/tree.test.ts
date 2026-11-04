@@ -4,7 +4,10 @@ const fixture = vi.hoisted(() => ({
 	machines: [] as Machine[],
 	delay: null as Promise<void> | null
 }));
-vi.mock('./machines', () => ({ listMachines: () => fixture.machines }));
+vi.mock('./machines', () => ({
+	listMachines: () => fixture.machines,
+	refreshCoreMachines: async () => {}
+}));
 vi.mock('./index', () => ({
 	getClient: () => ({ request: async () => ({ workspaces: [], tabs: [], panes: [] }) })
 }));

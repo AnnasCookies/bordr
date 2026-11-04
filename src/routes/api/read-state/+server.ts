@@ -1,6 +1,7 @@
 import { error, json } from '@sveltejs/kit';
 import { markRead, readScopeFor, readState } from '#lib/server/state-store.js';
 import { parsePane } from '#lib/server/herdr/address.js';
+import { shareSeen } from '#lib/server/herdr/index.js';
 import { projector } from '#lib/server/projector.js';
 import type { RequestHandler } from './$types';
 
@@ -38,6 +39,8 @@ export const POST: RequestHandler = async ({ request }) => {
 		console.error('bordr: read state could not be saved', cause);
 		throw error(503, 'read state could not be saved');
 	}
+	// Best effort: bordr's own read state above is what this route promises.
+	void shareSeen(paneId, seq).catch(() => {});
 	projector.poke(); // other devices clear the unread dot without waiting
 	return json({ ok: true });
 };

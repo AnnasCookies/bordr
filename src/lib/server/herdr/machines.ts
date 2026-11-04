@@ -12,6 +12,29 @@ export interface Machine {
 	/** The herdr session on that host. */
 	session: string;
 	enabled: boolean;
+	/**
+	 * Reached through this host's herdr-core rather than an ssh forward: the
+	 * local core socket, and what core says of the link. Core added it with
+	 * `hc machine add` and relays its terminals as `<name>/t7`.
+	 */
+	core?: { socket: string; state: string };
+}
+
+/**
+ * herdr-core's own machines, set from `machine.list` by the herdr layer.
+ * Kept here so listMachines stays synchronous and every caller sees them.
+ */
+let coreMachines: Machine[] = [];
+let coreRefresh: (() => Promise<void>) | undefined;
+
+export function setCoreMachines(list: Machine[], refresh?: () => Promise<void>): void {
+	coreMachines = list;
+	if (refresh) coreRefresh = refresh;
+}
+
+/** Ask core for its machines again (throttled by the caller); a no-op on the TUI. */
+export async function refreshCoreMachines(): Promise<void> {
+	await coreRefresh?.();
 }
 
 /**
@@ -62,12 +85,10 @@ export function listMachines(): Machine[] {
 		raw = JSON.parse(readFileSync(endpointsPath(), 'utf8'));
 	} catch {
 		// No file is the normal case for anyone who has never added one.
-		return [];
+		raw = null;
 	}
 	const ssh = (raw as { ssh?: unknown })?.ssh;
-	if (!Array.isArray(ssh)) return [];
-
-	const machines = ssh
+	const fromTui = (Array.isArray(ssh) ? ssh : [])
 		.map((entry) => entry as Record<string, unknown>)
 		.filter((entry) => typeof entry.label === 'string' && entry.label)
 		.map((entry) => ({
@@ -89,6 +110,14 @@ export function listMachines(): Machine[] {
 			}
 			return false;
 		});
+	// A machine core already links is reached through core. Its old TUI entry
+	// (herdr's endpoints file outlives a move to core) would only fail.
+	const machines = [
+		...coreMachines,
+		...fromTui.filter(
+			(m) => !coreMachines.some((c) => c.label === m.label || c.target === m.target)
+		)
+	];
 
 	// `BORDR_MACHINES` NARROWS the list; it no longer switches it on.
 	//

@@ -4,7 +4,9 @@ import { chmodSync, existsSync, lstatSync, mkdirSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { HerdrClient } from './client';
-import { listMachines, type Machine } from './machines';
+import { CoreClient } from './core';
+import { coreCall } from './core-wire';
+import { listMachines, refreshCoreMachines, type Machine } from './machines';
 
 /**
  * A herdr server on another host, reached through its own unix socket.
@@ -198,7 +200,36 @@ export function cancelForward(
 
 const CANCEL_TIMEOUT_MS = 4_000;
 
+/**
+ * A machine herdr-core links: no forward to bring up, the local core relays
+ * its terminals. Its client addresses them as `<name>/t7` and passes `on`.
+ */
+function coreConnection(
+	machine: Machine & { core: NonNullable<Machine['core']> }
+): Connection | null {
+	if (!permitted(machine)) return null;
+	const key = connectionKey(machine);
+	const error =
+		machine.core.state === 'connected'
+			? null
+			: `${machine.label} is ${machine.core.state} in herdr-core`;
+	const existing = connections.get(key);
+	if (existing) {
+		existing.error = error;
+		return error ? null : existing;
+	}
+	const connection: Connection = {
+		machine,
+		socketPath: machine.core.socket,
+		client: new CoreClient(machine.core.socket, undefined, key, machine.id),
+		error
+	};
+	connections.set(key, connection);
+	return error ? null : connection;
+}
+
 async function connect(machine: Machine): Promise<Connection | null> {
+	if (machine.core) return coreConnection({ ...machine, core: machine.core });
 	const live = connections.get(connectionKey(machine));
 	if (live && !live.error && (await alive(live))) return permitted(machine) ? live : null;
 
@@ -456,7 +487,12 @@ export function connectionFor(machineId: string): Connection | undefined {
  * beats requiring some other call to have warmed it.
  */
 export async function ensureConnection(machineId: string): Promise<Connection | null> {
-	const machine = listMachines().find((m) => m.id === machineId && m.enabled);
+	let machine = listMachines().find((m) => m.id === machineId && m.enabled);
+	// A cold start can reach a core machine before core's list has been read.
+	if (!machine) {
+		await refreshCoreMachines();
+		machine = listMachines().find((m) => m.id === machineId && m.enabled);
+	}
 	if (!machine) return null;
 	return connect(machine);
 }
@@ -473,6 +509,7 @@ export function runOn(
 	limitBytes = 4 * 1024 * 1024
 ): Promise<string | null> {
 	if (!permitted(machine)) return Promise.resolve(null);
+	if (machine.core) return coreExec(machine, command, limitBytes);
 	return new Promise((resolve) => {
 		let dir: string;
 		try {
@@ -524,6 +561,30 @@ export function runOn(
 }
 
 /**
+ * `runOn` for a machine core links: `machine.exec` runs it there with that
+ * machine's shell, as ssh would, without bordr holding a connection open.
+ */
+async function coreExec(
+	machine: Machine,
+	command: string,
+	limitBytes: number
+): Promise<string | null> {
+	try {
+		const result = await coreCall<{ code?: number | null; stdout?: string }>(
+			machine.core!.socket,
+			'machine.exec',
+			{ on: machine.id, argv: ['sh', '-c', command], timeout: 20 },
+			25_000
+		);
+		if (result.code !== 0) return null;
+		const out = Buffer.from(result.stdout ?? '', 'base64');
+		return out.subarray(0, limitBytes).toString('utf8');
+	} catch {
+		return null;
+	}
+}
+
+/**
  * The tail of a harness transcript on a machine.
  *
  * The session id names a file whose project directory depends on the pane's
@@ -535,6 +596,9 @@ export function runOn(
 export function shellQuote(value: string): string {
 	return `'${value.split("'").join(`'\\''`)}'`;
 }
+
+const REMOTE_SESSION_FILE =
+	/^\/[^\0]*\/\.(?:codex\/sessions|omp\/agent\/sessions|pi\/agent\/sessions)\/[^\0]*\.jsonl$/;
 
 export async function remoteTranscriptTail(
 	machine: Machine,
@@ -548,7 +612,11 @@ export async function remoteTranscriptTail(
 		claude: '"$HOME"/.claude/projects/*/"$ID".jsonl',
 		codex: '"$HOME"/.codex/sessions/*/*/*/"$ID".jsonl'
 	};
-	const glob = globs[agent];
+	// herdr-core names codex, omp and pi sessions by their file, found from the
+	// agent's own process on that machine: only those session folders are read.
+	const direct =
+		agent !== 'claude' && REMOTE_SESSION_FILE.test(sessionId) && !sessionId.includes('/../');
+	const glob = direct ? '"$ID"' : globs[agent];
 	if (!glob) return null;
 
 	// Single-quoted so a session id from herdr can never become shell syntax.

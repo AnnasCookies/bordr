@@ -3,7 +3,7 @@ import type { HerdrClient } from './client';
 import { activeConnections, connectionKey } from './connections';
 import { branchesFor } from './branches';
 import { layoutsFor } from './layout';
-import { listMachines, type Machine } from './machines';
+import { listMachines, refreshCoreMachines, type Machine } from './machines';
 import { formatPane } from './address';
 import { readState, seenStatus } from '../state-store';
 import type { PaneNode, TabLayout, TabNode, WorkspaceNode } from '#lib/types.js';
@@ -77,6 +77,7 @@ export async function paneTree(): Promise<WorkspaceNode[]> {
 	// This host is always read live: it is local, it is fast, and it is the
 	// one that has to be right.
 	const local = await treeFor(getClient(), '', '');
+	void refreshCoreMachines();
 	refreshMachines();
 	const enabled = enabledKeys();
 	const remote = [...cached]
