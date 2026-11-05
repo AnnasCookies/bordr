@@ -107,6 +107,37 @@ export function claudeSessionId(text: string): string {
 	}
 }
 
+/** The pid in a Claude session record: it goes back into a shell script, so only a real number. */
+export function claudeRecordPid(text: string): number | undefined {
+	try {
+		const pid = JSON.parse(text)?.pid;
+		return Number.isSafeInteger(pid) && pid > 0 ? pid : undefined;
+	} catch {
+		return undefined;
+	}
+}
+
+/**
+ * Print the session record of the Claude running as, or under, `pid`.
+ *
+ * Claude names the record after its own pid. On Linux core reports that pid. On
+ * Windows it reports the shell Claude was started from, so the record is found
+ * by walking down that shell's children, nearest first, so a Claude a hook or
+ * sub-agent started never beats the one in the terminal. The walk takes over a
+ * second, so `last` (the pid found last time) is tried before it.
+ */
+export const claudeRemoteScript = (pid: number, last?: number) =>
+	[
+		'd="${CLAUDE_CONFIG_DIR:-$HOME/.claude}/sessions"',
+		`cat "$d/${pid}.json" 2>/dev/null && exit 0`,
+		// shortcut: a Claude killed outright leaves its record, so a new one in the same shell shows the old chat until that file goes.
+		...(last && last !== pid ? [`cat "$d/${last}.json" 2>/dev/null && exit 0`] : []),
+		'command -v powershell.exe >/dev/null || exit 1',
+		// Depth-limited because a reused Windows pid can make the parent links loop.
+		`for p in $(powershell.exe -NoProfile -NonInteractive -Command '$all = Get-CimInstance Win32_Process -Property ProcessId,ParentProcessId; $q = @(${pid}); for ($i = 0; $i -lt 6 -and $q.Count; $i++) { $next = @(); foreach ($p in $all) { if ($q -contains $p.ParentProcessId) { $p.ProcessId; $next += $p.ProcessId } }; $q = $next }' | tr -d '\\r'); do cat "$d/$p.json" 2>/dev/null && exit 0; done`,
+		'exit 1'
+	].join('\n');
+
 /** The transcript in a remote `echo $HOME; readlink /proc/<pid>/fd/*` listing. */
 export function openTranscript(kind: string, text: string): string {
 	const [home, ...links] = text.split('\n').map((line) => line.trim());
@@ -161,7 +192,7 @@ export class CoreClient extends HerdrClient {
 	/** `<name>/` for a machine core links, '' for this host. */
 	private readonly prefix: string;
 	/** Remote session lookups by pid: one `machine.exec` per agent, not per poll. */
-	private readonly remoteSessions = new Map<number, { value: string; at: number }>();
+	private readonly remoteSessions = new Map<number, { value: string; at: number; last?: number }>();
 
 	constructor(
 		socketPath: string,
@@ -232,19 +263,26 @@ export class CoreClient extends HerdrClient {
 				const pid = t.foreground?.pid;
 				if (!kind || !pid || !Number.isInteger(pid)) return;
 				const known = this.remoteSessions.get(pid);
-				if (known && (known.value || now - known.at < 10_000)) return;
+				// Claude's id can change under the same pid: `/clear`, or on Windows a
+				// new Claude in the same shell. The others keep theirs for life.
+				const wait = !known?.value ? 10_000 : kind === 'claude' ? 30_000 : Infinity;
+				if (known && now - known.at < wait) return;
+				// Stamped first: a slow look-up must not start again on every refresh.
+				this.remoteSessions.set(pid, { value: known?.value ?? '', last: known?.last, at: now });
 				const script =
 					kind === 'claude'
-						? `cat "\${CLAUDE_CONFIG_DIR:-$HOME/.claude}/sessions/${pid}.json"`
+						? claudeRemoteScript(pid, known?.last)
 						: kind === 'pi'
 							? PI_REMOTE_SCRIPT(pid)
 							: `echo "$HOME"; for f in /proc/${pid}/fd/*; do readlink "$f"; done`;
-				let value = '';
+				// Unreachable for now: keep what was known, and ask again after the wait.
+				let value = known?.value ?? '';
+				let last = known?.last;
 				try {
 					const out = await this.call<{ code?: number | null; stdout?: string }>(
 						'machine.exec',
-						{ on: this.machine, argv: ['sh', '-c', script], timeout: 5 },
-						8_000
+						{ on: this.machine, argv: ['sh', '-c', script], timeout: 10 },
+						13_000
 					);
 					const text = Buffer.from(out.stdout ?? '', 'base64').toString('utf8');
 					value =
@@ -253,10 +291,11 @@ export class CoreClient extends HerdrClient {
 							: kind === 'pi'
 								? remotePiSession(text)
 								: openTranscript(kind, text);
+					last = kind === 'claude' ? claudeRecordPid(text) : undefined;
 				} catch {
-					// unreachable for now: asked again after the wait above
+					// see above
 				}
-				this.remoteSessions.set(pid, { value, at: now });
+				this.remoteSessions.set(pid, { value, last, at: now });
 			})
 		);
 	}
