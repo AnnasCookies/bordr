@@ -92,6 +92,15 @@ it('applies queue redaction locally and remotely; remote missing model stays unk
 	expect(detail.model).toBe('');
 	expect(JSON.stringify(detail.queue)).not.toContain('fixture-secret');
 });
+it('offers older messages when a full remote window holds non-ASCII text', async () => {
+	fixture.raw.pane_id = 'remote~fixture';
+	// Fills the 1024 bytes the test asks for in far fewer characters.
+	fixture.tail = `{"type":"user","message":{"role":"user","content":"${'●'.repeat(340)}"}}\n`;
+	expect(Buffer.byteLength(fixture.tail)).toBeGreaterThanOrEqual(1024);
+	expect(fixture.tail.length).toBeLessThan(1024);
+	expect((await read('remote~fixture')).hasMore).toBe(true);
+});
+
 it('preserves lifecycle on degraded snapshots and suppresses non-live OMP asks in detail and list', async () => {
 	const ask = JSON.stringify({
 		type: 'message',

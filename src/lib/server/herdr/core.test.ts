@@ -1,10 +1,13 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { spawnSync } from 'node:child_process';
 import { createServer, type Server } from 'node:net';
-import { mkdtempSync, mkdirSync, rmSync, writeFileSync } from 'node:fs';
+import { chmodSync, mkdtempSync, mkdirSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import {
 	CoreClient,
+	claudeRecordPid,
+	claudeRemoteScript,
 	claudeSessionId,
 	openTranscript,
 	remotePiSession,
@@ -374,5 +377,81 @@ describe('CoreClient over a socket', () => {
 		await expect(client.request('pane.split', { pane_id: 't1' })).rejects.toThrow(
 			/not available on herdr-core/
 		);
+	});
+});
+
+describe('finding a Claude session on another machine', () => {
+	const run = (home: string, script: string, path = '/usr/bin:/bin') =>
+		spawnSync('sh', ['-c', script], {
+			encoding: 'utf8',
+			env: { HOME: home, PATH: path }
+		});
+
+	function machine(records: Record<number, string>, children?: number[]) {
+		const home = mkdtempSync(join(tmpdir(), 'bordr-claude-remote-'));
+		mkdirSync(join(home, '.claude/sessions'), { recursive: true });
+		for (const [pid, id] of Object.entries(records))
+			writeFileSync(
+				join(home, '.claude/sessions', `${pid}.json`),
+				JSON.stringify({ pid: Number(pid), sessionId: id })
+			);
+		const bin = join(home, 'bin');
+		mkdirSync(bin);
+		// Stands in for the process walk; Windows ends its lines with \r\n.
+		if (children) {
+			writeFileSync(
+				join(bin, 'powershell.exe'),
+				`#!/bin/sh\nprintf '${children.map((c) => `${c}\\r\\n`).join('')}'\n`
+			);
+			chmodSync(join(bin, 'powershell.exe'), 0o755);
+		}
+		return { home, path: `${bin}:/usr/bin:/bin` };
+	}
+
+	it('reads the record under the foreground pid, as on Linux', () => {
+		const { home, path } = machine({ 100: 'linux' });
+		const out = run(home, claudeRemoteScript(100), path);
+		expect(claudeSessionId(out.stdout)).toBe('linux');
+		rmSync(home, { recursive: true });
+	});
+
+	it('finds it under a child of the shell, as on Windows, nearest first', () => {
+		const { home, path } = machine({ 8404: 'windows', 9999: 'nested' }, [7777, 8404, 9999]);
+		const out = run(home, claudeRemoteScript(12240), path);
+		expect(claudeSessionId(out.stdout)).toBe('windows');
+		expect(claudeRecordPid(out.stdout)).toBe(8404);
+		rmSync(home, { recursive: true });
+	});
+
+	it('tries the pid found last time before walking, and walks again once it has gone', () => {
+		const { home, path } = machine({ 8404: 'old' }, [5555]);
+		// The stand-in would find nothing at 5555, so this answer came from `last`.
+		expect(claudeSessionId(run(home, claudeRemoteScript(12240, 8404), path).stdout)).toBe('old');
+		rmSync(join(home, '.claude/sessions/8404.json'));
+		writeFileSync(
+			join(home, '.claude/sessions/5555.json'),
+			JSON.stringify({ pid: 5555, sessionId: 'new' })
+		);
+		expect(claudeSessionId(run(home, claudeRemoteScript(12240, 8404), path).stdout)).toBe('new');
+		rmSync(home, { recursive: true });
+	});
+
+	it('fails quietly where there is no record and no powershell', () => {
+		const { home, path } = machine({});
+		const out = run(home, claudeRemoteScript(100), path);
+		expect(out.status).toBe(1);
+		expect(out.stdout).toBe('');
+		rmSync(home, { recursive: true });
+	});
+
+	it('sends plain text: a raw carriage return does not survive the trip to Windows', () => {
+		expect(claudeRemoteScript(12240, 8404)).not.toContain('\r');
+	});
+
+	it('takes only a real pid back out of a record', () => {
+		expect(claudeRecordPid('{"pid":8404}')).toBe(8404);
+		expect(claudeRecordPid('{"pid":"1; rm -rf ~"}')).toBeUndefined();
+		expect(claudeRecordPid('{"pid":-1}')).toBeUndefined();
+		expect(claudeRecordPid('nope')).toBeUndefined();
 	});
 });

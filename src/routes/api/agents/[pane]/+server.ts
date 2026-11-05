@@ -227,7 +227,8 @@ export const GET: RequestHandler = async ({ params, url, request }) => {
 								)) ?? '',
 								Infinity
 							);
-						hasMore = remote.length >= windowBytes;
+						// In bytes, as the window is: a character count falls short on any non-ASCII text.
+						hasMore = Buffer.byteLength(remote) >= windowBytes;
 						if (messages.length === 0) degraded = 'empty';
 					}
 				} catch (e) {
