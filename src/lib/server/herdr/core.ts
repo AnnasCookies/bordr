@@ -58,12 +58,38 @@ const KINDS = new Set([
 	'omp'
 ]);
 
+/** `status.app` words that are not bordr's name for the harness (hc 0.1.18). */
+const APPS: Record<string, string> = { antigravity: 'agy', 'grok-build': 'grok' };
+
 export function agentKind(t: CoreTerminal): string {
-	const app = (t.status?.app ?? '').replace(/-(code|cli)$/, '');
+	const reported = (t.status?.app ?? '').replace(/-(code|cli)$/, '');
+	const app = APPS[t.status?.app ?? ''] ?? reported;
 	if (KINDS.has(app)) return app;
-	const exe = (t.foreground?.argv?.[0] ?? t.foreground?.name ?? '').split('/').pop() ?? '';
+	// A harness that reports no status (gemini on hc 0.1.18) is known by what
+	// runs now. Not by the launch argv: a kept terminal's lost agent becomes a shell.
+	const kind = programKind(t.foreground?.argv);
+	if (kind) return kind;
+	const exe = baseName(t.foreground?.name ?? '');
 	if (KINDS.has(exe)) return exe;
 	return t.reported && app ? app : '';
+}
+
+/**
+ * The harness an argv runs. npm-installed ones (gemini, copilot) run as
+ * `node /path/to/gemini`, so their foreground name is `node-MainThread`.
+ */
+function programKind(argv: string[] | null | undefined): string {
+	const first = baseName(argv?.[0] ?? '');
+	if (KINDS.has(first)) return first;
+	if (/^(node|bun|deno)$/.test(first)) {
+		const script = baseName(argv?.[1] ?? '');
+		if (KINDS.has(script)) return script;
+	}
+	return '';
+}
+
+function baseName(path: string): string {
+	return (path.split(/[\\/]/).pop() ?? '').replace(/\.(exe|cmd|js|mjs|cjs)$/i, '');
 }
 
 /**
@@ -212,9 +238,13 @@ export class CoreClient extends HerdrClient {
 	 * herdr-app's docs/labels.md asks of a client that starts a terminal.
 	 */
 	async startAgent(kind: string, cwd: string, args: string[] = []): Promise<string> {
+		// codex otherwise hands its turns to a shared app-server daemon: its
+		// commands run outside this terminal (hc's manual) and the daemon, not
+		// the terminal's process, holds the rollout bordr reads.
+		const flags = kind === 'codex' && !args.includes('--no-daemon') ? ['--no-daemon'] : [];
 		const result = await this.call<{ address?: string; terminal?: { address?: string } }>(
 			'terminal.run',
-			{ argv: [kind, ...args], cwd, no_parent: true, labels: { 'herdr.seen': '0' } },
+			{ argv: [kind, ...flags, ...args], cwd, no_parent: true, labels: { 'herdr.seen': '0' } },
 			60_000
 		);
 		const address = result.address ?? result.terminal?.address;

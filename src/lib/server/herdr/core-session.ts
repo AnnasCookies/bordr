@@ -1,4 +1,12 @@
-import { readFileSync, readdirSync, readlinkSync } from 'node:fs';
+import {
+	closeSync,
+	fstatSync,
+	openSync,
+	readFileSync,
+	readSync,
+	readdirSync,
+	readlinkSync
+} from 'node:fs';
 import { homedir } from 'node:os';
 import { join } from 'node:path';
 
@@ -10,6 +18,8 @@ import { join } from 'node:path';
  * - codex and omp keep their transcript open for appending, and their
  *   adapters take an absolute path, so the open `.jsonl` is the answer.
  * - pi opens it only to write, so it is found by folder and start time.
+ * - grok, copilot and agy hold a file that names their session id; see
+ *   sessionFromLinks.
  */
 export function sessionForProcess(kind: string, pid: number): string {
 	if (!Number.isInteger(pid) || pid <= 0) return '';
@@ -23,23 +33,169 @@ export function sessionForProcess(kind: string, pid: number): string {
 		}
 	}
 	const roots = transcriptRoots(kind);
-	if (!roots.length || process.platform !== 'linux') return '';
+	const byLinks = ID_KINDS.has(kind);
+	if ((!roots.length && !byLinks) || process.platform !== 'linux') return '';
+	const links = openLinks(pid);
+	const open = links.find((link) => isTranscript(link, roots));
+	if (open) return open;
+	if (byLinks) {
+		// copilot's `node` launcher runs the real CLI as a child, which holds the file.
+		for (const child of childPids(pid)) links.push(...openLinks(child));
+		return sessionFromLinks(kind, links, sessionHomes(kind), agyLogConversation);
+	}
+	return kind === 'pi' ? piSessionByStart(pid, roots[0]) : '';
+}
+
+/** What a process holds open; [] when it is gone or not ours to read. */
+function openLinks(pid: number): string[] {
+	const links: string[] = [];
 	let descriptors: string[];
 	try {
 		descriptors = readdirSync(`/proc/${pid}/fd`);
 	} catch {
-		return '';
+		return links;
 	}
 	for (const fd of descriptors) {
-		let target: string;
 		try {
-			target = readlinkSync(`/proc/${pid}/fd/${fd}`);
+			links.push(readlinkSync(`/proc/${pid}/fd/${fd}`));
 		} catch {
-			continue; // closed between listing and reading
+			// closed between listing and reading
 		}
-		if (isTranscript(target, roots)) return target;
 	}
-	return kind === 'pi' ? piSessionByStart(pid, roots[0]) : '';
+	return links;
+}
+
+/** Direct children, from every thread's `children` list (Linux 3.5+). */
+function childPids(pid: number): number[] {
+	const pids: number[] = [];
+	let threads: string[];
+	try {
+		threads = readdirSync(`/proc/${pid}/task`);
+	} catch {
+		return pids;
+	}
+	for (const tid of threads) {
+		try {
+			for (const word of readFileSync(`/proc/${pid}/task/${tid}/children`, 'utf8').split(/\s+/)) {
+				const child = Number(word);
+				if (Number.isInteger(child) && child > 0) pids.push(child);
+			}
+		} catch {
+			// thread ended, or the kernel lacks the children file
+		}
+	}
+	return pids;
+}
+
+/** Harnesses whose session id is read from the files they hold open. */
+const ID_KINDS = new Set(['grok', 'copilot', 'agy']);
+const UUID = '[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}';
+
+/** Each harness's home, honouring the same overrides its transcript adapter does. */
+function sessionHomes(kind: string): string {
+	const home = homedir();
+	if (kind === 'grok') return process.env.GROK_HOME ?? join(home, '.grok');
+	if (kind === 'copilot') return process.env.COPILOT_HOME ?? join(home, '.copilot');
+	return process.env.GEMINI_HOME ?? join(home, '.gemini');
+}
+
+/**
+ * The session id from the paths a harness process holds open (`/proc/<pid>/fd`
+ * targets), checked against what each one held on atlas (2026-11-06):
+ *
+ * - grok holds `<home>/sessions/<url-encoded cwd>/<id>/events.jsonl`.
+ * - copilot holds `<home>/session-state/<id>/inuse.<pid>.hold`.
+ * - agy holds nothing in its session folder, which appears only at the first
+ *   prompt, but its stdout is `<home>/antigravity-cli/log/cli-<start>.log`, and
+ *   that log says `Created conversation <id>`, then `Streaming conversation
+ *   <id>` for the one it is showing. The last such line wins, so `/resume`
+ *   and a new chat follow along.
+ *
+ * `home` is the harness's own folder (`~/.grok`, `~/.copilot`, `~/.gemini`).
+ * `conversationIn` turns agy's log path into its conversation id ('' if none).
+ */
+export function sessionFromLinks(
+	kind: string,
+	links: string[],
+	home: string,
+	conversationIn: (logPath: string) => string
+): string {
+	const root = home.replace(/\/+$/, '');
+	if (kind === 'grok') {
+		const re = new RegExp(`^${escape(root)}/sessions/[^/]+/(${UUID})/`, 'i');
+		for (const link of links) {
+			const m = re.exec(link);
+			if (m) return m[1];
+		}
+		return '';
+	}
+	if (kind === 'copilot') {
+		const re = new RegExp(`^${escape(root)}/session-state/(${UUID})/inuse\\.\\d+\\.hold$`, 'i');
+		for (const link of links) {
+			const m = re.exec(link);
+			if (m) return m[1];
+		}
+		return '';
+	}
+	if (kind === 'agy') {
+		const logs = `${root}/antigravity-cli/log/`;
+		const log = links.find((link) => link.startsWith(logs) && link.endsWith('.log'));
+		return log ? conversationIn(log) : '';
+	}
+	return '';
+}
+
+/** The conversation agy last created or streamed, from its log text. */
+export function agyConversation(log: string): string {
+	const re = new RegExp(`\\b(?:Created|Streaming) conversation (${UUID})\\b`, 'gi');
+	let last = '';
+	for (const m of log.matchAll(re)) last = m[1];
+	return last;
+}
+
+function escape(text: string): string {
+	return text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+/**
+ * agy's log grows for the life of the process and the agent list is rebuilt
+ * on every refresh, so each log is read once and then only its new bytes.
+ * A line cut at a chunk edge is carried into the next read.
+ */
+const agyLogs = new Map<string, { offset: number; carry: string; id: string }>();
+const CHUNK_BYTES = 1 << 20;
+
+export function agyLogConversation(path: string): string {
+	let fd: number | undefined;
+	try {
+		fd = openSync(path, 'r');
+		const size = fstatSync(fd).size;
+		let seen = agyLogs.get(path);
+		// A smaller file is a new log under a reused name: start again.
+		if (!seen || size < seen.offset) seen = { offset: 0, carry: '', id: '' };
+		const buffer = Buffer.alloc(CHUNK_BYTES);
+		while (seen.offset < size) {
+			const length = readSync(
+				fd,
+				buffer,
+				0,
+				Math.min(CHUNK_BYTES, size - seen.offset),
+				seen.offset
+			);
+			if (length <= 0) break;
+			seen.offset += length;
+			const text = seen.carry + buffer.toString('utf8', 0, length);
+			const cut = text.lastIndexOf('\n') + 1;
+			seen.id = agyConversation(text.slice(0, cut)) || seen.id;
+			seen.carry = text.slice(cut);
+		}
+		agyLogs.set(path, seen);
+		return seen.id;
+	} catch {
+		return agyLogs.get(path)?.id ?? '';
+	} finally {
+		if (fd !== undefined) closeSync(fd);
+	}
 }
 
 /** When the process started, in ms since the epoch, from /proc. */
