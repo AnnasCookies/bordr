@@ -29,6 +29,8 @@ UMask=0077
 Environment=SOCKET_PATH=/run/__NAME__/bordr.sock
 Environment=HOST=127.0.0.1
 Environment=HERDR_SOCKET=__HERDR_SOCKET__
+# tui or core, chosen at install (--backend); says which herdr the socket is.
+Environment=HERDR_BACKEND=__BACKEND__
 EnvironmentFile=__ENV_FILE__
 # The Bun adapter defaults to a 512KB request cap — camera photos need
 # more; the image endpoint allows six 15MB images per message above this.

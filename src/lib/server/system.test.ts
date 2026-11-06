@@ -5,8 +5,10 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { sessionName } from './herdr';
 import {
+	ACTIONS,
 	jobUnit,
 	markSessions,
+	refusedOnCore,
 	outdatedProcesses,
 	parseCommands,
 	serverProcesses,
@@ -215,4 +217,16 @@ describe('jobs', () => {
 			expect(job.output).toContain('from-unit');
 		}
 	);
+});
+
+describe('refusedOnCore', () => {
+	it("refuses every herdr action on core, leaving only the operator's commands", () => {
+		// Stop on a TUI session from a core-driven bordr would end agents it does not show.
+		for (const action of ACTIONS.filter((a) => a !== 'run'))
+			expect(refusedOnCore(action, true)).toMatch(/herdr-core/);
+		expect(refusedOnCore('run', true)).toBeNull();
+	});
+	it('refuses nothing on the TUI', () => {
+		for (const action of ACTIONS) expect(refusedOnCore(action, false)).toBeNull();
+	});
 });

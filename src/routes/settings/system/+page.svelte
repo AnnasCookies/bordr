@@ -23,6 +23,8 @@
 		code: number | null;
 	}
 	interface State {
+		/** Which herdr bordr drives. On core, herdr's server and sessions are not bordr's. */
+		backend: 'tui' | 'core';
 		sessions: Session[];
 		sessionsError: string | null;
 		unit: { scope: 'user' | 'system'; unit: string } | null;
@@ -109,6 +111,8 @@
 
 	const herdrRows = $derived.by((): Row[] => {
 		const rows: Row[] = [];
+		// The server refuses these on core too; this keeps the buttons off the page.
+		if (data?.backend === 'core') return rows;
 		if (current?.running) {
 			rows.push({ key: 'reload', action: 'reload-config', label: 'Reload config', confirm: false });
 			rows.push({
@@ -284,12 +288,15 @@
 					>
 						<div class="flex items-center gap-2.5 px-3.5 py-3">
 							<span
-								class="h-2.5 w-2.5 shrink-0 rounded-full {current?.running
+								class="h-2.5 w-2.5 shrink-0 rounded-full {current?.running ||
+								data?.backend === 'core'
 									? 'bg-done'
 									: 'bg-blocked'}"
 							></span>
 							<span class="flex-1 text-[15px]">
-								{#if current}
+								{#if data?.backend === 'core'}
+									herdr-core
+								{:else if current}
 									session <span class="font-mono">{current.name}</span>
 									{current.running ? 'running' : 'stopped'}
 								{:else if data}
@@ -313,7 +320,13 @@
 							</p>
 						{/if}
 						{#if data?.sessionsError}
-							<p class="px-3.5 py-3 text-[12.5px] text-danger-ink">{data.sessionsError}</p>
+							<p
+								class="px-3.5 py-3 text-[12.5px] {data.backend === 'core'
+									? 'text-muted'
+									: 'text-danger-ink'}"
+							>
+								{data.sessionsError}
+							</p>
 						{/if}
 						{#each herdrRows as row (row.key)}
 							{@render action(row)}

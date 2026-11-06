@@ -17,7 +17,7 @@ afterEach(() => {
 	for (const dir of temporary.splice(0)) rmSync(dir, { recursive: true, force: true });
 });
 
-function generate(args: string[]) {
+function generate(args: string[], installed: { tui?: boolean; core?: boolean } = { tui: true }) {
 	const root = mkdtempSync(join(tmpdir(), 'bordr-units-'));
 	temporary.push(root);
 	const bin = join(root, 'bin');
@@ -28,7 +28,8 @@ function generate(args: string[]) {
 		getent: "printf 'fixture:x:1000:1000:Fixture:/fixture:/bin/sh\\n'",
 		id: 'if [ "$1" = -u ]; then printf "0\\n"; else printf "fixture\\n"; fi',
 		systemctl: 'printf "%s\\n" "$*" >> "$CALLS"',
-		herdr: 'exit 0'
+		...(installed.tui ? { herdr: 'exit 0' } : {}),
+		...(installed.core ? { 'herdr-core': 'exit 0' } : {})
 	})) {
 		const path = join(bin, name);
 		writeFileSync(path, `#!/usr/bin/env bash\n${script}\n`);
@@ -46,7 +47,9 @@ function generate(args: string[]) {
 				SYSTEMD_SYSTEM_DIR: units,
 				POLKIT_RULES_DIR: polkit,
 				BUN_BIN: process.execPath,
+				// Absent unless installed above, whatever this machine has.
 				HERDR_BIN: join(bin, 'herdr'),
+				HC_BIN: join(bin, 'herdr-core'),
 				CALLS: calls
 			}
 		}
@@ -93,6 +96,7 @@ it.skipIf(process.platform === 'win32').each([
 				? '/fixture/.config/herdr/herdr.sock'
 				: `/fixture/.config/herdr/sessions/${session}/herdr.sock`;
 		expect(unit).toContain(`Environment=HERDR_SOCKET=${socket}`);
+		expect(unit).toContain('Environment=HERDR_BACKEND=tui');
 		expect(existsSync(join(units, 'herdr-session.service'))).toBe(herdr);
 		const rule = readFileSync(join(polkit, `50-${name}.rules`), 'utf8');
 		expect(rule).toContain(`unit === '${name}.service'`);
@@ -134,6 +138,39 @@ it.skipIf(process.platform === 'win32')(
 		expect(JSON.parse(isolated.stdout)).toEqual({ prod: null, instance: 'fixture-dev' });
 	}
 );
+
+it.skipIf(process.platform === 'win32').each([
+	{ why: 'asked for', args: ['--backend', 'core'], installed: { tui: true, core: true } },
+	{ why: 'the only herdr installed', args: [] as string[], installed: { core: true } }
+])('points bordr at herdr-core, with no herdr unit, when core is $why', ({ args, installed }) => {
+	const { result, units, polkit } = generate(args, installed);
+	expect(result.status).toBe(0);
+	const unit = readFileSync(join(units, 'bordr.service'), 'utf8');
+	expect(unit).toContain('Environment=HERDR_SOCKET=/run/user/0/herdr-core/default.sock');
+	expect(unit).toContain('Environment=HERDR_BACKEND=core');
+	// hc runs its own core; bordr must not install or be granted a herdr unit.
+	expect(existsSync(join(units, 'herdr-session.service'))).toBe(false);
+	expect(readFileSync(join(polkit, '50-bordr.rules'), 'utf8')).not.toContain('herdr-session');
+	expect(result.stdout).toContain('hc server start');
+	expect(result.stdout).not.toContain('herdr-session');
+});
+
+it.skipIf(process.platform === 'win32')(
+	'asks for --backend when both herdrs are installed and nobody can be asked',
+	() => {
+		const { result, units, calls } = generate([], { tui: true, core: true });
+		expect(result.status).toBe(2);
+		expect(result.stderr).toContain('--backend tui or --backend core');
+		expect(existsSync(join(units, 'bordr.service'))).toBe(false);
+		expect(existsSync(calls)).toBe(false);
+	}
+);
+
+it.skipIf(process.platform === 'win32')('rejects an unknown backend', () => {
+	const { result, units } = generate(['--backend', 'tmux']);
+	expect(result.status).toBe(2);
+	expect(existsSync(join(units, 'bordr.service'))).toBe(false);
+});
 
 it.skipIf(process.platform === 'win32')(
 	'rejects an unsafe instance before installing anything',

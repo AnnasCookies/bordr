@@ -193,7 +193,11 @@ If that prints nothing, herdr is not running. Start a session
 
 On **herdr-core** (the desktop app's runtime, `hc`), the socket is
 `$XDG_RUNTIME_DIR/herdr-core/default.sock`, and bordr finds it on its own when
-`HERDR_SOCKET` is unset. Core has no panes or workspaces of its own: bordr
+`HERDR_SOCKET` is unset and no herdr TUI session is running. With both
+running, bordr stays on the TUI and says so in its log; set
+`HERDR_BACKEND=core` to choose core. (On Linux, `hc server status` starts an
+empty core, which should not take bordr off a working session.)
+Core has no panes or workspaces of its own: bordr
 shows herdr-app's spaces and tabs from core, and leaves out what only
 herdr-app can do: rename, focus, split, swap, zoom, new tabs and worktrees.
 Agents bordr starts get a terminal of their own, listed under "Other" until
@@ -201,7 +205,10 @@ herdr-app places them. Machines core links (`hc machine add`) show up as
 bordr machines, reached through core rather than bordr's own ssh forward,
 and their transcripts are read there through core too.
 Core needs no `herdr integration`: bordr finds each transcript from the
-agent's own process.
+agent's own process. bordr starts agents on core through your login shell
+(from the password database), as a TUI pane would, so they get the API keys
+and PATH your shell config sets. Core itself runs under your systemd user
+manager, whose environment has neither.
 
 While you are there, install herdr's integration for each harness you use.
 It is how herdr learns which session file an agent is writing, and without it
@@ -282,6 +289,13 @@ bun run build && bun scripts/publish-build.ts   # the copy the unit runs
 sudo systemctl enable --now herdr-session bordr
 sudo tailscale serve --bg --https=8444 unix:/run/bordr/bordr.sock
 ```
+
+The installer drives whichever herdr is installed. With both the TUI and
+herdr-core installed it asks, or, with no terminal to ask in, wants
+`--backend tui` or `--backend core`. On core it installs no herdr unit: `hc`
+runs its own core under your user manager, so run `hc server start` once as
+yourself (it turns on linger, so the core outlives your logout) and then
+`sudo systemctl enable --now bordr`.
 
 For a second instance, give it a name and keep its environment in `.env.<name>`:
 
