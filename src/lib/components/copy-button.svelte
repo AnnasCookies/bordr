@@ -6,6 +6,8 @@
 
 	let status = $state<'idle' | 'done' | 'failed'>('idle');
 	let timer: ReturnType<typeof setTimeout> | undefined;
+	// One label for the visible text, the accessible name and the live region.
+	const label = $derived(status === 'done' ? 'Copied' : status === 'failed' ? 'Failed' : 'Copy');
 
 	async function copy(event: MouseEvent) {
 		// Inside a <summary> or a tappable bubble the tap must not do anything else.
@@ -16,10 +18,15 @@
 	}
 </script>
 
-<button type="button" class="copy" onclick={copy} aria-label="Copy code">
-	{status === 'done' ? 'Copied' : status === 'failed' ? 'Failed' : 'Copy'}
+<button
+	type="button"
+	class="copy"
+	onclick={copy}
+	aria-label={status === 'idle' ? 'Copy code' : label}
+>
+	{label}
 </button>
-<span class="sr-only" aria-live="polite">{status === 'done' ? 'Copied' : ''}</span>
+<span class="sr-only" aria-live="polite">{status === 'idle' ? '' : label}</span>
 
 <style>
 	.copy {
