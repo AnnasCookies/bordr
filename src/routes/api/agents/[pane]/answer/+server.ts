@@ -102,6 +102,22 @@ function isBlocked(cause: unknown): boolean {
 	);
 }
 
+/**
+ * Claude Code asks several questions as one set, under a tab strip:
+ * `← ☐ Fruit  ☐ Drink  ✔ Submit →`. Answering one ticks its tab (`☒`) and
+ * shows the next. The same strip with one more tab ticked is that answer
+ * recorded, not some other dialog: a permission prompt has no strip, so it
+ * stays unconfirmed. Nothing here sends a key.
+ */
+function advancedInSet(before: Picker, after: Picker): boolean {
+	const strip = (picker: Picker) => picker.context?.find((line) => /[☐☒]/.test(line)) ?? '';
+	const [a, b] = [strip(before), strip(after)];
+	if (!a || !b) return false;
+	const tabs = (line: string) => line.replace(/[☐☒]/g, '').replace(/\s+/g, ' ').trim();
+	const ticked = (line: string) => (line.match(/☒/g) ?? []).length;
+	return tabs(a) === tabs(b) && ticked(b) > ticked(a);
+}
+
 export const POST: RequestHandler = async ({ params, request }) => {
 	let input: unknown;
 	try {
@@ -247,13 +263,20 @@ export const POST: RequestHandler = async ({ params, request }) => {
 	const current = picker.options.find((option) => option.selected)?.index;
 	// One confirmation, never a probe followed by Enter into an identical successor.
 	await send(keysForOption(index, current, picker.numbered && current === undefined, picker.axis));
-	// Still one confirmation read, but on herdr-core it need not wait the full
-	// half second: core says the moment the agent stops being blocked.
-	await settleAfterAnswer(params.pane, 500);
+	// Still one confirmation read, taken once herdr says the agent is no longer
+	// blocked: at once on a quick redraw, later on a slow one. A checkbox tick
+	// leaves it blocked by design, so that waits only the old half second.
+	const answered = pickerIdentity(picker);
+	await settleAfterAnswer(params.pane, picker.multi ? 500 : 2_000, scope, async () => {
+		// A different question (Claude asks several in one go) or none at all
+		// means this one is done redrawing; a moved highlight does not.
+		const now = parsePicker(await read());
+		return !now || pickerIdentity(now) !== answered;
+	});
 	let outcome: 'accepted' | 'unknown' = 'unknown';
 	try {
 		const after = parsePicker(await read());
-		if (!after) outcome = 'accepted';
+		if (!after || advancedInSet(picker, after)) outcome = 'accepted';
 		else if (
 			after.multi &&
 			after.options.find((option) => option.index === index)?.checked !== wanted.checked

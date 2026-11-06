@@ -352,3 +352,44 @@ describe('answer route: codex questions', () => {
 		expect(herdr.sent).toEqual([['alt+up']]);
 	});
 });
+
+describe('answer route: a set of questions', () => {
+	// Claude Code's AskUserQuestion with two questions, as drawn live on 2026-11-04.
+	const ask = (marks: [string, string], question: string, a: string, b: string) =>
+		[
+			`←  ${marks[0]} Fruit  ${marks[1]} Drink  ✔ Submit  →`,
+			'',
+			question,
+			'',
+			`❯ 1. ${a}`,
+			`     Choose ${a}.`,
+			`  2. ${b}`,
+			`     Choose ${b}.`,
+			'  3. Type something.',
+			'─'.repeat(40),
+			'  4. Chat about this',
+			'',
+			'Enter to select · Tab/Arrow keys to navigate · Esc to cancel'
+		].join('\n');
+	const FRUIT = ask(['☐', '☐'], 'Pick a fruit', 'Apple', 'Banana');
+	const DRINK = ask(['☒', '☐'], 'Pick a drink', 'Tea', 'Coffee');
+
+	it('confirms an answer when the next question in the set shows with its tab ticked', async () => {
+		herdr.screens.push(FRUIT, DRINK);
+		const result = await answer(1);
+		expect(herdr.sent).toEqual([['enter']]);
+		expect(result).toMatchObject({ chose: 'Apple', outcome: 'accepted' });
+	});
+
+	it('stays unconfirmed when the same set shows with nothing newly ticked', async () => {
+		herdr.screens.push(FRUIT, ask(['☐', '☐'], 'Pick a drink', 'Tea', 'Coffee'));
+		expect((await answer(1)).outcome).toBe('unknown');
+	});
+
+	it('stays unconfirmed when something other than the set replaces it', async () => {
+		herdr.screens.push(FRUIT, DIALOG);
+		const result = await answer(1);
+		expect(herdr.sent).toEqual([['enter']]);
+		expect(result.outcome).toBe('unknown');
+	});
+});

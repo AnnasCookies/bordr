@@ -358,17 +358,9 @@ export class CoreClient extends HerdrClient {
 		return result.machines ?? [];
 	}
 
-	/** Resolve once the terminal is no longer blocked, or after `budgetMs`. */
-	async waitUnblocked(address: string, budgetMs: number, pollMs = 40): Promise<void> {
-		const deadline = Date.now() + budgetMs;
-		while (Date.now() < deadline) {
-			await new Promise((r) => setTimeout(r, pollMs));
-			try {
-				if ((await this.terminal(this.prefix + address)).status?.state !== 'blocked') return;
-			} catch {
-				// a failed read is not a signal; the deadline still holds
-			}
-		}
+	/** Whether core reports this terminal as blocked right now. */
+	async isBlocked(address: string): Promise<boolean> {
+		return (await this.terminal(this.prefix + address)).status?.state === 'blocked';
 	}
 
 	/**
