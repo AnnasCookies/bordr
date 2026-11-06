@@ -36,8 +36,11 @@
 		ondone,
 		onworktrees,
 		onstart,
-		initialAction = null
+		initialAction = null,
+		core = false
 	}: {
+		/** On herdr-core a pane can only be closed: names and focus are herdr-app's. */
+		core?: boolean;
 		/**
 		 * What this sheet can act on, in the order they are offered.
 		 *
@@ -185,40 +188,44 @@
 			</p>
 		{/if}
 
-		<div class="px-4 pb-2">
-			<label class="block">
-				<span class="mb-1 block text-[12px] text-muted">Name</span>
-				<div class="flex gap-2">
-					<input
-						bind:this={nameInput}
-						bind:value={name}
-						placeholder={scope === 'pane' ? 'Leave empty to clear' : `Name this ${scope}`}
-						class="min-w-0 flex-1 rounded-lg border border-edge bg-page px-3 py-2 text-[16px]"
-					/>
-					<button
-						class="flex min-h-11 shrink-0 items-center gap-2 rounded-lg bg-ink px-3.5 text-[13px] font-medium text-card disabled:opacity-50"
-						onclick={() => send('rename')}
-						disabled={!!busy || (name.trim() === label.trim() && scope !== 'pane')}
-					>
-						{#if busy === 'rename'}<Spinner size={13} label="Renaming" />{/if}
-						Rename
-					</button>
-				</div>
-			</label>
-		</div>
+		{#if !core}
+			<div class="px-4 pb-2">
+				<label class="block">
+					<span class="mb-1 block text-[12px] text-muted">Name</span>
+					<div class="flex gap-2">
+						<input
+							bind:this={nameInput}
+							bind:value={name}
+							placeholder={scope === 'pane' ? 'Leave empty to clear' : `Name this ${scope}`}
+							class="min-w-0 flex-1 rounded-lg border border-edge bg-page px-3 py-2 text-[16px]"
+						/>
+						<button
+							class="flex min-h-11 shrink-0 items-center gap-2 rounded-lg bg-ink px-3.5 text-[13px] font-medium text-card disabled:opacity-50"
+							onclick={() => send('rename')}
+							disabled={!!busy || (name.trim() === label.trim() && scope !== 'pane')}
+						>
+							{#if busy === 'rename'}<Spinner size={13} label="Renaming" />{/if}
+							Rename
+						</button>
+					</div>
+				</label>
+			</div>
+		{/if}
 
 		<div
 			class="flex flex-col divide-y divide-black/[.06] border-t border-hairline dark:divide-white/[.06]"
 		>
-			<button
-				class="flex min-h-12 items-center gap-2 px-4 text-left text-[15px]"
-				onclick={() => send('focus')}
-				disabled={!!busy}
-			>
-				{#if busy === 'focus'}<Spinner size={14} label="Focusing" />{/if}
-				<span class="flex-1">Show on the terminal</span>
-				<span class="font-mono text-[11px] text-faint">focus</span>
-			</button>
+			{#if !core}
+				<button
+					class="flex min-h-12 items-center gap-2 px-4 text-left text-[15px]"
+					onclick={() => send('focus')}
+					disabled={!!busy}
+				>
+					{#if busy === 'focus'}<Spinner size={14} label="Focusing" />{/if}
+					<span class="flex-1">Show on the terminal</span>
+					<span class="font-mono text-[11px] text-faint">focus</span>
+				</button>
+			{/if}
 
 			{#if scope !== 'workspace'}
 				{#if confirming}

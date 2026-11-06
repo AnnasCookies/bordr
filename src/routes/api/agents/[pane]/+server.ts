@@ -190,6 +190,10 @@ export const GET: RequestHandler = async ({ params, url, request }) => {
 		degraded = 'no-adapter';
 	} else if (!sessionId) {
 		degraded = 'no-session';
+		// herdr-core has no integration to install: bordr looks the session up
+		// from the agent's process, and a new agent writes its record late.
+		if ('core_status' in raw)
+			reason = `bordr has not found this ${summary.agent} session yet; it looks again on the next refresh. Showing the terminal instead.`;
 	} else {
 		// A pane on another machine keeps its transcript on THAT machine, so
 		// the file is read over the same SSH connection the forward uses
@@ -223,7 +227,8 @@ export const GET: RequestHandler = async ({ params, url, request }) => {
 								)) ?? '',
 								Infinity
 							);
-						hasMore = remote.length >= windowBytes;
+						// In bytes, as the window is: a character count falls short on any non-ASCII text.
+						hasMore = Buffer.byteLength(remote) >= windowBytes;
 						if (messages.length === 0) degraded = 'empty';
 					}
 				} catch (e) {

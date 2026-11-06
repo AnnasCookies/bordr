@@ -13,6 +13,7 @@ const fixture = vi.hoisted(() => ({
 vi.mock('#lib/server/herdr/index.js', () => ({
 	rawAgents: async () => [],
 	rawAgent: async () => null,
+	settleAfterAnswer: async (_pane: string, ms: number) => new Promise((r) => setTimeout(r, ms)),
 	readVisible: async () => {
 		fixture.reads();
 		const visible = fixture.visible;

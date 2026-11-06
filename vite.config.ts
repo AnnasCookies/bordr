@@ -110,7 +110,9 @@ export default defineConfig({
 						BORDR_DATA_DIR: join(tmpdir(), `bordr-test-${process.pid}`),
 						// Scope lookups must not inspect the host's real inherited machine state.
 						HERDR_ENDPOINTS: join(tmpdir(), `bordr-test-${process.pid}`, 'absent-endpoints.json'),
-						XDG_STATE_HOME: join(tmpdir(), `bordr-test-${process.pid}`, 'state')
+						XDG_STATE_HOME: join(tmpdir(), `bordr-test-${process.pid}`, 'state'),
+						// Nor the host's live herdr-core: an unset HERDR_SOCKET prefers it.
+						HC_SOCKET: join(tmpdir(), `bordr-test-${process.pid}`, 'absent-core.sock')
 					},
 					include: ['src/**/*.{test,spec}.{js,ts}'],
 					exclude: ['src/**/*.svelte.{test,spec}.{js,ts}']

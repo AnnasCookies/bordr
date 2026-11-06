@@ -34,7 +34,10 @@ vi.mock('node:child_process', async (importOriginal) => {
 const policy = vi.hoisted(() => ({
 	machines: [{ id: 'a', label: 'tm-dev', target: 'tm-dev', session: 'default', enabled: true }]
 }));
-vi.mock('./machines', () => ({ listMachines: () => policy.machines }));
+vi.mock('./machines', () => ({
+	listMachines: () => policy.machines,
+	refreshCoreMachines: async () => {}
+}));
 
 vi.mock('#lib/server/env.js', () => ({ env: {} }));
 

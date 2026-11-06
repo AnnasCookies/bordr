@@ -23,7 +23,8 @@ const herdr = vi.hoisted(() => ({
 	}),
 	promptAgent: vi.fn(async (_pane: string, text: string) => {
 		herdr.sent.push([`prompt:${text}`]);
-	})
+	}),
+	settleAfterAnswer: vi.fn(async () => {})
 }));
 vi.mock('#lib/server/herdr/index.js', () => herdr);
 

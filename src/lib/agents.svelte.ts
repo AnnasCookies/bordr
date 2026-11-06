@@ -9,6 +9,8 @@ export interface CompatInfo {
 	version?: string | null;
 	protocol?: number | null;
 	session?: string;
+	/** `core` when bordr talks to herdr-core, whose layout belongs to herdr-app. */
+	backend?: 'tui' | 'core';
 }
 
 export function createAgentStore() {

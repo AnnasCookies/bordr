@@ -1,7 +1,14 @@
 import { pickerIdentity } from '#lib/picker-shortcut.js';
 import { createHash } from 'node:crypto';
 import { error, json } from '@sveltejs/kit';
-import { promptAgent, rawAgent, readVisible, sendKeys, sendText } from '#lib/server/herdr/index.js';
+import {
+	promptAgent,
+	rawAgent,
+	readVisible,
+	sendKeys,
+	sendText,
+	settleAfterAnswer
+} from '#lib/server/herdr/index.js';
 import {
 	asyncQuestionKey,
 	keysForOption,
@@ -240,7 +247,9 @@ export const POST: RequestHandler = async ({ params, request }) => {
 	const current = picker.options.find((option) => option.selected)?.index;
 	// One confirmation, never a probe followed by Enter into an identical successor.
 	await send(keysForOption(index, current, picker.numbered && current === undefined, picker.axis));
-	await settle();
+	// Still one confirmation read, but on herdr-core it need not wait the full
+	// half second: core says the moment the agent stops being blocked.
+	await settleAfterAnswer(params.pane, 500);
 	let outcome: 'accepted' | 'unknown' = 'unknown';
 	try {
 		const after = parsePicker(await read());
