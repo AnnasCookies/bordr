@@ -1476,3 +1476,51 @@ test('refused queued terminal write-in retains its row and draft for an explicit
 	expect(state.typeCalls).toEqual([]);
 	expect(state.keys).toEqual([]);
 });
+
+test('a fenced block copies with its line breaks and leaves nothing behind when it changes', async ({
+	page
+}) => {
+	await page.addInitScript(() => {
+		Object.defineProperty(navigator, 'clipboard', {
+			value: { writeText: async (text: string) => localStorage.setItem('fixture-copied', text) }
+		});
+	});
+	const state = await fixture(page);
+	state.picker = false;
+	// Starts with the fence, which is the shape {@html} cannot clear once it has moved.
+	const block = (tail: string) => ({
+		kind: 'text',
+		text: '```ts\nline one\n\tline two\n```\n' + tail
+	});
+	state.extraBlocks = [block('first tail')];
+	await openPane(page);
+	const rows = page.locator('.transcript-rows');
+	await expect(rows.locator('.fence pre code[data-lit="yes"]')).toHaveCount(1);
+	await rows.locator('.fence').getByRole('button', { name: 'Copy code' }).click();
+	await expect
+		.poll(() => page.evaluate(() => localStorage.getItem('fixture-copied')))
+		.toBe('line one\n\tline two');
+
+	state.extraBlocks = [block('second tail')];
+	state.detailSeq++;
+	await page.evaluate(
+		(agents) => window.dispatchEvent(new CustomEvent('fixture-agents', { detail: agents })),
+		[{ ...agents[0], seq: state.detailSeq }]
+	);
+	await expect(rows.getByText('second tail')).toBeVisible();
+	await expect(rows.getByText('first tail')).toHaveCount(0);
+	await expect(rows.locator('.fence')).toHaveCount(1);
+});
+
+test('the keyboard leaves a ! command alone but still helps with a message', async ({ page }) => {
+	const state = await fixture(page);
+	state.picker = false;
+	await openPane(page);
+	const composer = page.locator('textarea').first();
+	await composer.fill('! echo');
+	await expect(composer).toHaveAttribute('autocapitalize', 'off');
+	await expect(composer).toHaveAttribute('autocorrect', 'off');
+	await composer.fill('a message');
+	await expect(composer).not.toHaveAttribute('autocapitalize', 'off');
+	await expect(composer).not.toHaveAttribute('autocorrect', 'off');
+});

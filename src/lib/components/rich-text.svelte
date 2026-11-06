@@ -4,6 +4,8 @@
 	import { highlight } from '#lib/highlight.js';
 	import { marked } from 'marked';
 	import { sanitiseMarkdown } from '#lib/sanitise-markdown.js';
+	import { mount, unmount } from 'svelte';
+	import CopyButton from './copy-button.svelte';
 
 	let { text, mono = 11 }: { text: string; mono?: number } = $props();
 
@@ -54,12 +56,41 @@
 			cancelled = true;
 		};
 	});
+
+	/**
+	 * A copy button on every fenced block. The markdown arrives as one HTML
+	 * string, so the buttons are mounted into it after each render. Each sits in
+	 * a wrapper beside the <pre>, so it stays put while the code scrolls.
+	 *
+	 * {@html} clears old output by walking from its first node to its last, so a
+	 * <pre> moved into a wrapper must be neither: the template brackets the output
+	 * with comments, or a message starting with a fence keeps its old text.
+	 */
+	$effect(() => {
+		void html;
+		const root = host;
+		if (!root) return;
+		const buttons: Record<string, unknown>[] = [];
+		for (const pre of root.querySelectorAll('pre')) {
+			if (pre.parentElement?.classList.contains('fence')) continue;
+			const wrap = document.createElement('div');
+			wrap.className = 'fence';
+			pre.replaceWith(wrap);
+			wrap.append(pre);
+			// innerText, because highlighted lines are split by <br>, which textContent drops.
+			const text = () => pre.innerText.replace(/\n$/, '');
+			buttons.push(mount(CopyButton, { target: wrap, props: { text } }));
+		}
+		return () => {
+			for (const button of buttons) void unmount(button);
+		};
+	});
 </script>
 
 <div class="rich" bind:this={host} style="--mono: {mono}px">
 	{#if browser}
 		<!-- eslint-disable-next-line svelte/no-at-html-tags -- sanitised directly above -->
-		{@html html}
+		{@html `<!--rich-->${html}<!--rich-->`}
 	{:else}
 		<span class="raw">{text}</span>
 	{/if}
@@ -125,6 +156,9 @@
 	}
 	/* Fenced blocks scroll inside themselves. The page must never scroll
 	   sideways on a phone — that is what makes a wide diff unreadable. */
+	.rich :global(.fence) {
+		position: relative;
+	}
 	.rich :global(pre) {
 		margin: 0 0 0.6em;
 		padding: 0.6em 0.7em;
