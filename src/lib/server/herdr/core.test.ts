@@ -154,21 +154,25 @@ describe('sendOnceSettled', () => {
 
 describe('viaLoginShell', () => {
 	const tricky = ['printf', '<%s>', '--no-daemon', 'two words', "it's", '$HOME', '*'];
-	const found = (shell: string) => spawnSync('sh', ['-c', `command -v ${shell}`]).status === 0;
 	const home = mkdtempSync(join(tmpdir(), 'bordr-shell-'));
 	afterAll(() => rmSync(home, { recursive: true, force: true }));
 
-	it.each(['sh', 'bash', 'zsh', 'fish'])('%s hands the agent exactly its argv', (name) => {
-		if (process.platform === 'win32' || !found(name)) return;
-		const shell = spawnSync('sh', ['-c', `command -v ${name}`], { encoding: 'utf8' }).stdout.trim();
-		const [file, ...args] = viaLoginShell(tricky, shell);
-		// A scratch home: no profile or config of the person running the tests.
-		const run = spawnSync(file, args, {
-			encoding: 'utf8',
-			env: { PATH: process.env.PATH, HOME: home, XDG_CONFIG_HOME: home, TERM: 'dumb' }
+	for (const name of ['sh', 'bash', 'zsh', 'fish']) {
+		// CI images carry sh and bash only; a shell that is not installed is skipped, not passed.
+		const shell =
+			process.platform === 'win32'
+				? ''
+				: spawnSync('sh', ['-c', `command -v ${name}`], { encoding: 'utf8' }).stdout.trim();
+		it.skipIf(!shell)(`${name} hands the agent exactly its argv`, () => {
+			const [file, ...args] = viaLoginShell(tricky, shell);
+			// A scratch home: no profile or config of the person running the tests.
+			const run = spawnSync(file, args, {
+				encoding: 'utf8',
+				env: { PATH: process.env.PATH, HOME: home, XDG_CONFIG_HOME: home, TERM: 'dumb' }
+			});
+			expect(run.stdout).toBe("<--no-daemon><two words><it's><$HOME><*>");
 		});
-		expect(run.stdout).toBe("<--no-daemon><two words><it's><$HOME><*>");
-	});
+	}
 
 	it('runs the agent directly with no shell or one it cannot pass argv through', () => {
 		expect(viaLoginShell(['claude'], '')).toEqual(['claude']);
