@@ -23,9 +23,12 @@ import {
 	agentKind,
 	agentStatus,
 	placements,
+	sendOnceSettled,
 	translateEvent,
+	viaLoginShell,
 	type CoreTerminal
 } from './core';
+import { HerdrRequestError } from './client';
 import {
 	agyConversation,
 	agyLogConversation,
@@ -71,13 +74,13 @@ describe('agentKind', () => {
 		).toBe('');
 	});
 	it('knows an npm harness that reports nothing by the script node runs', () => {
-		// As hc 0.1.18 shows gemini: no status, foreground name `node-MainThread`.
-		const gemini = claude({
+		// As hc 0.1.15 showed copilot: no status, foreground name `node-MainThread`.
+		const copilot = claude({
 			status: null,
 			reported: false,
-			foreground: { name: 'node-MainThread', argv: ['node', '/home/u/.bun/bin/gemini'] }
+			foreground: { name: 'node-MainThread', argv: ['node', '/home/u/.bun/bin/copilot'] }
 		});
-		expect(agentKind(gemini)).toBe('gemini');
+		expect(agentKind(copilot)).toBe('copilot');
 		const script = claude({
 			status: null,
 			reported: false,
@@ -93,6 +96,84 @@ describe('agentKind', () => {
 		expect(
 			agentKind(claude({ status: { app: 'grok-build', state: 'idle' }, foreground: node }))
 		).toBe('grok');
+	});
+});
+
+describe('sendOnceSettled', () => {
+	const starting = () =>
+		new HerdrRequestError(
+			'unavailable',
+			'terminal.send: t1r is still starting: its output has not settled'
+		);
+	const noSleep = async () => {};
+
+	it('sends again while the program is still starting, then succeeds', async () => {
+		let calls = 0;
+		const send = async () => {
+			if (++calls < 3) throw starting();
+			return 'sent';
+		};
+		expect(await sendOnceSettled(send, noSleep)).toBe('sent');
+		expect(calls).toBe(3);
+	});
+	it('never retries any other refusal, even another `unavailable`', async () => {
+		let calls = 0;
+		const other = new HerdrRequestError('unavailable', 'terminal.send: input is pending recovery');
+		await expect(
+			sendOnceSettled(async () => {
+				calls++;
+				throw other;
+			}, noSleep)
+		).rejects.toBe(other);
+		expect(calls).toBe(1);
+		// The words alone are not enough: only core's own `unavailable` says nothing was typed.
+		const lookalike = new HerdrRequestError('protocol_error', 'x is still starting');
+		await expect(
+			sendOnceSettled(async () => {
+				calls++;
+				throw lookalike;
+			}, noSleep)
+		).rejects.toBe(lookalike);
+		expect(calls).toBe(2);
+	});
+	it('gives up after its last delay', async () => {
+		let calls = 0;
+		await expect(
+			sendOnceSettled(
+				async () => {
+					calls++;
+					throw starting();
+				},
+				noSleep,
+				[1, 1]
+			)
+		).rejects.toThrow(/still starting/);
+		expect(calls).toBe(3);
+	});
+});
+
+describe('viaLoginShell', () => {
+	const tricky = ['printf', '<%s>', '--no-daemon', 'two words', "it's", '$HOME', '*'];
+	const found = (shell: string) => spawnSync('sh', ['-c', `command -v ${shell}`]).status === 0;
+	const home = mkdtempSync(join(tmpdir(), 'bordr-shell-'));
+	afterAll(() => rmSync(home, { recursive: true, force: true }));
+
+	it.each(['sh', 'bash', 'zsh', 'fish'])('%s hands the agent exactly its argv', (name) => {
+		if (process.platform === 'win32' || !found(name)) return;
+		const shell = spawnSync('sh', ['-c', `command -v ${name}`], { encoding: 'utf8' }).stdout.trim();
+		const [file, ...args] = viaLoginShell(tricky, shell);
+		// A scratch home: no profile or config of the person running the tests.
+		const run = spawnSync(file, args, {
+			encoding: 'utf8',
+			env: { PATH: process.env.PATH, HOME: home, XDG_CONFIG_HOME: home, TERM: 'dumb' }
+		});
+		expect(run.stdout).toBe("<--no-daemon><two words><it's><$HOME><*>");
+	});
+
+	it('runs the agent directly with no shell or one it cannot pass argv through', () => {
+		expect(viaLoginShell(['claude'], '')).toEqual(['claude']);
+		expect(viaLoginShell(['claude'], '/usr/bin/nu')).toEqual(['claude']);
+		expect(viaLoginShell(['claude'], 'bash')).toEqual(['claude']);
 	});
 });
 
@@ -555,13 +636,30 @@ describe('CoreClient over a socket', () => {
 	it('starts codex without its daemon, so its work stays in the terminal', async () => {
 		const client = new CoreClient(path);
 		calls.length = 0;
-		expect(await client.startAgent('codex', '/home/u/repo')).toBe('t9');
-		expect(await client.startAgent('codex', '/home/u/repo', ['--no-daemon'])).toBe('t9');
-		await client.startAgent('claude', '/home/u/repo');
+		// No shell: the agent's own argv, unwrapped.
+		expect(await client.startAgent('codex', '/home/u/repo', [], '')).toBe('t9');
+		expect(await client.startAgent('codex', '/home/u/repo', ['--no-daemon'], '')).toBe('t9');
+		await client.startAgent('claude', '/home/u/repo', [], '');
 		expect(calls.map((c) => c.params.argv)).toEqual([
 			['codex', '--no-daemon'],
 			['codex', '--no-daemon'],
 			['claude']
+		]);
+	});
+
+	it("starts an agent through the user's login shell, as a TUI pane would", async () => {
+		const client = new CoreClient(path);
+		calls.length = 0;
+		await client.startAgent('omp', '/home/u/repo', ['--cwd', '/home/u/repo'], '/usr/bin/fish');
+		expect(calls[0].params.argv).toEqual([
+			'/usr/bin/fish',
+			'-l',
+			'-i',
+			'-c',
+			'exec $argv',
+			'omp',
+			'--cwd',
+			'/home/u/repo'
 		]);
 	});
 

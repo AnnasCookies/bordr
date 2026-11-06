@@ -1,6 +1,8 @@
 import { error, json } from '@sveltejs/kit';
 import {
 	ACTIONS,
+	CORE_SESSIONS_NOTE,
+	drivesCore,
 	listJobs,
 	findUnit,
 	listSessions,
@@ -18,17 +20,22 @@ import type { RequestHandler } from './$types';
  * accepts a command, only the name of one.
  */
 export const GET: RequestHandler = async () => {
+	const core = drivesCore();
 	const [sessions, commands, outdated] = await Promise.all([
-		listSessions().then(
-			(list) => ({ list, error: null }),
-			(e: unknown) => ({ list: [], error: e instanceof Error ? e.message : String(e) })
-		),
+		// On core the TUI's sessions are not bordr's: listing them invited a Stop.
+		core
+			? { list: [], error: CORE_SESSIONS_NOTE }
+			: listSessions().then(
+					(list) => ({ list, error: null }),
+					(e: unknown) => ({ list: [], error: e instanceof Error ? e.message : String(e) })
+				),
 		loadCommands(),
 		outdatedProcesses()
 	]);
 	const current = sessions.list.find((s) => s.current);
 	const unit = current ? await findUnit(current.name) : null;
 	return json({
+		backend: core ? 'core' : 'tui',
 		sessions: sessions.list,
 		unit,
 		sessionsError: sessions.error,
