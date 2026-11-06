@@ -173,3 +173,41 @@ describe('listMachines', () => {
 		expect(await load(withEndpoints('not json'))).toEqual([]);
 	});
 });
+
+describe('listMachines with herdr-core machines', () => {
+	it("lists core's machines and drops the stale TUI entry for one core now links", async () => {
+		const path = withEndpoints(TWO_MACHINES);
+		vi.resetModules();
+		vi.doMock('#lib/server/env.js', () => ({
+			env: { HERDR_ENDPOINTS: path, BORDR_MACHINES: 'a,b,tm-dev,hermes' }
+		}));
+		const machines = await import('./machines');
+		const core = { socket: '/run/core.sock', state: 'connected' };
+		machines.setCoreMachines([
+			{ id: 'tm-dev', label: 'tm-dev', target: 'tm-dev', session: 'core', enabled: true, core }
+		]);
+		expect(machines.listMachines()).toEqual([
+			{ id: 'tm-dev', label: 'tm-dev', target: 'tm-dev', session: 'core', enabled: true, core },
+			{ id: 'b', label: 'hermes', target: 'hermes', session: 'default', enabled: true }
+		]);
+	});
+
+	it('still lists core machines when herdr has no endpoints file', async () => {
+		vi.resetModules();
+		vi.doMock('#lib/server/env.js', () => ({
+			env: { HERDR_ENDPOINTS: '/nonexistent/endpoints.json', BORDR_MACHINES: 'tm-dev' }
+		}));
+		const machines = await import('./machines');
+		machines.setCoreMachines([
+			{
+				id: 'tm-dev',
+				label: 'tm-dev',
+				target: 'tm-dev',
+				session: 'core',
+				enabled: true,
+				core: { socket: '/run/core.sock', state: 'connected' }
+			}
+		]);
+		expect(machines.listMachines().map((m) => m.id)).toEqual(['tm-dev']);
+	});
+});

@@ -20,6 +20,7 @@ vi.mock('#lib/server/herdr/index.js', () => ({
 	}),
 	rawPane: async () => null,
 	toSummary: (raw: Record<string, unknown>) => ({ paneId: raw.pane_id, agent: raw.agent }),
+	settleAfterAnswer: async (_pane: string, ms: number) => new Promise((r) => setTimeout(r, ms)),
 	readVisible: async () => fixture.visible,
 	promptAgent: fixture.prompt,
 	sendKeys: fixture.keys,

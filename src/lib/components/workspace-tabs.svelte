@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { track } from '#lib/pending.svelte.js';
+	import { agentStore } from '#lib/agents.svelte.js';
 	import Icon from './icon.svelte';
 	import Spinner from './spinner.svelte';
 	import { goto } from '$app/navigation';
@@ -164,6 +165,8 @@
 	 * pane, so there is nothing to wait for or poll.
 	 */
 	let creating = $state(false);
+	/** herdr-core has no tabs of its own to make: they are herdr-app's. */
+	const canCreate = $derived(agentStore.compat?.backend !== 'core' || current.includes('~'));
 
 	async function newTab() {
 		const target = workspace;
@@ -266,18 +269,20 @@
 			{/each}
 		</div>
 
-		<button
-			type="button"
-			class="flex shrink-0 items-center justify-center self-center rounded-lg p-1.5 text-working transition-colors hover:bg-chip disabled:opacity-40"
-			aria-label="New tab in {workspace?.label || 'this workspace'}"
-			title="New tab"
-			disabled={creating}
-			onclick={newTab}
-			>{#if creating}<Spinner size={15} label="Making a tab" />{:else}<Icon
-					name="plus"
-					size={15}
-				/>{/if}</button
-		>
+		{#if canCreate}
+			<button
+				type="button"
+				class="flex shrink-0 items-center justify-center self-center rounded-lg p-1.5 text-working transition-colors hover:bg-chip disabled:opacity-40"
+				aria-label="New tab in {workspace?.label || 'this workspace'}"
+				title="New tab"
+				disabled={creating}
+				onclick={newTab}
+				>{#if creating}<Spinner size={15} label="Making a tab" />{:else}<Icon
+						name="plus"
+						size={15}
+					/>{/if}</button
+			>
+		{/if}
 		<!-- herdr parks the host at the right end of the tab bar; blank means this one. -->
 		<span class="shrink-0 self-center font-mono text-[10.5px] text-faint"
 			>{workspace?.machine || 'local'}</span

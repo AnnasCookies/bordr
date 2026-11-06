@@ -570,8 +570,12 @@
 				: null
 		].filter((target) => target !== null)
 	);
+	/** A pane on this host's herdr-core: only its terminal is ours to close. */
+	const onCore = $derived(agentStore.compat?.backend === 'core' && !detail.paneId.includes('~'));
 	const shownControlTargets = $derived(
-		contextControlTarget ? [contextControlTarget] : controlTargets
+		(contextControlTarget ? [contextControlTarget] : controlTargets).filter(
+			(t) => !onCore || t.scope === 'pane'
+		)
 	);
 
 	let statusOpen = $state(false);
@@ -4569,6 +4573,7 @@
 			y={resourceMenu.y}
 			onchoose={chooseResourceAction}
 			onclose={() => (resourceMenu = null)}
+			core={onCore}
 		/>
 	{/if}
 	{#if controlling}
@@ -4585,7 +4590,8 @@
 			}}
 			onclose={closeControls}
 			ondone={afterControl}
-			onworktrees={!contextControlTarget && detail.cwd
+			core={onCore}
+			onworktrees={!onCore && !contextControlTarget && detail.cwd
 				? () => {
 						controlling = false;
 						worktrees = true;
