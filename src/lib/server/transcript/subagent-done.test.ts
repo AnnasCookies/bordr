@@ -103,6 +103,48 @@ describe('claudeRunEnded', () => {
 	});
 });
 
+describe('claudeRunEnded handback', () => {
+	const handback = JSON.stringify({
+		type: 'assistant',
+		message: {
+			role: 'assistant',
+			stop_reason: 'tool_use',
+			content: [{ type: 'tool_use', id: 'toolu_h', name: 'SubagentHandback', input: {} }]
+		}
+	});
+	const reply = (id: string) =>
+		JSON.stringify({
+			type: 'user',
+			message: { role: 'user', content: [{ type: 'tool_result', tool_use_id: id, content: 'ok' }] }
+		});
+
+	it('counts a delivered report as the end of the run', () => {
+		expect(claudeRunEnded(`${handback}\n${reply('toolu_h')}`)).toBe(true);
+	});
+
+	it('does not count the reply to some other tool', () => {
+		expect(claudeRunEnded(`${handback}\n${reply('toolu_other')}`)).toBe(false);
+	});
+});
+
+describe('delivered task notice', () => {
+	it('reads a harness-marked notice sent into a sub-agent', () => {
+		const row = {
+			type: 'user',
+			isMeta: true,
+			origin: { kind: 'task-notification' },
+			timestamp: '2026-10-23T12:00:26.157Z',
+			message: {
+				content:
+					'[SYSTEM NOTIFICATION]\n<task-notification><tool-use-id>toolu_x</tool-use-id><status>completed</status></task-notification>'
+			}
+		};
+		expect(resolvedToolUseTimes(JSON.stringify(row)).has('toolu_x')).toBe(true);
+		const plain = { ...row, origin: undefined };
+		expect(resolvedToolUseTimes(JSON.stringify(plain)).has('toolu_x')).toBe(false);
+	});
+});
+
 describe('isDone', () => {
 	const resolved = new Map([['toolu_finished', NOW]]);
 
