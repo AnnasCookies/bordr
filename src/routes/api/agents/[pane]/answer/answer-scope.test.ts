@@ -24,6 +24,8 @@ vi.mock('#lib/server/herdr/connections.js', async (importOriginal) => ({
 						if (fixture.flipAfterRead) fixture.scope = 'replacement';
 						return { read: { text: screen } };
 					}
+					// Asking whether the agent is still blocked sends nothing to it.
+					if (method === 'agent.list') return { agents: [] };
 					fixture.inputs.push(captured);
 					return {};
 				}

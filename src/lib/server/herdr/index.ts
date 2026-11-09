@@ -667,17 +667,53 @@ export async function checkCompatibility(): Promise<Compatibility> {
 /**
  * Give an answered dialog time to go away before it is read again.
  *
- * On the TUI there is no signal, so it is a fixed wait. herdr-core reports a
- * blocked agent's status the moment it changes (measured 92 ms), so the wait
- * ends there; a multi-select that stays blocked still waits it out.
+ * Both herdrs report a waiting agent as `blocked` and flip it the moment the
+ * answer lands, so the wait ends there rather than on a flat timer: a quick
+ * redraw is read at once, and a slow one (a busy machine) is given up to
+ * `budgetMs` instead of being read too early and reported unconfirmed — which
+ * left the card up showing the question just answered. A checkbox tick keeps
+ * the agent blocked, so the caller gives that a short budget; a second
+ * question keeps it blocked too, which `moved` catches.
  */
-export async function settleAfterAnswer(address: string, budgetMs: number): Promise<void> {
+export async function settleAfterAnswer(
+	address: string,
+	budgetMs: number,
+	expectedScope?: string,
+	/** Also done when this says so: the question on screen is no longer the one answered. */
+	moved?: () => Promise<boolean>,
+	pollMs = 60
+): Promise<void> {
+	const { machineId, paneId } = parsePane(address);
 	const herdr = getClient();
-	if (!(herdr instanceof CoreClient) || parsePane(address).machineId) {
-		await new Promise((r) => setTimeout(r, budgetMs));
-		return;
-	}
-	await herdr.waitUnblocked(address, budgetMs);
+	await waitUntil(
+		async () => {
+			const blocked =
+				herdr instanceof CoreClient && !machineId
+					? await herdr.isBlocked(paneId)
+					: (await rawAgent(address, expectedScope))?.agent_status === 'blocked';
+			return !blocked || (moved ? await moved() : false);
+		},
+		budgetMs,
+		pollMs
+	);
+}
+
+/** Ask `done` every `pollMs` until it says yes or `budgetMs` runs out; a throw is a no. */
+export async function waitUntil(
+	done: () => Promise<boolean>,
+	budgetMs: number,
+	pollMs: number
+): Promise<boolean> {
+	const deadline = Date.now() + budgetMs;
+	do {
+		await new Promise((r) => setTimeout(r, pollMs));
+		try {
+			if (await done()) return true;
+		} catch {
+			// a failed read is not a signal; the deadline still holds
+		}
+	} while (Date.now() < deadline);
+	return false;
 }
 
 /** Tell herdr-core a person has seen this turn, so herdr-app stops showing it done. */
