@@ -103,6 +103,97 @@ describe('claudeRunEnded', () => {
 	});
 });
 
+describe('claudeRunEnded handback', () => {
+	const handback = JSON.stringify({
+		type: 'assistant',
+		message: {
+			role: 'assistant',
+			stop_reason: 'tool_use',
+			content: [{ type: 'tool_use', id: 'toolu_h', name: 'SubagentHandback', input: {} }]
+		}
+	});
+	const reply = (id: string, is_error = false) =>
+		JSON.stringify({
+			type: 'user',
+			message: {
+				role: 'user',
+				content: [{ type: 'tool_result', tool_use_id: id, content: 'ok', is_error }]
+			}
+		});
+
+	it('counts a delivered report as the end of the run', () => {
+		expect(claudeRunEnded(`${handback}\n${reply('toolu_h')}`)).toBe(true);
+	});
+
+	it('does not count the reply to some other tool', () => {
+		expect(claudeRunEnded(`${handback}\n${reply('toolu_other')}`)).toBe(false);
+	});
+
+	it('finds the hand-back reply behind the rows of a parallel call', () => {
+		const parallel = JSON.stringify({
+			type: 'assistant',
+			message: {
+				role: 'assistant',
+				stop_reason: 'tool_use',
+				content: [
+					{ type: 'tool_use', id: 'toolu_a', name: 'Read', input: {} },
+					{ type: 'tool_use', id: 'toolu_h', name: 'SubagentHandback', input: {} }
+				]
+			}
+		});
+		expect(claudeRunEnded([parallel, reply('toolu_a'), reply('toolu_h')].join('\n'))).toBe(true);
+		expect(claudeRunEnded([parallel, reply('toolu_h'), reply('toolu_a')].join('\n'))).toBe(true);
+	});
+
+	it('does not count a hand-back that failed', () => {
+		expect(claudeRunEnded(`${handback}\n${reply('toolu_h', true)}`)).toBe(false);
+	});
+});
+
+describe('delivered task notice', () => {
+	const at = '2026-10-23T12:00:26.157Z';
+	const notice = (status: string) => ({
+		type: 'user',
+		isMeta: true,
+		origin: { kind: 'task-notification' },
+		timestamp: at,
+		message: {
+			content: `[SYSTEM NOTIFICATION]\n<task-notification><tool-use-id>toolu_x</tool-use-id><status>${status}</status></task-notification>`
+		}
+	});
+
+	it.each(['completed', 'failed', 'killed', 'stopped'])(
+		'reads a harness-marked %s notice sent into a sub-agent, with its time',
+		(status) => {
+			expect(resolvedToolUseTimes(JSON.stringify(notice(status))).get('toolu_x')).toBe(
+				Date.parse(at)
+			);
+		}
+	);
+
+	it('ignores a notice without the harness mark or a finished status', () => {
+		const plain = { ...notice('completed'), origin: undefined };
+		expect(resolvedToolUseTimes(JSON.stringify(plain)).has('toolu_x')).toBe(false);
+		expect(resolvedToolUseTimes(JSON.stringify(notice('running'))).has('toolu_x')).toBe(false);
+	});
+
+	it('finishes a depth-2 child from its parent sub-agent transcript', () => {
+		// The parent sub-agent's file holds the launch row and the later notice.
+		const launch = JSON.stringify({
+			type: 'user',
+			timestamp: '2026-10-23T11:59:00.000Z',
+			message: { content: [{ type: 'tool_result', tool_use_id: 'toolu_x' }] },
+			toolUseResult: { status: 'async_launched' }
+		});
+		const parent = [launch, JSON.stringify(notice('completed'))].join('\n');
+		const resolved = resolvedToolUseTimes(parent);
+		const lastWrite = Date.parse('2026-10-23T12:00:20.000Z');
+		expect(isDone({ toolUseId: 'toolu_x', lastAt: lastWrite }, resolved)).toBe(true);
+		// The child writing again after the notice is a resumed run, not finished.
+		expect(isDone({ toolUseId: 'toolu_x', lastAt: Date.parse(at) + 1000 }, resolved)).toBe(false);
+	});
+});
+
 describe('isDone', () => {
 	const resolved = new Map([['toolu_finished', NOW]]);
 

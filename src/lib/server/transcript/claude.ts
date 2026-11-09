@@ -265,7 +265,10 @@ export function unwrapPastedContent(text: string): string {
 const TASK_NOTIFICATION = /<task-notification>/;
 const TASK_SUMMARY = /<summary>([\s\S]*?)<\/summary>/;
 const SYSTEM_NOTIFICATION = /^\s*\[SYSTEM NOTIFICATION/;
-const CONTINUATION = /^\s*This session is being continued from a previous conversation/;
+// Newer Claude Code puts an artifact warning before the summary. Skip a short
+// stretch rather than its exact lines, so a reworded or wrapped warning still matches.
+const CONTINUATION =
+	/^\s*(?:<artifact-content-authored-by-others\/>[\s\S]{0,400}?)?This session is being continued from a previous conversation/;
 const INTERRUPTED = /^\s*\[Request interrupted by user/;
 /** Both forms Claude Code uses when a skill is invoked again in one session. */
 const COMMAND_NAME = /<command-name>([^<]+)<\/command-name>/;
