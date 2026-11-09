@@ -58,7 +58,13 @@ export function resolvedToolUseTimes(jsonl: string): Map<string, number> {
 			toolUseResult?: { status?: string };
 			content?: unknown;
 			attachment?: { prompt?: unknown };
+			isMeta?: boolean;
+			origin?: { kind?: string };
 		};
+		// A notice delivered into a sub-agent's own transcript (a depth-2 child's
+		// result) is a harness-marked user message, not a queue row or attachment.
+		const delivered =
+			row.isMeta && row.origin?.kind === 'task-notification' ? row.message?.content : undefined;
 		const parsedAt = Date.parse(row.timestamp ?? '');
 		// Fixtures and old transcripts may omit a timestamp. An exact result is
 		// still stronger than a guess, so Infinity keeps the old shape useful.
@@ -75,7 +81,7 @@ export function resolvedToolUseTimes(jsonl: string): Map<string, number> {
 
 		// Claude writes this first as a queue operation and may repeat it inside
 		// an attachment. Either is data from the harness, not prose to execute.
-		for (const value of [row.content, row.attachment?.prompt]) {
+		for (const value of [row.content, row.attachment?.prompt, delivered]) {
 			if (typeof value !== 'string' || !value.includes('<task-notification>')) continue;
 			const id = /<tool-use-id>([^<]+)<\/tool-use-id>/.exec(value)?.[1]?.trim();
 			const status = /<status>([^<]+)<\/status>/.exec(value)?.[1]?.trim();
@@ -124,6 +130,9 @@ export function resolvedToolUses(jsonl: string): Set<string> {
 /** Whether the child transcript itself says the current Claude run stopped. */
 export function claudeRunEnded(jsonl: string): boolean {
 	const lines = jsonl.split('\n');
+	// Successful tool results written after the last assistant turn. Claude Code
+	// writes each result of a parallel call as its own row, so collect them all.
+	let results: string[] | undefined;
 	for (let i = lines.length - 1; i >= 0; i--) {
 		const line = lines[i].trim();
 		if (!line) continue;
@@ -136,12 +145,36 @@ export function claudeRunEnded(jsonl: string): boolean {
 		if (parsed === null || typeof parsed !== 'object') continue;
 		const row = parsed as {
 			type?: string;
-			message?: { role?: string; stop_reason?: string | null };
+			message?: { role?: string; stop_reason?: string | null; content?: unknown };
 		};
 		if (row.type !== 'assistant' && row.type !== 'user') continue;
-		if (row.message?.role === 'user' || row.type === 'user') return false;
-		if (row.message?.role === 'assistant' || row.type === 'assistant')
-			return row.message?.stop_reason === 'end_turn';
+		const blocks = Array.isArray(row.message?.content)
+			? (row.message.content as Array<{
+					type?: string;
+					id?: string;
+					name?: string;
+					tool_use_id?: string;
+					is_error?: boolean;
+				}>)
+			: [];
+		if (row.message?.role === 'user' || row.type === 'user') {
+			// A child that delivers its report is finished, though it writes the
+			// tool's reply after the run's last assistant turn.
+			const replies = blocks.filter((b) => b.type === 'tool_result' && b.tool_use_id);
+			if (replies.length === 0) return false;
+			// A failed hand-back delivered nothing.
+			results = [
+				...(results ?? []),
+				...replies.filter((b) => !b.is_error).map((b) => b.tool_use_id as string)
+			];
+			continue;
+		}
+		if (results)
+			return blocks.some(
+				(b) =>
+					b.type === 'tool_use' && b.name === 'SubagentHandback' && results?.includes(b.id ?? '')
+			);
+		return row.message?.stop_reason === 'end_turn';
 	}
 	return false;
 }
