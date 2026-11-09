@@ -1,7 +1,16 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import { spawnSync } from 'node:child_process';
+import { spawn, spawnSync } from 'node:child_process';
 import { createServer, type Server } from 'node:net';
-import { chmodSync, mkdtempSync, mkdirSync, rmSync, writeFileSync } from 'node:fs';
+import {
+	appendFileSync,
+	chmodSync,
+	closeSync,
+	mkdtempSync,
+	mkdirSync,
+	openSync,
+	rmSync,
+	writeFileSync
+} from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import {
@@ -14,10 +23,19 @@ import {
 	agentKind,
 	agentStatus,
 	placements,
+	sendOnceSettled,
 	translateEvent,
+	viaLoginShell,
 	type CoreTerminal
 } from './core';
-import { piSessionByStart, sessionForProcess } from './core-session';
+import { HerdrRequestError } from './client';
+import {
+	agyConversation,
+	agyLogConversation,
+	piSessionByStart,
+	sessionForProcess,
+	sessionFromLinks
+} from './core-session';
 import { judgeCompatibility } from './compat';
 
 const claude = (over: Partial<CoreTerminal> = {}): CoreTerminal => ({
@@ -54,6 +72,112 @@ describe('agentKind', () => {
 				claude({ status: null, reported: false, foreground: { name: 'bash', argv: ['bash'] } })
 			)
 		).toBe('');
+	});
+	it('knows an npm harness that reports nothing by the script node runs', () => {
+		// As hc 0.1.15 showed copilot: no status, foreground name `node-MainThread`.
+		const copilot = claude({
+			status: null,
+			reported: false,
+			foreground: { name: 'node-MainThread', argv: ['node', '/home/u/.bun/bin/copilot'] }
+		});
+		expect(agentKind(copilot)).toBe('copilot');
+		const script = claude({
+			status: null,
+			reported: false,
+			foreground: { name: 'node-MainThread', argv: ['node', '/home/u/app/server.js'] }
+		});
+		expect(agentKind(script)).toBe('');
+	});
+	it("maps the app words agy and grok report (hc 0.1.18) onto bordr's names", () => {
+		const node = { name: 'node-MainThread', argv: ['node', '/opt/x/index.js'] };
+		expect(
+			agentKind(claude({ status: { app: 'antigravity', state: 'idle' }, foreground: node }))
+		).toBe('agy');
+		expect(
+			agentKind(claude({ status: { app: 'grok-build', state: 'idle' }, foreground: node }))
+		).toBe('grok');
+	});
+});
+
+describe('sendOnceSettled', () => {
+	const starting = () =>
+		new HerdrRequestError(
+			'unavailable',
+			'terminal.send: t1r is still starting: its output has not settled'
+		);
+	const noSleep = async () => {};
+
+	it('sends again while the program is still starting, then succeeds', async () => {
+		let calls = 0;
+		const send = async () => {
+			if (++calls < 3) throw starting();
+			return 'sent';
+		};
+		expect(await sendOnceSettled(send, noSleep)).toBe('sent');
+		expect(calls).toBe(3);
+	});
+	it('never retries any other refusal, even another `unavailable`', async () => {
+		let calls = 0;
+		const other = new HerdrRequestError('unavailable', 'terminal.send: input is pending recovery');
+		await expect(
+			sendOnceSettled(async () => {
+				calls++;
+				throw other;
+			}, noSleep)
+		).rejects.toBe(other);
+		expect(calls).toBe(1);
+		// The words alone are not enough: only core's own `unavailable` says nothing was typed.
+		const lookalike = new HerdrRequestError('protocol_error', 'x is still starting');
+		await expect(
+			sendOnceSettled(async () => {
+				calls++;
+				throw lookalike;
+			}, noSleep)
+		).rejects.toBe(lookalike);
+		expect(calls).toBe(2);
+	});
+	it('gives up after its last delay', async () => {
+		let calls = 0;
+		await expect(
+			sendOnceSettled(
+				async () => {
+					calls++;
+					throw starting();
+				},
+				noSleep,
+				[1, 1]
+			)
+		).rejects.toThrow(/still starting/);
+		expect(calls).toBe(3);
+	});
+});
+
+describe('viaLoginShell', () => {
+	const tricky = ['printf', '<%s>', '--no-daemon', 'two words', "it's", '$HOME', '*'];
+	const home = mkdtempSync(join(tmpdir(), 'bordr-shell-'));
+	afterAll(() => rmSync(home, { recursive: true, force: true }));
+
+	for (const name of ['sh', 'bash', 'zsh', 'fish']) {
+		// CI images carry sh and bash only; a shell that is not installed is skipped, not passed.
+		const shell =
+			process.platform === 'win32'
+				? ''
+				: spawnSync('sh', ['-c', `command -v ${name}`], { encoding: 'utf8' }).stdout.trim();
+		it.skipIf(!shell)(`${name} hands the agent exactly its argv`, () => {
+			const [file, ...args] = viaLoginShell(tricky, shell);
+			// A scratch home: no profile or config of the person running the tests.
+			const run = spawnSync(file, args, {
+				encoding: 'utf8',
+				env: { PATH: process.env.PATH, HOME: home, XDG_CONFIG_HOME: home, TERM: 'dumb' }
+			});
+			expect(run.stdout).toBe("<--no-daemon><two words><it's><$HOME><*>");
+		});
+	}
+
+	it('runs the agent directly with no shell or one it cannot pass argv through', () => {
+		expect(viaLoginShell(['claude'], '')).toEqual(['claude']);
+		expect(viaLoginShell(['claude'], '/usr/bin/nu')).toEqual(['claude']);
+		expect(viaLoginShell(['claude'], 'bash')).toEqual(['claude']);
 	});
 });
 
@@ -149,6 +273,147 @@ describe('sessionForProcess', () => {
 		process.env.CLAUDE_CONFIG_DIR = dir;
 		expect(sessionForProcess('claude', 4242)).toBe('abc-123');
 		expect(sessionForProcess('claude', 4243)).toBe('');
+	});
+
+	it.skipIf(process.platform !== 'linux')(
+		"finds grok's session from the file its process holds open",
+		async () => {
+			const grokHome = join(dir, 'grok');
+			const id = '01a1b2f9-b325-7f23-b50a-6bdcd8d4b303';
+			const session = join(grokHome, 'sessions', '%2Fhome%2Fu%2Frepo', id);
+			mkdirSync(session, { recursive: true });
+			const held = openSync(join(session, 'events.jsonl'), 'a');
+			const child = spawn('sleep', ['10'], { stdio: ['ignore', held, 'ignore'] });
+			const previous = process.env.GROK_HOME;
+			process.env.GROK_HOME = grokHome;
+			try {
+				expect(sessionForProcess('grok', child.pid ?? 0)).toBe(id);
+				// Same process, wrong harness: nothing of copilot's is open.
+				expect(sessionForProcess('copilot', child.pid ?? 0)).toBe('');
+			} finally {
+				process.env.GROK_HOME = previous;
+				child.kill();
+				closeSync(held);
+			}
+		}
+	);
+
+	it.skipIf(process.platform !== 'linux')(
+		"finds copilot's session held by the CLI its node launcher started",
+		async () => {
+			const copilotHome = join(dir, 'copilot');
+			const id = '981574c2-9fff-4f6b-8887-8329aa129576';
+			mkdirSync(join(copilotHome, 'session-state', id), { recursive: true });
+			const hold = join(copilotHome, 'session-state', id, 'inuse.1.hold');
+			// `; true` keeps sh from exec-ing sleep, so the child holds the file, not sh.
+			const launcher = spawn('sh', ['-c', 'sleep 10 3>>"$HOLD"; true'], {
+				env: { ...process.env, HOLD: hold },
+				stdio: 'ignore'
+			});
+			const previous = process.env.COPILOT_HOME;
+			process.env.COPILOT_HOME = copilotHome;
+			try {
+				let found = '';
+				// The child needs a moment to start and open the file.
+				for (let i = 0; i < 40 && !found; i++) {
+					found = sessionForProcess('copilot', launcher.pid ?? 0);
+					if (!found) await new Promise((resolve) => setTimeout(resolve, 25));
+				}
+				expect(found).toBe(id);
+			} finally {
+				process.env.COPILOT_HOME = previous;
+				launcher.kill();
+			}
+		}
+	);
+
+	it.skipIf(process.platform !== 'linux')(
+		'finds nothing for a process with no session open',
+		async () => {
+			const child = spawn('sleep', ['10'], { stdio: 'ignore' });
+			try {
+				for (const kind of ['grok', 'copilot', 'agy'])
+					expect(sessionForProcess(kind, child.pid ?? 0)).toBe('');
+			} finally {
+				child.kill();
+			}
+		}
+	);
+});
+
+describe('sessionFromLinks', () => {
+	const id = '59f90346-bba9-40e5-8351-10216b963406';
+	const never = () => {
+		throw new Error('only agy reads a log');
+	};
+	it("takes grok's id from the session folder it holds, under its own home only", () => {
+		const links = [
+			'/dev/pts/3',
+			'/home/u/.grok/logs/unified.jsonl',
+			`/home/other/.grok/sessions/x/${id}/events.jsonl`,
+			`/home/u/.grok/sessions/%2Fhome%2Fu%2Frepo/${id}/events.jsonl`
+		];
+		expect(sessionFromLinks('grok', links, '/home/u/.grok', never)).toBe(id);
+		expect(sessionFromLinks('grok', links.slice(0, 3), '/home/u/.grok', never)).toBe('');
+	});
+	it("takes copilot's id from its in-use hold file", () => {
+		const links = [
+			'/home/u/.copilot/session-store.db',
+			`/home/u/.copilot/session-state/${id}/inuse.1918481.hold`
+		];
+		expect(sessionFromLinks('copilot', links, '/home/u/.copilot', never)).toBe(id);
+		expect(
+			sessionFromLinks(
+				'copilot',
+				['/home/u/.copilot/session-state/../../etc/inuse.1.hold'],
+				'/home/u/.copilot',
+				never
+			)
+		).toBe('');
+	});
+	it("reads agy's conversation from the log on its stdout", () => {
+		const log = '/home/u/.gemini/antigravity-cli/log/cli-20261106_222559.log';
+		const asked: string[] = [];
+		const read = (path: string) => (asked.push(path), id);
+		expect(sessionFromLinks('agy', ['/dev/pts/1', log], '/home/u/.gemini', read)).toBe(id);
+		expect(asked).toEqual([log]);
+		expect(sessionFromLinks('agy', ['/tmp/other.log'], '/home/u/.gemini', read)).toBe('');
+	});
+});
+
+describe("agy's log", () => {
+	const a = '95f42ca7-26e4-4655-a1a2-f3d32dd26d40';
+	const b = '456c5fda-986e-478f-bd3d-cb9800b1b931';
+	const other = 'e5b7bb48-1fb1-4522-a578-6344c4280b3d';
+	it('takes the last conversation created or streamed, not ones it searched', () => {
+		const log = [
+			`W1106 22:26:00 extract_searchable_content.go:160] oversized step: conversation=${other} step=87`,
+			`I1106 22:26:09 server.go:1242] Created conversation ${a} (backend=BACKEND_TYPE_UNSPECIFIED)`,
+			`I1106 22:26:09 server.go:3369] GetConversationDetail: found conversation ${other} (active=true)`,
+			`I1106 22:26:09 conversation_manager.go:1068] Streaming conversation ${a}`
+		].join('\n');
+		expect(agyConversation(log)).toBe(a);
+		expect(
+			agyConversation(`${log}\nI1106 conversation_manager.go:1068] Streaming conversation ${b}`)
+		).toBe(b);
+		expect(agyConversation('no conversation yet')).toBe('');
+	});
+	it('reads only what was added since, keeping a line cut mid-write', () => {
+		const dir = mkdtempSync(join(tmpdir(), 'bordr-agy-'));
+		try {
+			const path = join(dir, 'cli.log');
+			writeFileSync(path, 'I1106 startup\n');
+			expect(agyLogConversation(path)).toBe('');
+			appendFileSync(path, `I1106 Created conversation ${a}\nI1106 Streaming conv`);
+			expect(agyLogConversation(path)).toBe(a);
+			appendFileSync(path, `ersation ${b}\n`);
+			expect(agyLogConversation(path)).toBe(b);
+			// A log replaced by a shorter one is read from the start again.
+			writeFileSync(path, `I1106 Created conversation ${other}\n`);
+			expect(agyLogConversation(path)).toBe(other);
+		} finally {
+			rmSync(dir, { recursive: true, force: true });
+		}
 	});
 });
 
@@ -267,9 +532,11 @@ describe('CoreClient over a socket', () => {
 									? { terminal: { address: msg.params.terminal, labels: { 'herdr.seen': '1' } } }
 									: msg.method === 'terminal.label'
 										? {}
-										: msg.method === 'hello'
-											? { generation: 1, version: '0.1.17', core: { name: 'box' } }
-											: undefined;
+										: msg.method === 'terminal.run'
+											? { address: 't9' }
+											: msg.method === 'hello'
+												? { generation: 1, version: '0.1.17', core: { name: 'box' } }
+												: undefined;
 					if (msg.method === 'terminal.send') {
 						socket.write(
 							JSON.stringify({
@@ -368,6 +635,36 @@ describe('CoreClient over a socket', () => {
 			terminal: 'mac/t2',
 			labels: { 'herdr.seen': '4' }
 		});
+	});
+
+	it('starts codex without its daemon, so its work stays in the terminal', async () => {
+		const client = new CoreClient(path);
+		calls.length = 0;
+		// No shell: the agent's own argv, unwrapped.
+		expect(await client.startAgent('codex', '/home/u/repo', [], '')).toBe('t9');
+		expect(await client.startAgent('codex', '/home/u/repo', ['--no-daemon'], '')).toBe('t9');
+		await client.startAgent('claude', '/home/u/repo', [], '');
+		expect(calls.map((c) => c.params.argv)).toEqual([
+			['codex', '--no-daemon'],
+			['codex', '--no-daemon'],
+			['claude']
+		]);
+	});
+
+	it("starts an agent through the user's login shell, as a TUI pane would", async () => {
+		const client = new CoreClient(path);
+		calls.length = 0;
+		await client.startAgent('omp', '/home/u/repo', ['--cwd', '/home/u/repo'], '/usr/bin/fish');
+		expect(calls[0].params.argv).toEqual([
+			'/usr/bin/fish',
+			'-l',
+			'-i',
+			'-c',
+			'exec $argv',
+			'omp',
+			'--cwd',
+			'/home/u/repo'
+		]);
 	});
 
 	it('answers ping as core and refuses what core cannot do', async () => {

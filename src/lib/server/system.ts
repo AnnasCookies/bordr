@@ -6,6 +6,7 @@ import { basename, dirname, join } from 'node:path';
 import { env } from '#lib/server/env.js';
 import { getClient, listAgents } from './herdr';
 import { HerdrHangupError } from './herdr/client';
+import { CoreClient } from './herdr/core';
 import { sendToAll } from './push';
 import { DATA_DIR } from './state-store';
 
@@ -740,8 +741,27 @@ export type Action =
 	| 'update-all'
 	| 'run';
 
+/** Whether bordr drives herdr-core, whose server and terminals are hc's, not herdr's. */
+export function drivesCore(): boolean {
+	return getClient() instanceof CoreClient;
+}
+
+export const CORE_SESSIONS_NOTE =
+	"bordr drives herdr-core here: hc runs its own core, and herdr's TUI sessions are not bordr's to start or stop";
+
+/**
+ * On core, every herdr action would act on the TUI herdr beside it: stopping
+ * one of its sessions from a core-driven bordr would end agents bordr does
+ * not even show. Only the operator's own commands stay.
+ */
+export function refusedOnCore(action: Action, core: boolean): string | null {
+	return core && action !== 'run' ? CORE_SESSIONS_NOTE : null;
+}
+
 /** Start one action as a job. `name` is a session name or a command id. */
 export async function runAction(action: Action, name: string): Promise<Job> {
+	const refused = refusedOnCore(action, drivesCore());
+	if (refused) throw new Error(refused);
 	const bin = herdrBin();
 	switch (action) {
 		case 'reload-config':

@@ -13,6 +13,7 @@ import { ensureConnection } from './connections';
 import { setCoreMachines } from './machines';
 import { formatPane, parsePane } from './address';
 import { promptWithPaneFallback } from './prompt-retry';
+import { parsePicker } from '../picker';
 import { readScopeFor, readState, seenStatus } from '../state-store';
 
 const DEFAULT_SOCKET = join(homedir(), '.config', 'herdr', 'sessions', 'main', 'herdr.sock');
@@ -53,13 +54,44 @@ let manager: SubscriptionManager | undefined;
 let managerPending: Promise<SubscriptionManager> | undefined;
 
 /**
- * HERDR_SOCKET wins. Unset, a running herdr-core is preferred over the TUI:
- * once both are installed, core is where the terminals live.
+ * Which socket to drive. HERDR_SOCKET wins, then HERDR_BACKEND. With neither,
+ * a TUI socket that exists is kept over core's: on Linux `hc server status`
+ * starts an empty core, which then outranking a working TUI session would
+ * empty bordr without a word. Core is used when it is all there is.
+ * `note` says why when both exist, for the server log.
  */
+export function chooseSocket(options: {
+	herdrSocket?: string;
+	backend?: string;
+	core: string;
+	tui: string;
+	exists: (path: string) => boolean;
+}): { path: string; note?: string } {
+	const { herdrSocket, backend, core, tui, exists } = options;
+	if (herdrSocket) return { path: herdrSocket };
+	if (backend === 'core') return { path: core };
+	if (backend === 'tui') return { path: tui };
+	if (exists(tui)) {
+		return exists(core)
+			? {
+					path: tui,
+					note: `herdr-core is running too (${core}); set HERDR_BACKEND=core to use it`
+				}
+			: { path: tui };
+	}
+	return { path: exists(core) ? core : tui };
+}
+
 function socketPath(): string {
-	if (env.HERDR_SOCKET) return env.HERDR_SOCKET;
-	const core = coreSocket();
-	return existsSync(core) ? core : DEFAULT_SOCKET;
+	const { path, note } = chooseSocket({
+		herdrSocket: env.HERDR_SOCKET,
+		backend: env.HERDR_BACKEND,
+		core: coreSocket(),
+		tui: DEFAULT_SOCKET,
+		exists: existsSync
+	});
+	if (note) console.log(`bordr: ${note}`);
+	return path;
 }
 
 /**
@@ -448,12 +480,40 @@ export async function settleScreen(
 }
 
 /**
+ * Core types into whatever is on screen unless the program reports itself
+ * blocked, and copilot reports `idle` under its folder-trust dialog (hc
+ * 0.1.18), where Enter answers "Yes". A dialog is refused here as the TUI
+ * refuses a blocked agent: a picker with a highlighted option. A numbered
+ * list in the agent's last reply has none.
+ *
+ * Not `menuFooter`: pi's start screen is short enough that its key-hint row
+ * ("escape interrupt · ctrl+c/ctrl+d clear/exit · …") reads as a menu
+ * footer, and refused pi's first message (measured, hc 0.1.18). A menu with
+ * no readable highlight is left to core's own blocked check.
+ */
+export function dialogOnScreen(visible: string): boolean {
+	return parsePicker(visible)?.options.some((option) => option.selected) ?? false;
+}
+
+/** An unreadable screen leaves the decision to core's own blocked check. */
+async function refuseOpenDialog(address: string, expectedScope?: string): Promise<void> {
+	const visible = await readVisible(address, expectedScope).catch(() => '');
+	if (dialogOnScreen(visible)) {
+		throw new HerdrRequestError(
+			'agent_blocked',
+			'a dialog is open on screen: answer it before sending a message'
+		);
+	}
+}
+
+/**
  * Sent straight away. A settle here (waiting for the screen to hold still
  * before typing) cost every message a second on a still screen and up to
  * eight on a busy one, for a window that only exists in the seconds after
  * a harness starts — and the new-agent route already waits that window out
  * before it hands the pane over.
  */
+
 export async function promptAgent(
 	address: string,
 	text: string,
@@ -461,6 +521,7 @@ export async function promptAgent(
 ): Promise<void> {
 	const { machineId, paneId } = parsePane(address);
 	const herdr = await clientFor(machineId, expectedScope);
+	if (herdr instanceof CoreClient) await refuseOpenDialog(address, expectedScope);
 	/**
 	 * A leading `!` is a MODE SWITCH, not text.
 	 *

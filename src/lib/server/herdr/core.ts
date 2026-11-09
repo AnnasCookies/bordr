@@ -1,3 +1,4 @@
+import { spawnSync } from 'node:child_process';
 import { HerdrClient, HerdrRequestError } from './client';
 import { CORE_GENERATION } from './compat';
 import { coreCall, corePaint, coreSubscribe, coreType } from './core-wire';
@@ -58,12 +59,109 @@ const KINDS = new Set([
 	'omp'
 ]);
 
+/** `status.app` words that are not bordr's name for the harness (hc 0.1.18). */
+const APPS: Record<string, string> = { antigravity: 'agy', 'grok-build': 'grok' };
+
 export function agentKind(t: CoreTerminal): string {
-	const app = (t.status?.app ?? '').replace(/-(code|cli)$/, '');
+	const reported = (t.status?.app ?? '').replace(/-(code|cli)$/, '');
+	const app = APPS[t.status?.app ?? ''] ?? reported;
 	if (KINDS.has(app)) return app;
-	const exe = (t.foreground?.argv?.[0] ?? t.foreground?.name ?? '').split('/').pop() ?? '';
+	// Before a harness reports (copilot reported nothing on hc 0.1.15) it is
+	// known by what runs now. Not by the launch argv: a kept terminal's lost
+	// agent becomes a shell.
+	const kind = programKind(t.foreground?.argv);
+	if (kind) return kind;
+	const exe = baseName(t.foreground?.name ?? '');
 	if (KINDS.has(exe)) return exe;
 	return t.reported && app ? app : '';
+}
+
+/**
+ * The harness an argv runs. npm-installed ones (copilot) run as
+ * `node /path/to/copilot`, so their foreground name is `node-MainThread`.
+ */
+function programKind(argv: string[] | null | undefined): string {
+	const first = baseName(argv?.[0] ?? '');
+	if (KINDS.has(first)) return first;
+	if (/^(node|bun|deno)$/.test(first)) {
+		const script = baseName(argv?.[1] ?? '');
+		if (KINDS.has(script)) return script;
+	}
+	return '';
+}
+
+function baseName(path: string): string {
+	return (path.split(/[\\/]/).pop() ?? '').replace(/\.(exe|cmd|js|mjs|cjs)$/i, '');
+}
+
+const SETTLE_DELAYS = [250, 500, 1_000, 1_500, 2_000, 2_500, 3_000];
+
+/**
+ * Retry only core's refusal to type while a program's start-up output is
+ * still moving (`unavailable`, "is still starting: its output has not
+ * settled"; hc 0.1.18). Core says nothing was typed, so a retry cannot send
+ * twice. It is the core twin of the TUI's registration refusal
+ * (prompt-retry.ts): codex hit it on the first message after starting.
+ */
+export async function sendOnceSettled<T>(
+	send: () => Promise<T>,
+	sleep: (ms: number) => Promise<unknown> = (ms) => new Promise((r) => setTimeout(r, ms)),
+	delays: readonly number[] = SETTLE_DELAYS
+): Promise<T> {
+	for (let attempt = 0; ; attempt++) {
+		try {
+			return await send();
+		} catch (e) {
+			const starting =
+				e instanceof HerdrRequestError &&
+				e.code === 'unavailable' &&
+				/is still starting/.test(e.message);
+			if (!starting || attempt >= delays.length) throw e;
+			await sleep(delays[attempt]);
+		}
+	}
+}
+
+let shellCache: string | undefined;
+
+/**
+ * The user's login shell from the password database, as a terminal would
+ * start. Not `os.userInfo().shell`: Bun answers that from $SHELL, which is
+ * whatever started bordr. `getent` also covers users not in /etc/passwd.
+ */
+export function loginShell(): string {
+	if (shellCache !== undefined) return shellCache;
+	const uid = process.getuid?.();
+	let shell = '';
+	if (uid !== undefined) {
+		const entry = spawnSync('getent', ['passwd', String(uid)], { encoding: 'utf8', timeout: 2000 });
+		shell = entry.status === 0 ? (entry.stdout.trim().split(':')[6] ?? '') : '';
+	}
+	shell ||= process.env.SHELL ?? '';
+	// A service account's shell refuses logins; such a user gets agents run directly.
+	shellCache = /\/(nologin|false)$/.test(shell) ? '' : shell;
+	return shellCache;
+}
+
+/**
+ * Run an agent through the user's interactive login shell, then `exec` it.
+ *
+ * A TUI pane starts its agent inside the user's shell, so the agent gets
+ * what that shell's config exports (API keys among it). Core runs argv
+ * directly with its own environment: under systemd that is the user
+ * manager's, so on atlas (2026-11-06) omp started "No API key found".
+ * `exec` hands the terminal to the agent, so core sees the agent itself as
+ * the foreground program. A shell this cannot pass arguments through
+ * safely runs the agent directly.
+ */
+export function viaLoginShell(argv: string[], shell: string): string[] {
+	const name = baseName(shell);
+	if (!shell.startsWith('/') || !argv.length) return argv;
+	if (name === 'fish') return [shell, '-l', '-i', '-c', 'exec $argv', ...argv];
+	// `$0` is the agent's name, so `$@` is exactly argv.
+	if (/^(bash|zsh|sh|dash|ksh|mksh)$/.test(name))
+		return [shell, '-l', '-i', '-c', 'exec "$@"', argv[0], ...argv];
+	return argv;
 }
 
 /**
@@ -211,10 +309,20 @@ export class CoreClient extends HerdrClient {
 	 * bordr lists it under "Other" until then. `herdr.seen=0` is what
 	 * herdr-app's docs/labels.md asks of a client that starts a terminal.
 	 */
-	async startAgent(kind: string, cwd: string, args: string[] = []): Promise<string> {
+	async startAgent(
+		kind: string,
+		cwd: string,
+		args: string[] = [],
+		shell = loginShell()
+	): Promise<string> {
+		// codex otherwise hands its turns to a shared app-server daemon: its
+		// commands run outside this terminal (hc's manual) and the daemon, not
+		// the terminal's process, holds the rollout bordr reads.
+		const flags = kind === 'codex' && !args.includes('--no-daemon') ? ['--no-daemon'] : [];
+		const argv = viaLoginShell([kind, ...flags, ...args], shell);
 		const result = await this.call<{ address?: string; terminal?: { address?: string } }>(
 			'terminal.run',
-			{ argv: [kind, ...args], cwd, no_parent: true, labels: { 'herdr.seen': '0' } },
+			{ argv, cwd, no_parent: true, labels: { 'herdr.seen': '0' } },
 			60_000
 		);
 		const address = result.address ?? result.terminal?.address;
@@ -505,10 +613,12 @@ export class CoreClient extends HerdrClient {
 				// permission "Yes"). Core refuses like the TUI did, and the routes
 				// already turn `agent_blocked` into "answer it in terminal view".
 				try {
-					await this.call(
-						'terminal.send',
-						{ terminal: target, text: String(params.text ?? '') },
-						timeoutMs
+					await sendOnceSettled(() =>
+						this.call(
+							'terminal.send',
+							{ terminal: target, text: String(params.text ?? '') },
+							timeoutMs
+						)
 					);
 				} catch (e) {
 					if (e instanceof HerdrRequestError && e.code === 'blocked')
