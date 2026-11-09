@@ -4192,6 +4192,10 @@
 							overlay; padding is what moves the text out from under it.
 						-->
 						<!--
+							A shell line is case sensitive, and a phone turns `! git` into
+							`! Git` (command not found), so the keyboard stays out of it.
+						-->
+						<!--
 							`aria-label` as well as the placeholder. The placeholder says what
 							this box does RIGHT NOW — run a command on the host, answer the
 							question on screen — which is useful and is exactly why it cannot
@@ -4209,6 +4213,10 @@
 							onpaste={onPaste}
 							rows="1"
 							aria-label="Message"
+							autocapitalize={isShell ? 'off' : undefined}
+							autocomplete={isShell ? 'off' : undefined}
+							spellcheck={isShell ? false : undefined}
+							{...isShell ? { autocorrect: 'off' } : {}}
 							placeholder={isShell
 								? 'Runs on the host…'
 								: detail.picker

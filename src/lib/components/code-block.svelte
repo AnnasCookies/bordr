@@ -1,6 +1,7 @@
 <script lang="ts">
 	import { prefs } from '#lib/prefs.svelte.js';
 	import { highlight } from '#lib/highlight.js';
+	import CopyButton from './copy-button.svelte';
 
 	let {
 		code,
@@ -46,16 +47,25 @@
 </script>
 
 <!-- eslint-disable svelte/no-at-html-tags -->
-{#if gutter}
-	<div class="numbered {tone}" style="--mono: {mono}px">
-		<pre class="gutter" aria-hidden="true">{gutter.join('\n')}</pre>
-		<pre class="code lined">{#if lit}{@html lit}{:else}{code}{/if}</pre>
-	</div>
-{:else}
-	<pre class="code {tone}" style="--mono: {mono}px">{#if lit}{@html lit}{:else}{code}{/if}</pre>
-{/if}
+<!-- Diff sides carry +/- prefixes, so only plain blocks get a copy button. -->
+<div class="wrap">
+	{#if gutter}
+		<div class="numbered {tone}" style="--mono: {mono}px">
+			<pre class="gutter" aria-hidden="true">{gutter.join('\n')}</pre>
+			<pre class="code lined">{#if lit}{@html lit}{:else}{code}{/if}</pre>
+		</div>
+	{:else}
+		<pre class="code {tone}" style="--mono: {mono}px">{#if lit}{@html lit}{:else}{code}{/if}</pre>
+	{/if}
+	{#if tone === 'plain'}<CopyButton text={() => code} />{/if}
+</div>
 
 <style>
+	.wrap {
+		position: relative;
+		flex-shrink: 0;
+		min-width: 0;
+	}
 	.code,
 	.gutter {
 		margin: 0;
