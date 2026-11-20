@@ -24,7 +24,16 @@ const herdr = vi.hoisted(() => ({
 	promptAgent: vi.fn(async (_pane: string, text: string) => {
 		herdr.sent.push([`prompt:${text}`]);
 	}),
-	settleAfterAnswer: vi.fn(async () => {})
+	// The wait itself is tested in herdr/wait-until.test.ts. Here it returns at
+	// once unless a test has it look at the screen, as its polls would.
+	settleAfterAnswer: vi.fn<
+		(
+			pane: string,
+			budgetMs: number,
+			scope?: string,
+			moved?: () => Promise<boolean>
+		) => Promise<void>
+	>(async () => {})
 }));
 vi.mock('#lib/server/herdr/index.js', () => herdr);
 
@@ -391,5 +400,139 @@ describe('answer route: a set of questions', () => {
 		const result = await answer(1);
 		expect(herdr.sent).toEqual([['enter']]);
 		expect(result.outcome).toBe('unknown');
+	});
+
+	it('confirms the last answer when the review of three pushes the strip out of the context', async () => {
+		const third = [
+			'←  ☒ Fruit  ☒ Drink  ☐ Snack  ✔ Submit  →',
+			'',
+			'Pick a snack',
+			'',
+			'❯ 1. Crisps',
+			'     Choose Crisps.',
+			'  2. Nuts',
+			'     Choose Nuts.',
+			'  3. Type something.',
+			'─'.repeat(40),
+			'  4. Chat about this',
+			'',
+			'Enter to select · Tab/Arrow keys to navigate · Esc to cancel'
+		].join('\n');
+		// The review stage in the shape picker.test.ts captured off a real pane.
+		const review = [
+			'─'.repeat(40),
+			'←  ☒ Fruit  ☒ Drink  ☒ Snack  ✔ Submit  →',
+			'',
+			'Review your answers',
+			'',
+			' ● Pick a fruit',
+			'   → Apple',
+			' ● Pick a drink',
+			'   → Tea',
+			' ● Pick a snack',
+			'   → Crisps',
+			'',
+			'Ready to submit your answers?',
+			'',
+			'❯ 1. Submit answers',
+			'  2. Cancel'
+		].join('\n');
+		// The premise: six lines of answers leave no room for the strip.
+		expect(parsePicker(review)?.context.join('\n')).not.toContain('☒');
+		herdr.screens.push(third, review);
+		expect(await answer(1)).toMatchObject({ chose: 'Crisps', outcome: 'accepted' });
+	});
+
+	it.each([
+		['a todo line above a plain question', (mark: string) => ` ${mark} Build\n${DIALOG}`],
+		['a framed line with no Submit tab', (mark: string) => `←  ${mark} Build  →\n\n${DIALOG}`]
+	])('does not take %s, ticked between the two reads, for a tab strip', async (_, screen) => {
+		herdr.screens.push(screen('☐'), screen('☒'));
+		const result = await answer(1);
+		expect(herdr.sent).toEqual([['enter']]);
+		expect(result.outcome).toBe('unknown');
+	});
+});
+
+describe('answer route: what the wait is shown', () => {
+	/** Have the wait look at the screen `times` times, and keep whether it had moved on. */
+	const watch = (times: number) => {
+		const seen: boolean[] = [];
+		herdr.settleAfterAnswer.mockImplementationOnce(async (_pane, _budgetMs, _scope, moved) => {
+			for (let poll = 0; poll < times; poll++) seen.push(await moved!());
+		});
+		return seen;
+	};
+	const budget = () => herdr.settleAfterAnswer.mock.calls.at(-1)?.[1];
+
+	it('tells a moved highlight from the question going away, and sends its keys once', async () => {
+		herdr.screens.push(DIALOG, DIALOG_ON_2, PROMPT, PROMPT);
+		const seen = watch(2);
+		const result = await answer(2);
+		expect(seen).toEqual([false, true]);
+		expect(herdr.sent).toEqual([['down', 'enter']]);
+		expect(budget()).toBe(2_000);
+		expect(result.outcome).toBe('accepted');
+	});
+
+	it('takes a redrawn context for the same question, as when a preview follows the highlight', async () => {
+		const about = (detail: string, dialog: string) => ` ${detail}\n${dialog}`;
+		const [first, moved] = [
+			about('Preview of Red', DIALOG),
+			about('Preview of Green', DIALOG_ON_2)
+		];
+		// The premise: the dialog's identity does change with what is drawn above it.
+		expect(pickerIdentity(parsePicker(first))).not.toBe(pickerIdentity(parsePicker(moved)));
+		herdr.screens.push(first, moved, PROMPT, PROMPT);
+		const seen = watch(2);
+		const result = await answer(2);
+		expect(seen).toEqual([false, true]);
+		expect(result.outcome).toBe('accepted');
+	});
+
+	it('sees a different question as a change', async () => {
+		herdr.screens.push(DIALOG, DIALOG.replace('Which colour?', 'Which shade?'), PROMPT);
+		const seen = watch(1);
+		await answer(1);
+		expect(seen).toEqual([true]);
+	});
+
+	it('sees the tick asked for as a change, on the short budget a checkbox keeps', async () => {
+		const sounds = (ding: string, at: 1 | 2) =>
+			[
+				'Pick sounds:',
+				'',
+				`${at === 1 ? '❯' : ' '} 1. [x] Buzz`,
+				`${at === 2 ? '❯' : ' '} 2. [${ding}] Ding`,
+				'  3. [✔] Silence',
+				'  Submit',
+				'Enter to submit answer · Esc to cancel'
+			].join('\n');
+		herdr.screens.push(sounds(' ', 1), sounds(' ', 2), sounds('x', 2), sounds('x', 2));
+		const seen = watch(2);
+		const result = await answer(2);
+		// The highlight arriving on the row is not the tick; the box filling is.
+		expect(seen).toEqual([false, true]);
+		expect(budget()).toBe(500);
+		expect(result).toMatchObject({ chose: 'Ding', outcome: 'accepted' });
+	});
+
+	it('does not take an empty box in some other question for the tick', async () => {
+		// A plain question answered, then an unrelated checklist with an unticked
+		// box at the same number: nothing was asked to tick, and nothing was.
+		const checklist = [
+			'Pick sounds:',
+			'',
+			'❯ 1. [x] Buzz',
+			'  2. [ ] Ding',
+			'  Submit',
+			'Enter to submit answer · Esc to cancel'
+		].join('\n');
+		herdr.screens.push(DIALOG, checklist, checklist);
+		const seen = watch(1);
+		const result = await answer(2);
+		// A different question, so the wait can stop; but it is not the tick.
+		expect(seen).toEqual([true]);
+		expect(result).toMatchObject({ chose: 'Green', outcome: 'unknown' });
 	});
 });

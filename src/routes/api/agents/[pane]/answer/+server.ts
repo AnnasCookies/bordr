@@ -103,19 +103,34 @@ function isBlocked(cause: unknown): boolean {
 }
 
 /**
- * Claude Code asks several questions as one set, under a tab strip:
- * `← ☐ Fruit  ☐ Drink  ✔ Submit →`. Answering one ticks its tab (`☒`) and
- * shows the next. The same strip with one more tab ticked is that answer
- * recorded, not some other dialog: a permission prompt has no strip, so it
- * stays unconfirmed. Nothing here sends a key.
+ * The tab strip Claude Code draws over a set of questions, from the screen
+ * itself: `←  ☐ Fruit  ☒ Drink  ✔ Submit  →`. Not from the picker's context,
+ * which keeps six lines: the review of three answers pushes the strip out of
+ * it. The arrows and the closing Submit tab are part of the shape, so a ticked
+ * box in some other text on screen (a todo list in a permission prompt) is not
+ * a strip.
  */
-function advancedInSet(before: Picker, after: Picker): boolean {
-	const strip = (picker: Picker) => picker.context?.find((line) => /[☐☒]/.test(line)) ?? '';
-	const [a, b] = [strip(before), strip(after)];
-	if (!a || !b) return false;
-	const tabs = (line: string) => line.replace(/[☐☒]/g, '').replace(/\s+/g, ' ').trim();
-	const ticked = (line: string) => (line.match(/☒/g) ?? []).length;
-	return tabs(a) === tabs(b) && ticked(b) > ticked(a);
+function questionTabs(screen: string): { tabs: string; ticked: number } | null {
+	const strip = screen
+		.split('\n')
+		.map((line) => line.trim())
+		.findLast((line) => /^←\s.*[☐☒].*✔\s+Submit\s+→$/.test(line));
+	if (!strip) return null;
+	return {
+		tabs: strip.replace(/[☐☒]/g, '').replace(/\s+/g, ' '),
+		ticked: (strip.match(/☒/g) ?? []).length
+	};
+}
+
+/**
+ * Claude Code asks several questions as one set. Answering one ticks its tab
+ * (`☒`) and shows the next. The same strip with one more tab ticked is that
+ * answer recorded, not some other dialog: a permission prompt has no strip, so
+ * it stays unconfirmed. Nothing here sends a key.
+ */
+function advancedInSet(before: string, after: string): boolean {
+	const [was, now] = [questionTabs(before), questionTabs(after)];
+	return was !== null && now !== null && was.tabs === now.tabs && now.ticked > was.ticked;
 }
 
 export const POST: RequestHandler = async ({ params, request }) => {
@@ -156,7 +171,10 @@ export const POST: RequestHandler = async ({ params, request }) => {
 	let index = body.index;
 	if (typeof index !== 'number' && submit !== true) throw error(400, 'index or submit required');
 
-	let picker = parsePicker(await read()) ?? (await transcriptAsk(params.pane, scope));
+	// Kept as text too: a question set is recognised by its tab strip, which the
+	// parsed picker does not always carry.
+	let shown = await read();
+	let picker = parsePicker(shown) ?? (await transcriptAsk(params.pane, scope));
 	if (!picker) throw error(409, 'no picker on screen');
 	if (
 		(dialog !== undefined && dialog !== pickerIdentity(picker)) ||
@@ -178,6 +196,8 @@ export const POST: RequestHandler = async ({ params, request }) => {
 			if (!row) throw error(409, 'the question on screen does not offer that answer');
 			picker = opened;
 			index = row.index;
+			// Read inside `openAsyncQuestion`; codex draws no tab strip to keep.
+			shown = '';
 		}
 	}
 
@@ -263,25 +283,44 @@ export const POST: RequestHandler = async ({ params, request }) => {
 	const current = picker.options.find((option) => option.selected)?.index;
 	// One confirmation, never a probe followed by Enter into an identical successor.
 	await send(keysForOption(index, current, picker.numbered && current === undefined, picker.axis));
-	// Still one confirmation read, taken once herdr says the agent is no longer
-	// blocked: at once on a quick redraw, later on a slow one. A checkbox tick
-	// leaves it blocked by design, so that waits only the old half second.
-	const answered = pickerIdentity(picker);
-	await settleAfterAnswer(params.pane, picker.multi ? 500 : 2_000, scope, async () => {
-		// A different question (Claude asks several in one go) or none at all
-		// means this one is done redrawing; a moved highlight does not.
+	// The key is sent once. What follows only reads: the screen is watched until
+	// it shows the answer landed (at once on a quick redraw, later on a slow one)
+	// and then read a last time for the outcome. A checkbox tick leaves its
+	// question up by design, so that is given only the old half second.
+	// Looser than the dialog's identity, which the preview and context are part
+	// of: Claude's preview follows the highlight, so the arrow half of an answer
+	// redraws them while the question is the same one still.
+	const asked = picker;
+	const sameQuestion = (now: Picker) =>
+		now.question === asked.question &&
+		now.multi === asked.multi &&
+		now.options.length === asked.options.length &&
+		now.options.every((option, at) => {
+			const was = asked.options[at];
+			return option.index === was.index && option.label === was.label;
+		});
+	// The tick asked for: this question still, and its box now the other way.
+	// A box in some other dialog at the same index is not it.
+	const ticked = (now: Picker) => {
+		const box = now.options.find((option) => option.index === index)?.checked;
+		return (
+			sameQuestion(now) &&
+			typeof wanted.checked === 'boolean' &&
+			typeof box === 'boolean' &&
+			box !== wanted.checked
+		);
+	};
+	await settleAfterAnswer(params.pane, asked.multi ? 500 : 2_000, scope, async () => {
+		// No dialog, a different question (Claude asks several in one go) or the
+		// tick asked for; a moved highlight is none of these.
 		const now = parsePicker(await read());
-		return !now || pickerIdentity(now) !== answered;
+		return !now || !sameQuestion(now) || ticked(now);
 	});
 	let outcome: 'accepted' | 'unknown' = 'unknown';
 	try {
-		const after = parsePicker(await read());
-		if (!after || advancedInSet(picker, after)) outcome = 'accepted';
-		else if (
-			after.multi &&
-			after.options.find((option) => option.index === index)?.checked !== wanted.checked
-		)
-			outcome = 'accepted';
+		const afterText = await read();
+		const after = parsePicker(afterText);
+		if (!after || advancedInSet(shown, afterText) || ticked(after)) outcome = 'accepted';
 	} catch {
 		// A failed read leaves delivery unconfirmed, not automatically retried.
 	}

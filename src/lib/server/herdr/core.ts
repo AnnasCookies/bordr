@@ -358,9 +358,9 @@ export class CoreClient extends HerdrClient {
 		return result.machines ?? [];
 	}
 
-	/** Whether core reports this terminal as blocked right now. */
+	/** Whether this terminal is blocked right now, in the sense `agentStatus` gives the word. */
 	async isBlocked(address: string): Promise<boolean> {
-		return (await this.terminal(this.prefix + address)).status?.state === 'blocked';
+		return agentStatus(await this.terminal(this.prefix + address)) === 'blocked';
 	}
 
 	/**
