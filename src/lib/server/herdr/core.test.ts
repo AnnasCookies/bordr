@@ -502,6 +502,13 @@ describe('CoreClient over a socket', () => {
 		})
 	];
 	const calls: Array<{ method: string; params: Record<string, unknown> }> = [];
+	/** What `terminal.get` reports for a terminal asked about by name. */
+	const states: Record<string, string> = {
+		asking: 'blocked',
+		failed: 'error',
+		busy: 'working',
+		'mac/asking': 'blocked'
+	};
 	const doc = {
 		spaces: [
 			{
@@ -529,7 +536,15 @@ describe('CoreClient over a socket', () => {
 							: msg.method === 'doc.get'
 								? { value: doc, version: 1 }
 								: msg.method === 'terminal.get'
-									? { terminal: { address: msg.params.terminal, labels: { 'herdr.seen': '1' } } }
+									? {
+											terminal: {
+												address: msg.params.terminal,
+												labels: { 'herdr.seen': '1' },
+												...(states[msg.params.terminal]
+													? { status: { app: 'claude-code', state: states[msg.params.terminal] } }
+													: {})
+											}
+										}
 									: msg.method === 'terminal.label'
 										? {}
 										: msg.method === 'terminal.run'
@@ -570,6 +585,21 @@ describe('CoreClient over a socket', () => {
 	afterAll(() => {
 		server.close();
 		rmSync(dir, { recursive: true, force: true });
+	});
+
+	it('calls a terminal blocked when it is asking or has failed, here or on a linked machine', async () => {
+		const local = new CoreClient(path);
+		expect(await local.isBlocked('asking')).toBe(true);
+		// `error` needs a person as much as `blocked` does, as everywhere else.
+		expect(await local.isBlocked('failed')).toBe(true);
+		expect(await local.isBlocked('busy')).toBe(false);
+		expect(await local.isBlocked('t1')).toBe(false);
+		// A linked machine's terminal is asked for under that machine's name.
+		expect(await new CoreClient(path, undefined, 'scope', 'mac').isBlocked('asking')).toBe(true);
+		expect(calls.at(-1)).toMatchObject({
+			method: 'terminal.get',
+			params: { terminal: 'mac/asking' }
+		});
 	});
 
 	it('lists local agents with their space and tab, leaving other machines out', async () => {

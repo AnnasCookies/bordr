@@ -665,19 +665,137 @@ export async function checkCompatibility(): Promise<Compatibility> {
 }
 
 /**
+ * How long a dialog herdr never flagged is given to redraw. This is the flat
+ * wait every answer had before there was a signal to end it on.
+ */
+const UNFLAGGED_WAIT_MS = 500;
+
+/**
  * Give an answered dialog time to go away before it is read again.
  *
- * On the TUI there is no signal, so it is a fixed wait. herdr-core reports a
- * blocked agent's status the moment it changes (measured 92 ms), so the wait
- * ends there; a multi-select that stays blocked still waits it out.
+ * A quick redraw is read at once, and a slow one (a busy machine) is given up
+ * to `budgetMs` instead of being read too early and reported unconfirmed,
+ * which left the card up showing the question just answered. The evidence is
+ * `answerLanded`'s; this only says where a pane's status is read from.
  */
-export async function settleAfterAnswer(address: string, budgetMs: number): Promise<void> {
-	const herdr = getClient();
-	if (!(herdr instanceof CoreClient) || parsePane(address).machineId) {
-		await new Promise((r) => setTimeout(r, budgetMs));
-		return;
+export async function settleAfterAnswer(
+	address: string,
+	budgetMs: number,
+	expectedScope?: string,
+	/** Whether the screen has moved on from the question that was answered. */
+	moved?: () => Promise<boolean>,
+	pollMs = 60
+): Promise<void> {
+	const { machineId, paneId } = parsePane(address);
+	const isBlocked = async () => {
+		// The pane's own herdr, checked against the scope the answer was sent
+		// under. Core is asked about the one terminal: its `agent.list` builds
+		// the whole view, and for a machine it links that can mean a remote
+		// session lookup on every poll.
+		const herdr = await clientFor(machineId, expectedScope);
+		if (herdr instanceof CoreClient) return herdr.isBlocked(paneId);
+		const { agents } = await herdr.request<{ agents: Record<string, unknown>[] }>('agent.list');
+		return agents.find((agent) => agent.pane_id === paneId)?.agent_status === 'blocked';
+	};
+	await waitUntil(answerLanded(isBlocked, moved), budgetMs, pollMs);
+}
+
+/**
+ * The check `settleAfterAnswer` polls: has the answer landed?
+ *
+ * The screen is the signal every harness shares, and it decides: the question
+ * gone, a different one in its place, or the tick asked for. It has to say so
+ * on two polls running, because one read can catch a redraw half-drawn (blank,
+ * or a few rows of the list) before the same question comes back.
+ *
+ * herdr's `blocked` only corroborates, and only where it applies. It flags
+ * Claude Code's dialogs but not every harness's (pi asks while herdr still
+ * says `working`), so "not blocked" means something only once herdr has been
+ * seen to say `blocked`. Then it spares the second look, but it never stands
+ * in for the first: the status can flip before the redraw, and a pane missing
+ * from herdr's list reads the same as one no longer blocked. A dialog herdr
+ * never flagged gets the old flat wait instead, since ending on its first
+ * "not blocked" would read the screen before the redraw and report an answer
+ * that landed as unconfirmed.
+ */
+export function answerLanded(
+	isBlocked: () => Promise<boolean>,
+	moved?: () => Promise<boolean>,
+	unflaggedMs = UNFLAGGED_WAIT_MS,
+	now: () => number = Date.now
+): () => Promise<boolean> {
+	const started = now();
+	let wasBlocked = false;
+	// herdr's latest answer: null until it gives one, and again when it cannot.
+	let blocked: boolean | null = null;
+	let asking: Promise<void> | null = null;
+	let movedLastPoll = false;
+	return async () => {
+		// One status call in flight at most, and not waited on while there is a
+		// screen to read: stalled, it must not hold back what the screen shows.
+		const status = (asking ??= isBlocked()
+			.then(
+				(answer) => {
+					blocked = answer;
+					wasBlocked ||= answer;
+				},
+				() => {
+					blocked = null;
+				}
+			)
+			.finally(() => {
+				asking = null;
+			}));
+		const flatWaitOver = () => !wasBlocked && now() - started >= unflaggedMs;
+		if (!moved) {
+			await status;
+			return (wasBlocked && blocked === false) || flatWaitOver();
+		}
+		// A screen that could not be read is no signal, and breaks the run of two.
+		const movedNow = await moved().catch(() => false);
+		const unblocked = wasBlocked && blocked === false;
+		if (movedNow && (movedLastPoll || unblocked)) return true;
+		movedLastPoll = movedNow;
+		// A flagged dialog that went before the first poll looks unflagged from
+		// here. It ends on the screen like any other, or on the flat wait main
+		// always gave it.
+		return flatWaitOver();
+	};
+}
+
+/**
+ * Ask `done` every `pollMs` until it says yes or `budgetMs` runs out; a throw
+ * is a no. Nothing is asked once the time is up, and a check still in flight
+ * then is left behind rather than waited for: a stalled socket has a
+ * ten-second timeout of its own, which must not hold a half-second wait open.
+ */
+export async function waitUntil(
+	done: () => Promise<boolean>,
+	budgetMs: number,
+	pollMs: number
+): Promise<boolean> {
+	const deadline = Date.now() + budgetMs;
+	const left = () => deadline - Date.now();
+	while (left() > 0) {
+		await new Promise((r) => setTimeout(r, Math.min(pollMs, left())));
+		if (left() <= 0) return false;
+		let timer: ReturnType<typeof setTimeout> | undefined;
+		// Decided by the timer firing, not by the clock afterwards: a timer a
+		// millisecond early must not start another check beside one still in flight.
+		const outOfTime = new Promise<'out of time'>((resolve) => {
+			timer = setTimeout(() => resolve('out of time'), left());
+		});
+		try {
+			const answer = await Promise.race([done(), outOfTime]);
+			if (answer === 'out of time') return false;
+			if (answer) return true;
+		} catch {
+			// a failed read is not a signal; the deadline still holds
+		} finally {
+			clearTimeout(timer);
+		}
 	}
-	await herdr.waitUnblocked(address, budgetMs);
+	return false;
 }
 
 /** Tell herdr-core a person has seen this turn, so herdr-app stops showing it done. */
