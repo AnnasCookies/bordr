@@ -423,6 +423,10 @@
 	let shown = $state(TAIL);
 	let loadingEarlier = $state(false);
 	let attachments = $state<File[]>([]);
+	// Whether this draft will actually run as a command. With a question on
+	// screen it is typed into the question, and with a photo it is the caption:
+	// both are text, and text keeps the keyboard's help.
+	const shellKeyboard = $derived(isShell && !detail.picker && attachments.length === 0);
 	let previews = $state<string[]>([]);
 	// $state because the composer is now one branch of a conditional: the
 	// binding is written when that branch mounts, not once at startup.
@@ -4213,10 +4217,10 @@
 							onpaste={onPaste}
 							rows="1"
 							aria-label="Message"
-							autocapitalize={isShell ? 'off' : undefined}
-							autocomplete={isShell ? 'off' : undefined}
-							spellcheck={isShell ? false : undefined}
-							{...isShell ? { autocorrect: 'off' } : {}}
+							autocapitalize={shellKeyboard ? 'off' : undefined}
+							autocomplete={shellKeyboard ? 'off' : undefined}
+							spellcheck={shellKeyboard ? false : undefined}
+							{...shellKeyboard ? { autocorrect: 'off' } : {}}
 							placeholder={isShell
 								? 'Runs on the host…'
 								: detail.picker

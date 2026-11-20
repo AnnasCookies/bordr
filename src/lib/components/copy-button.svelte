@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { onDestroy } from 'svelte';
 	import { copyText } from '#lib/copy-text.js';
 
 	/** A function so a highlighted block is read at tap time, not mount time. */
@@ -9,10 +10,20 @@
 	// One label for the visible text, the accessible name and the live region.
 	const label = $derived(status === 'done' ? 'Copied' : status === 'failed' ? 'Failed' : 'Copy');
 
+	// A message that changes inside the second and a half takes its button with
+	// it, and a copy still waiting on the clipboard must not start a timer after.
+	let destroyed = false;
+	onDestroy(() => {
+		destroyed = true;
+		clearTimeout(timer);
+	});
+
 	async function copy(event: MouseEvent) {
 		// Inside a <summary> or a tappable bubble the tap must not do anything else.
 		event.stopPropagation();
-		status = (await copyText(text())) ? 'done' : 'failed';
+		const copied = await copyText(text());
+		if (destroyed) return;
+		status = copied ? 'done' : 'failed';
 		clearTimeout(timer);
 		timer = setTimeout(() => (status = 'idle'), 1500);
 	}
