@@ -19,10 +19,23 @@
  * Terminal states written by Claude's async task notifications.
  *
  * These are lifecycle data from the harness. A plain user or assistant message
- * cannot match because notifications live only in top-level queue/attachment
- * fields below.
+ * cannot match: a notification counts only in a top-level queue or attachment
+ * field, or in a user message the harness itself marked as a task notification.
  */
 const TERMINAL_TASK_STATUSES = new Set(['completed', 'failed', 'killed', 'stopped']);
+
+/** A user message's text, whether Claude wrote it as a string or as text blocks. */
+function messageText(content: unknown): string | undefined {
+	if (typeof content === 'string') return content;
+	if (!Array.isArray(content)) return undefined;
+	return content
+		.map((block: unknown) => {
+			if (typeof block !== 'object' || block === null) return '';
+			const { type, text } = block as { type?: unknown; text?: unknown };
+			return type === 'text' && typeof text === 'string' ? text : '';
+		})
+		.join('\n');
+}
 
 /**
  * When each Task call finished, keyed by its tool-use id.
@@ -53,16 +66,31 @@ export function resolvedToolUseTimes(jsonl: string): Map<string, number> {
 		}
 		if (parsed === null || typeof parsed !== 'object') continue;
 		const row = parsed as {
+			type?: string;
 			timestamp?: string;
 			message?: { content?: unknown };
 			toolUseResult?: { status?: string };
 			content?: unknown;
 			attachment?: { prompt?: unknown };
+			isMeta?: boolean;
+			origin?: { kind?: string };
 		};
 		const parsedAt = Date.parse(row.timestamp ?? '');
 		// Fixtures and old transcripts may omit a timestamp. An exact result is
 		// still stronger than a guess, so Infinity keeps the old shape useful.
 		const at = Number.isFinite(parsedAt) ? parsedAt : Number.POSITIVE_INFINITY;
+		// A notice delivered into a sub-agent's own transcript (a depth-2 child's
+		// result) is a harness-marked user message, not a queue row or attachment.
+		// Only its time tells a finished child from one resumed since, so an
+		// undated one is no evidence: dated "for ever", it would hide that child
+		// however often it ran again.
+		const delivered =
+			row.type === 'user' &&
+			row.isMeta &&
+			row.origin?.kind === 'task-notification' &&
+			Number.isFinite(parsedAt)
+				? messageText(row.message?.content)
+				: undefined;
 
 		if (row.toolUseResult?.status !== 'async_launched' && Array.isArray(row.message?.content)) {
 			for (const block of row.message.content) {
@@ -75,11 +103,16 @@ export function resolvedToolUseTimes(jsonl: string): Map<string, number> {
 
 		// Claude writes this first as a queue operation and may repeat it inside
 		// an attachment. Either is data from the harness, not prose to execute.
-		for (const value of [row.content, row.attachment?.prompt]) {
+		for (const value of [row.content, row.attachment?.prompt, delivered]) {
 			if (typeof value !== 'string' || !value.includes('<task-notification>')) continue;
-			const id = /<tool-use-id>([^<]+)<\/tool-use-id>/.exec(value)?.[1]?.trim();
-			const status = /<status>([^<]+)<\/status>/.exec(value)?.[1]?.trim();
-			if (id && status && TERMINAL_TASK_STATUSES.has(status)) record(id, at);
+			// One message can carry several notices (two children finishing together).
+			// Each runs from its opening tag to the next one, so one notice's id never
+			// pairs with another's status, clipped before its closing tag or not.
+			for (const notice of value.split('<task-notification>').slice(1)) {
+				const id = /<tool-use-id>([^<]+)<\/tool-use-id>/.exec(notice)?.[1]?.trim();
+				const status = /<status>([^<]+)<\/status>/.exec(notice)?.[1]?.trim();
+				if (id && status && TERMINAL_TASK_STATUSES.has(status)) record(id, at);
+			}
 		}
 	}
 	return done;
@@ -121,9 +154,23 @@ export function resolvedToolUses(jsonl: string): Set<string> {
 	return new Set(resolvedToolUseTimes(jsonl).keys());
 }
 
+interface ContentBlock {
+	type?: string;
+	id?: string;
+	name?: string;
+	tool_use_id?: string;
+	is_error?: boolean;
+}
+
 /** Whether the child transcript itself says the current Claude run stopped. */
 export function claudeRunEnded(jsonl: string): boolean {
 	const lines = jsonl.split('\n');
+	// Successful tool results written after the last assistant turn. Claude Code
+	// writes each result of a parallel call as its own row, so collect them all.
+	let results: string[] | undefined;
+	// The last assistant message's id, once the walk is among its rows: `null`
+	// when its rows carry none, `undefined` until the walk reaches them.
+	let lastMessage: string | null | undefined;
 	for (let i = lines.length - 1; i >= 0; i--) {
 		const line = lines[i].trim();
 		if (!line) continue;
@@ -136,12 +183,47 @@ export function claudeRunEnded(jsonl: string): boolean {
 		if (parsed === null || typeof parsed !== 'object') continue;
 		const row = parsed as {
 			type?: string;
-			message?: { role?: string; stop_reason?: string | null };
+			message?: { role?: string; id?: unknown; stop_reason?: string | null; content?: unknown };
 		};
 		if (row.type !== 'assistant' && row.type !== 'user') continue;
-		if (row.message?.role === 'user' || row.type === 'user') return false;
-		if (row.message?.role === 'assistant' || row.type === 'assistant')
-			return row.message?.stop_reason === 'end_turn';
+		// A malformed block (a null in the array) is skipped rather than thrown on:
+		// the caller drops a child whose transcript cannot be read.
+		const blocks = (Array.isArray(row.message?.content) ? row.message.content : []).filter(
+			(block: unknown): block is ContentBlock => typeof block === 'object' && block !== null
+		);
+		if (row.message?.role === 'user' || row.type === 'user') {
+			// A child that delivers its report is finished, though it writes the
+			// tool's reply after the run's last assistant turn.
+			const replies = blocks.filter((b) => b.type === 'tool_result' && b.tool_use_id);
+			// A prompt: the run went on after it, or the last turn's rows ran out.
+			if (replies.length === 0) return false;
+			// With no ids to tell one message from the next, a reply row behind the
+			// last turn's rows is taken as the turn before.
+			if (lastMessage === null) return false;
+			// A failed hand-back delivered nothing.
+			results = [
+				...(results ?? []),
+				...replies.filter((b) => !b.is_error).map((b) => b.tool_use_id as string)
+			];
+			continue;
+		}
+		if (!results) return row.message?.stop_reason === 'end_turn';
+		// Claude Code writes each content block of a message as its own row, and a
+		// call's reply as soon as it has one, so a parallel call reads
+		// `call, reply, call, reply` under one message id. The hand-back can
+		// therefore sit behind a sibling's rows: keep walking while the rows are
+		// still that last message's, and stop at the message before it.
+		const id = typeof row.message?.id === 'string' ? row.message.id : null;
+		if (lastMessage === undefined) lastMessage = id;
+		else if (id !== lastMessage) return false;
+		const answered = results;
+		if (
+			blocks.some(
+				(b) =>
+					b.type === 'tool_use' && b.name === 'SubagentHandback' && answered.includes(b.id ?? '')
+			)
+		)
+			return true;
 	}
 	return false;
 }

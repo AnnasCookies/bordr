@@ -103,6 +103,224 @@ describe('claudeRunEnded', () => {
 	});
 });
 
+describe('claudeRunEnded handback', () => {
+	const handback = JSON.stringify({
+		type: 'assistant',
+		message: {
+			role: 'assistant',
+			stop_reason: 'tool_use',
+			content: [{ type: 'tool_use', id: 'toolu_h', name: 'SubagentHandback', input: {} }]
+		}
+	});
+	const reply = (id: string, is_error = false) =>
+		JSON.stringify({
+			type: 'user',
+			message: {
+				role: 'user',
+				content: [{ type: 'tool_result', tool_use_id: id, content: 'ok', is_error }]
+			}
+		});
+
+	it('counts a delivered report as the end of the run', () => {
+		expect(claudeRunEnded(`${handback}\n${reply('toolu_h')}`)).toBe(true);
+	});
+
+	it('does not count the reply to some other tool', () => {
+		expect(claudeRunEnded(`${handback}\n${reply('toolu_other')}`)).toBe(false);
+	});
+
+	it('finds the hand-back reply behind the rows of a parallel call', () => {
+		const parallel = JSON.stringify({
+			type: 'assistant',
+			message: {
+				role: 'assistant',
+				stop_reason: 'tool_use',
+				content: [
+					{ type: 'tool_use', id: 'toolu_a', name: 'Read', input: {} },
+					{ type: 'tool_use', id: 'toolu_h', name: 'SubagentHandback', input: {} }
+				]
+			}
+		});
+		expect(claudeRunEnded([parallel, reply('toolu_a'), reply('toolu_h')].join('\n'))).toBe(true);
+		expect(claudeRunEnded([parallel, reply('toolu_h'), reply('toolu_a')].join('\n'))).toBe(true);
+	});
+
+	it('does not count a hand-back that failed', () => {
+		expect(claudeRunEnded(`${handback}\n${reply('toolu_h', true)}`)).toBe(false);
+	});
+
+	// Claude Code writes one content block per assistant row, and a call's reply
+	// as soon as it has one: of 659 several-call messages in 2.1 transcripts read
+	// on 2026-11-20, 475 had a reply row between their own calls. The rows of one
+	// message share its id, so a hand-back need not be the last row before a reply.
+	const block = (
+		content: Record<string, unknown>,
+		id: string | undefined = 'msg_last',
+		stop_reason: string | null = null
+	) =>
+		JSON.stringify({
+			type: 'assistant',
+			message: { role: 'assistant', id, stop_reason, content: [content] }
+		});
+	const read = (id?: string) =>
+		block({ type: 'tool_use', id: 'toolu_a', name: 'Read', input: {} }, id, 'tool_use');
+	const handedBack = (id?: string) =>
+		block({ type: 'tool_use', id: 'toolu_h', name: 'SubagentHandback', input: {} }, id);
+
+	it('finds the hand-back behind a sibling call written as its own row', () => {
+		const thinking = block({ type: 'thinking', thinking: '' });
+		for (const replies of [
+			[reply('toolu_h'), reply('toolu_a')],
+			[reply('toolu_a'), reply('toolu_h')]
+		]) {
+			expect(claudeRunEnded([thinking, handedBack(), read(), ...replies].join('\n'))).toBe(true);
+			expect(claudeRunEnded([thinking, read(), handedBack(), ...replies].join('\n'))).toBe(true);
+		}
+	});
+
+	it("finds it when each call's reply is written before the next call of the same message", () => {
+		expect(
+			claudeRunEnded([handedBack(), reply('toolu_h'), read(), reply('toolu_a')].join('\n'))
+		).toBe(true);
+		expect(
+			claudeRunEnded([read(), reply('toolu_a'), handedBack(), reply('toolu_h')].join('\n'))
+		).toBe(true);
+	});
+
+	it('does not reach back into an earlier message for a hand-back', () => {
+		// Handed back, was resumed, and is now part-way through another turn.
+		const resumed = JSON.stringify({ type: 'user', message: { role: 'user', content: 'go on' } });
+		const before = [handedBack('msg_before'), reply('toolu_h')];
+		const now = [read('msg_now'), reply('toolu_a')];
+		expect(claudeRunEnded([...before, resumed, ...now].join('\n'))).toBe(false);
+		// With no prompt between, the message id is what separates the two.
+		expect(claudeRunEnded([...before, ...now].join('\n'))).toBe(false);
+	});
+
+	it('takes a reply row as the end of the turn when the rows carry no message id', () => {
+		const bare = (content: Record<string, unknown>) =>
+			JSON.stringify({ type: 'assistant', message: { role: 'assistant', content: [content] } });
+		const call = (id: string, name: string) => bare({ type: 'tool_use', id, name, input: {} });
+		const rows = [
+			call('toolu_h', 'SubagentHandback'),
+			reply('toolu_h'),
+			call('toolu_a', 'Read'),
+			reply('toolu_a')
+		];
+		expect(claudeRunEnded(rows.join('\n'))).toBe(false);
+		// Rows with nothing between them are one turn, ids or not.
+		expect(claudeRunEnded([rows[0], rows[2], reply('toolu_a'), reply('toolu_h')].join('\n'))).toBe(
+			true
+		);
+	});
+
+	it('reads past a malformed block instead of throwing', () => {
+		const broken = JSON.stringify({ type: 'user', message: { role: 'user', content: [null] } });
+		expect(claudeRunEnded(`${handback}\n${broken}`)).toBe(false);
+		const padded = JSON.stringify({
+			type: 'user',
+			message: {
+				role: 'user',
+				content: [null, { type: 'tool_result', tool_use_id: 'toolu_h', content: 'ok' }]
+			}
+		});
+		expect(claudeRunEnded(`${handback}\n${padded}`)).toBe(true);
+	});
+});
+
+describe('delivered task notice', () => {
+	const at = '2026-10-23T12:00:26.157Z';
+	const notice = (status: string) => ({
+		type: 'user',
+		isMeta: true,
+		origin: { kind: 'task-notification' },
+		timestamp: at,
+		message: {
+			content: `[SYSTEM NOTIFICATION]\n<task-notification><tool-use-id>toolu_x</tool-use-id><status>${status}</status></task-notification>`
+		}
+	});
+
+	it.each(['completed', 'failed', 'killed', 'stopped'])(
+		'reads a harness-marked %s notice sent into a sub-agent, with its time',
+		(status) => {
+			expect(resolvedToolUseTimes(JSON.stringify(notice(status))).get('toolu_x')).toBe(
+				Date.parse(at)
+			);
+		}
+	);
+
+	it('ignores a notice without the harness mark or a finished status', () => {
+		const plain = { ...notice('completed'), origin: undefined };
+		expect(resolvedToolUseTimes(JSON.stringify(plain)).has('toolu_x')).toBe(false);
+		expect(resolvedToolUseTimes(JSON.stringify(notice('running'))).has('toolu_x')).toBe(false);
+	});
+
+	it('reads the notice when the message is written as text blocks', () => {
+		const row = notice('completed');
+		const blocks = { ...row, message: { content: [{ type: 'text', text: row.message.content }] } };
+		expect(resolvedToolUseTimes(JSON.stringify(blocks)).get('toolu_x')).toBe(Date.parse(at));
+	});
+
+	it('takes each notice in one message on its own', () => {
+		const one = (id: string, status: string) =>
+			`<task-notification><tool-use-id>${id}</tool-use-id><status>${status}</status></task-notification>`;
+		const both = {
+			...notice('completed'),
+			message: {
+				content: one('toolu_running', 'running') + '\n' + one('toolu_finished', 'completed')
+			}
+		};
+		const resolved = resolvedToolUseTimes(JSON.stringify(both));
+		expect(resolved.get('toolu_finished')).toBe(Date.parse(at));
+		expect(resolved.has('toolu_running')).toBe(false);
+	});
+
+	it('reads a notice clipped before its closing tag without borrowing from its neighbour', () => {
+		const open = (id: string, status: string) =>
+			`<task-notification><tool-use-id>${id}</tool-use-id><status>${status}</status>`;
+		const text = (content: string) =>
+			JSON.stringify({ ...notice('completed'), message: { content } });
+		// A whole notice, then one cut short: both are read.
+		const mixed = resolvedToolUseTimes(
+			text(
+				`${open('toolu_whole', 'completed')}</task-notification>\n${open('toolu_cut', 'failed')}`
+			)
+		);
+		expect([...mixed.keys()]).toEqual(['toolu_whole', 'toolu_cut']);
+		// Neither closed: the running one's id must not take the finished one's status.
+		const open2 = resolvedToolUseTimes(
+			text(`${open('toolu_running', 'running')}\n${open('toolu_done', 'completed')}`)
+		);
+		expect([...open2.keys()]).toEqual(['toolu_done']);
+	});
+
+	it('takes the mark only from a user row', () => {
+		const marked = { ...notice('completed'), type: 'assistant' };
+		expect(resolvedToolUseTimes(JSON.stringify(marked)).has('toolu_x')).toBe(false);
+	});
+
+	it('takes no evidence from an undated notice, which could never be outlived', () => {
+		const undated = { ...notice('completed'), timestamp: undefined };
+		expect(resolvedToolUseTimes(JSON.stringify(undated)).has('toolu_x')).toBe(false);
+	});
+
+	it('finishes a depth-2 child from its parent sub-agent transcript', () => {
+		// The parent sub-agent's file holds the launch row and the later notice.
+		const launch = JSON.stringify({
+			type: 'user',
+			timestamp: '2026-10-23T11:59:00.000Z',
+			message: { content: [{ type: 'tool_result', tool_use_id: 'toolu_x' }] },
+			toolUseResult: { status: 'async_launched' }
+		});
+		const parent = [launch, JSON.stringify(notice('completed'))].join('\n');
+		const resolved = resolvedToolUseTimes(parent);
+		const lastWrite = Date.parse('2026-10-23T12:00:20.000Z');
+		expect(isDone({ toolUseId: 'toolu_x', lastAt: lastWrite }, resolved)).toBe(true);
+		// The child writing again after the notice is a resumed run, not finished.
+		expect(isDone({ toolUseId: 'toolu_x', lastAt: Date.parse(at) + 1000 }, resolved)).toBe(false);
+	});
+});
+
 describe('isDone', () => {
 	const resolved = new Map([['toolu_finished', NOW]]);
 
