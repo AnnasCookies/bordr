@@ -26,6 +26,18 @@ describe('claudeAdapter.parse', () => {
 		]);
 	});
 
+	it('skips a malformed content block and keeps the messages around it', () => {
+		const row = (type: string, content: unknown[]) =>
+			JSON.stringify({ type, message: { role: type, content } });
+		const messages = claudeAdapter.parse(
+			[
+				row('assistant', [null, { type: 'text', text: 'before' }]),
+				row('assistant', [{ type: 'text', text: 'after' }])
+			].join('\n')
+		);
+		expect(messages.map((m) => m.text)).toEqual(['before', 'after']);
+	});
+
 	it('parses string-form user messages — the dominant real-world shape', () => {
 		const messages = claudeAdapter.parse(jsonl);
 		const typed = messages.filter((m) => m.role === 'user').at(-1);

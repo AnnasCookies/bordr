@@ -499,6 +499,9 @@ export const claudeAdapter = {
 			const blocks: Block[] = [];
 			let ask: Message['ask'] | undefined;
 			for (const block of content_blocks) {
+				// A malformed block (a null in the array) costs that block, not the
+				// whole conversation: thrown on, it made the transcript unreadable.
+				if (!block || typeof block !== 'object') continue;
 				if (block.type === 'text' && block.text) {
 					blocks.push({ kind: 'text', text: unwrapPastedContent(block.text) });
 				} else if (block.type === 'thinking' && block.thinking) {
