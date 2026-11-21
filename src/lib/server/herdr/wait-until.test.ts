@@ -166,20 +166,39 @@ describe('answerLanded', () => {
 
 	it('keeps reading the screen while a status call is stalled', async () => {
 		// Through the real waiter: one status call that never returns, and a
-		// screen that moves on at its second poll.
+		// screen that moves on at its second poll. The flat wait is put out of
+		// reach, so only the screen can end it.
 		const stalled = vi.fn(() => new Promise<boolean>(() => {}));
 		const screens = [false, true, true];
-		const started = Date.now();
-		expect(
-			await waitUntil(
-				answerLanded(stalled, async () => screens.shift() ?? true),
-				2_000,
-				10
-			)
-		).toBe(true);
-		expect(Date.now() - started).toBeLessThan(1_000);
+		const moved = vi.fn(async () => screens.shift() ?? true);
+		expect(await waitUntil(answerLanded(stalled, moved, 60_000), 2_000, 10)).toBe(true);
+		expect(moved).toHaveBeenCalledTimes(3);
 		// And it is not asked again while the first call is still out.
 		expect(stalled).toHaveBeenCalledTimes(1);
+	});
+
+	it('uses a status that answers between two polls, from the next poll on', async () => {
+		// herdr says blocked, then takes its time over the next answer.
+		let answer!: (blocked: boolean) => void;
+		const statuses = [Promise.resolve(true), new Promise<boolean>((resolve) => (answer = resolve))];
+		const screens = [false, true, false, true];
+		const check = answerLanded(
+			() => statuses.shift() ?? Promise.resolve(false),
+			async () => screens.shift() ?? false,
+			60_000
+		);
+		const turn = () => new Promise((r) => setTimeout(r, 0));
+		expect(await check()).toBe(false);
+		await turn();
+		// Moved, but herdr's answer is still out: its last word was "blocked".
+		expect(await check()).toBe(false);
+		answer(false);
+		await turn();
+		// Not blocked now, and the question back on screen: the status alone ends nothing.
+		expect(await check()).toBe(false);
+		await turn();
+		// Moved again, and herdr agrees: one look is enough.
+		expect(await check()).toBe(true);
 	});
 
 	it('keeps to the status and the flat wait when there is no screen to read', async () => {
