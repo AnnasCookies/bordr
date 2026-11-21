@@ -1476,3 +1476,155 @@ test('refused queued terminal write-in retains its row and draft for an explicit
 	expect(state.typeCalls).toEqual([]);
 	expect(state.keys).toEqual([]);
 });
+
+test('a fenced block copies with its line breaks and leaves nothing behind when it changes', async ({
+	page
+}) => {
+	await page.addInitScript(() => {
+		Object.defineProperty(navigator, 'clipboard', {
+			value: { writeText: async (text: string) => localStorage.setItem('fixture-copied', text) }
+		});
+	});
+	const state = await fixture(page);
+	state.picker = false;
+	// Starts with the fence, which is the shape {@html} cannot clear once it has moved.
+	const block = (tail: string) => ({
+		kind: 'text',
+		text: '```ts\nline one\n\tline two\n```\n' + tail
+	});
+	state.extraBlocks = [block('first tail')];
+	await openPane(page);
+	const rows = page.locator('.transcript-rows');
+	await expect(rows.locator('.fence pre code[data-lit="yes"]')).toHaveCount(1);
+	await rows.locator('.fence').getByRole('button', { name: 'Copy code' }).click();
+	await expect
+		.poll(() => page.evaluate(() => localStorage.getItem('fixture-copied')))
+		.toBe('line one\n\tline two');
+
+	state.extraBlocks = [block('second tail')];
+	state.detailSeq++;
+	await page.evaluate(
+		(agents) => window.dispatchEvent(new CustomEvent('fixture-agents', { detail: agents })),
+		[{ ...agents[0], seq: state.detailSeq }]
+	);
+	await expect(rows.getByText('second tail')).toBeVisible();
+	await expect(rows.getByText('first tail')).toHaveCount(0);
+	await expect(rows.locator('.fence')).toHaveCount(1);
+	// The button just clicked was replaced with the text. Its successor takes the
+	// focus over, so the next Enter is still a copy and not an answer to a question.
+	await expect(rows.locator('.fence').getByRole('button')).toBeFocused();
+});
+
+test('the keyboard leaves a ! command alone but still helps with a message', async ({ page }) => {
+	const state = await fixture(page);
+	state.picker = false;
+	await openPane(page);
+	const composer = page.locator('textarea').first();
+	await composer.fill('! echo');
+	await expect(composer).toHaveAttribute('autocapitalize', 'off');
+	await expect(composer).toHaveAttribute('autocorrect', 'off');
+	await expect(composer).toHaveAttribute('autocomplete', 'off');
+	await expect(composer).toHaveAttribute('spellcheck', 'false');
+	await composer.fill('a message');
+	await expect(composer).not.toHaveAttribute('autocapitalize', 'off');
+	await expect(composer).not.toHaveAttribute('autocorrect', 'off');
+	await expect(composer).not.toHaveAttribute('autocomplete', 'off');
+	await expect(composer).not.toHaveAttribute('spellcheck', 'false');
+});
+
+test('a ! typed into a question is text, so the keyboard keeps helping', async ({ page }) => {
+	// The fixture's question is on screen: the draft is typed into it, not run.
+	await fixture(page);
+	await openPane(page);
+	const composer = page.locator('textarea').first();
+	await composer.fill('! not a command');
+	await expect(composer).toHaveValue('! not a command');
+	await expect(composer).not.toHaveAttribute('autocapitalize', 'off');
+	await expect(composer).not.toHaveAttribute('autocorrect', 'off');
+});
+
+test('copying over plain http selects the text, hands focus back and says when it failed', async ({
+	page
+}) => {
+	await page.addInitScript(() => {
+		// No secure context means no clipboard API, which is bordr on a LAN address.
+		Object.defineProperty(window, 'isSecureContext', { value: false });
+		document.execCommand = () => {
+			const area = document.activeElement as HTMLTextAreaElement;
+			localStorage.setItem(
+				'fixture-copied',
+				area.value.slice(area.selectionStart, area.selectionEnd)
+			);
+			return localStorage.getItem('fixture-copy-fails') !== 'yes';
+		};
+	});
+	const state = await fixture(page);
+	state.picker = false;
+	state.extraBlocks = [{ kind: 'text', text: '```ts\nline one\n\tline two\n```\ntail' }];
+	await openPane(page);
+	const fence = page.locator('.transcript-rows .fence');
+	await expect(fence.locator('pre code[data-lit="yes"]')).toHaveCount(1);
+
+	await fence.getByRole('button', { name: 'Copy code' }).focus();
+	// How far down the window the button is, whichever element does the scrolling.
+	const before = (await fence.getByRole('button').boundingBox())?.y;
+	await page.keyboard.press('Enter');
+	await expect
+		.poll(() => page.evaluate(() => localStorage.getItem('fixture-copied')))
+		.toBe('line one\n\tline two');
+	// Back on the button: left on the page body, the next Enter would answer
+	// whatever question was on screen instead of copying again.
+	await expect(fence.getByRole('button', { name: 'Copied' })).toBeFocused();
+	expect((await fence.getByRole('button').boundingBox())?.y).toBe(before);
+	await expect(page.locator('body > textarea')).toHaveCount(0);
+
+	await page.evaluate(() => localStorage.setItem('fixture-copy-fails', 'yes'));
+	await page.keyboard.press('Enter');
+	await expect(fence.getByRole('button', { name: 'Failed' })).toBeFocused();
+	await expect(fence.locator('[aria-live]')).toHaveText('Failed');
+});
+
+test('a line that reaches the edge scrolls clear of the copy button', async ({ page }) => {
+	const state = await fixture(page);
+	state.picker = false;
+	const long = `echo ${'x'.repeat(400)}END`;
+	state.extraBlocks = [
+		{ kind: 'text', text: '```sh\n' + long + '\n```\ntail' },
+		{ kind: 'text', text: '<pre>a bare block</pre>' },
+		{
+			kind: 'tool',
+			name: 'Bash',
+			summary: 'long command',
+			input: { command: long },
+			result: null,
+			diffs: []
+		}
+	];
+	await openPane(page);
+	const rows = page.locator('.transcript-rows');
+	const command = rows.locator('details.tool').filter({ hasText: 'long command' });
+	await command.locator('summary').click();
+	// How far the end of the code stops short of the button, scrolled all the way.
+	const gap = (pre: Element) => {
+		pre.scrollLeft = pre.scrollWidth;
+		// The last text node, not the element: the element includes the room kept clear.
+		const walker = document.createTreeWalker(pre, NodeFilter.SHOW_TEXT);
+		let last: Node | null = null;
+		while (walker.nextNode()) last = walker.currentNode;
+		const text = document.createRange();
+		text.selectNodeContents(last!);
+		const button = pre.closest('.fence, .wrap')!.querySelector('button')!;
+		return button.getBoundingClientRect().left - text.getBoundingClientRect().right;
+	};
+	// A bare <pre> the agent wrote as HTML is not a fence: it has nothing to keep
+	// the corner clear with, so it gets no button to hide under.
+	await expect(rows.locator('pre', { hasText: 'a bare block' })).toHaveCount(1);
+	await expect(rows.locator('.fence')).toHaveCount(1);
+	// A fenced block scrolls inside itself; the room has to be part of what scrolls.
+	const fence = rows.locator('.fence pre');
+	expect(await fence.evaluate((pre) => pre.scrollWidth > pre.clientWidth)).toBe(true);
+	for (const pre of [fence, command.locator('.wrap pre.code')]) {
+		await expect(pre).toHaveCount(1);
+		expect(await pre.evaluate(gap)).toBeGreaterThanOrEqual(0);
+	}
+});

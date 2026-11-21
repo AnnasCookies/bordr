@@ -4,6 +4,8 @@
 	import { highlight } from '#lib/highlight.js';
 	import { marked } from 'marked';
 	import { sanitiseMarkdown } from '#lib/sanitise-markdown.js';
+	import { mount, unmount } from 'svelte';
+	import CopyButton from './copy-button.svelte';
 
 	let { text, mono = 11 }: { text: string; mono?: number } = $props();
 
@@ -54,12 +56,59 @@
 			cancelled = true;
 		};
 	});
+
+	/**
+	 * A copy button on every fenced block. The markdown arrives as one HTML
+	 * string, so the buttons are mounted into it after each render. Each sits in
+	 * a wrapper beside the <pre>, so it stays put while the code scrolls.
+	 *
+	 * {@html} clears old output by walking from its first node to its last, so a
+	 * <pre> moved into a wrapper must be neither: the template brackets the output
+	 * with comments, or a message starting with a fence keeps its old text.
+	 */
+	/**
+	 * Which fence's button has focus as the text is about to change, so the
+	 * button that replaces it can take the focus over. Dropped on the page body
+	 * instead, the next Enter would not be the Copy button's any more: with a
+	 * question on screen it would answer that.
+	 */
+	let refocus = -1;
+	$effect.pre(() => {
+		void html;
+		const focused = document.activeElement;
+		const fence = focused?.matches('.fence > button') ? focused.parentElement : null;
+		refocus = host && fence ? [...host.querySelectorAll('.fence')].indexOf(fence) : -1;
+	});
+
+	$effect(() => {
+		void html;
+		const root = host;
+		if (!root) return;
+		const buttons: Record<string, unknown>[] = [];
+		// Fences only, which marked writes as <pre><code>. A bare <pre> the agent
+		// wrote as HTML has no inner element to keep the button's corner clear.
+		for (const [at, pre] of [...root.querySelectorAll('pre:has(> code)')].entries()) {
+			if (pre.parentElement?.classList.contains('fence')) continue;
+			const wrap = document.createElement('div');
+			wrap.className = 'fence';
+			pre.replaceWith(wrap);
+			wrap.append(pre);
+			// innerText, because highlighted lines are split by <br>, which textContent drops.
+			const text = () => (pre as HTMLElement).innerText.replace(/\n$/, '');
+			buttons.push(mount(CopyButton, { target: wrap, props: { text } }));
+			if (at === refocus) wrap.querySelector('button')?.focus({ preventScroll: true });
+		}
+		refocus = -1;
+		return () => {
+			for (const button of buttons) void unmount(button);
+		};
+	});
 </script>
 
 <div class="rich" bind:this={host} style="--mono: {mono}px">
 	{#if browser}
 		<!-- eslint-disable-next-line svelte/no-at-html-tags -- sanitised directly above -->
-		{@html html}
+		{@html `<!--rich-->${html}<!--rich-->`}
 	{:else}
 		<span class="raw">{text}</span>
 	{/if}
@@ -125,6 +174,9 @@
 	}
 	/* Fenced blocks scroll inside themselves. The page must never scroll
 	   sideways on a phone — that is what makes a wide diff unreadable. */
+	.rich :global(.fence) {
+		position: relative;
+	}
 	.rich :global(pre) {
 		margin: 0 0 0.6em;
 		padding: 0.6em 0.7em;
@@ -141,6 +193,14 @@
 		color: inherit;
 		white-space: pre;
 		overflow-wrap: normal;
+	}
+	/* The copy button sits over the top-right corner and does not scroll with
+	   the code, so a line that reaches the edge must be able to scroll out from
+	   under it. The room is on the code, sized to its longest line, because
+	   padding on the scrolling <pre> itself is not scrolled into view. */
+	.rich :global(.fence pre code) {
+		width: max-content;
+		padding-right: 58px;
 	}
 	.rich :global(img) {
 		max-width: 100%;

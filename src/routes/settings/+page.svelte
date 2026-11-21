@@ -508,6 +508,7 @@
 			code={'const greeting = `Hello, ${name.trim()}!`;'}
 			lang="typescript"
 			mono={prefs.value.monoSize}
+			copy={false}
 		/>
 	</div>
 {/snippet}

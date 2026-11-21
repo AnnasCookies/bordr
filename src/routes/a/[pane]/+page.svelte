@@ -423,6 +423,10 @@
 	let shown = $state(TAIL);
 	let loadingEarlier = $state(false);
 	let attachments = $state<File[]>([]);
+	// Whether this draft will actually run as a command. With a question on
+	// screen it is typed into the question, and with a photo it is the caption:
+	// both are text, and text keeps the keyboard's help.
+	const shellKeyboard = $derived(isShell && !detail.picker && attachments.length === 0);
 	let previews = $state<string[]>([]);
 	// $state because the composer is now one branch of a conditional: the
 	// binding is written when that branch mounts, not once at startup.
@@ -4192,6 +4196,10 @@
 							overlay; padding is what moves the text out from under it.
 						-->
 						<!--
+							A shell line is case sensitive, and a phone turns `! git` into
+							`! Git` (command not found), so the keyboard stays out of it.
+						-->
+						<!--
 							`aria-label` as well as the placeholder. The placeholder says what
 							this box does RIGHT NOW — run a command on the host, answer the
 							question on screen — which is useful and is exactly why it cannot
@@ -4209,6 +4217,10 @@
 							onpaste={onPaste}
 							rows="1"
 							aria-label="Message"
+							autocapitalize={shellKeyboard ? 'off' : undefined}
+							autocomplete={shellKeyboard ? 'off' : undefined}
+							spellcheck={shellKeyboard ? false : undefined}
+							{...shellKeyboard ? { autocorrect: 'off' } : {}}
 							placeholder={isShell
 								? 'Runs on the host…'
 								: detail.picker

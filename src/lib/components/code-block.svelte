@@ -1,13 +1,15 @@
 <script lang="ts">
 	import { prefs } from '#lib/prefs.svelte.js';
 	import { highlight } from '#lib/highlight.js';
+	import CopyButton from './copy-button.svelte';
 
 	let {
 		code,
 		lang = null,
 		mono = 11,
 		tone = 'plain',
-		lineNumbers
+		lineNumbers,
+		copy = true
 	}: {
 		code: string;
 		lang?: string | null;
@@ -16,7 +18,12 @@
 		tone?: 'plain' | 'add' | 'del';
 		/** Exact lines when known; `true` numbers this focused block from one. */
 		lineNumbers?: number[] | true;
+		/** Off for a block that is only an illustration, such as a settings preview. */
+		copy?: boolean;
 	} = $props();
+
+	// Diff sides carry +/- prefixes, so only plain blocks get a copy button.
+	const copyable = $derived(copy && tone === 'plain');
 
 	const gutter = $derived(
 		lineNumbers === true ? code.split('\n').map((_, index) => index + 1) : lineNumbers
@@ -46,16 +53,28 @@
 </script>
 
 <!-- eslint-disable svelte/no-at-html-tags -->
-{#if gutter}
-	<div class="numbered {tone}" style="--mono: {mono}px">
-		<pre class="gutter" aria-hidden="true">{gutter.join('\n')}</pre>
-		<pre class="code lined">{#if lit}{@html lit}{:else}{code}{/if}</pre>
-	</div>
-{:else}
-	<pre class="code {tone}" style="--mono: {mono}px">{#if lit}{@html lit}{:else}{code}{/if}</pre>
-{/if}
+<div class="wrap" class:copyable>
+	{#if gutter}
+		<div class="numbered {tone}" style="--mono: {mono}px">
+			<pre class="gutter" aria-hidden="true">{gutter.join('\n')}</pre>
+			<pre class="code lined"><span class="src"
+					>{#if lit}{@html lit}{:else}{code}{/if}</span
+				></pre>
+		</div>
+	{:else}
+		<pre class="code {tone}" style="--mono: {mono}px"><span class="src"
+				>{#if lit}{@html lit}{:else}{code}{/if}</span
+			></pre>
+	{/if}
+	{#if copyable}<CopyButton text={() => code} />{/if}
+</div>
 
 <style>
+	.wrap {
+		position: relative;
+		flex-shrink: 0;
+		min-width: 0;
+	}
 	.code,
 	.gutter {
 		margin: 0;
@@ -75,6 +94,17 @@
 		overflow-x: auto;
 		-webkit-overflow-scrolling: touch;
 		tab-size: 2;
+	}
+	/* The button sits over the top-right corner and does not scroll with the
+	   code, so a line that reaches the edge must be able to scroll out from
+	   under it. The room is on the code, sized to its longest line, because
+	   padding on the scrolling <pre> itself is not scrolled into view. */
+	.src {
+		display: block;
+		width: max-content;
+	}
+	.copyable .src {
+		padding-right: 58px;
 	}
 	.numbered {
 		flex-shrink: 0;
