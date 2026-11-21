@@ -40,6 +40,7 @@ to reach it; [Prerequisites](#prerequisites) has the detail.
 
 - Sessions render as chat, not terminal soup, with tool calls folded away.
 - Syntax highlighting from VS Code's own grammars; open a tool call for its arguments, diff and result.
+- A copy button on every code block and command, over plain http as well as https.
 - Search every session at once: `"quoted phrases"`, `-exclusions`, filters by speaker and harness.
 
 **Drive it properly**
@@ -53,6 +54,7 @@ to reach it; [Prerequisites](#prerequisites) has the detail.
 **Your whole estate**
 
 - Machines, workspaces, tabs and panes, in herdr's own shape.
+- On the herdr TUI, or on herdr-core, the runtime under the herdr desktop app.
 - Other machines over SSH: the ones herdr already knows, or just those `BORDR_MACHINES` names.
 - Browse and preview files: Markdown, images, PDFs, and agent-built HTML, sandboxed.
 
